@@ -13,6 +13,9 @@ A REST API for accessibility quality analysis, built with FastAPI, SQLAlchemy, a
 # Install dependencies
 make install
 
+# Enable pre-commit hooks
+git config core.hooksPath .githooks
+
 # Run the development server
 make dev
 ```

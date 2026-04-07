@@ -20,7 +20,7 @@ git config core.hooksPath .githooks
 make dev
 ```
 
-The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/api/v1/openapi.json`.
+The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
 
 ## Development
 

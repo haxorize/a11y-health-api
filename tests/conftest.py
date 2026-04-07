@@ -1,9 +1,12 @@
+from collections.abc import AsyncIterator
+
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from a11y_quality_api.main import app
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+async def client() -> AsyncIterator[AsyncClient]:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac

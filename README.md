@@ -1,6 +1,6 @@
 # Accessibility Quality API
 
-A REST API for accessibility quality analysis, built with FastAPI, SQLAlchemy, and Pydantic.
+A REST API for accessibility quality analysis, built with FastAPI, async SQLAlchemy, and Pydantic.
 
 ## Requirements
 
@@ -39,6 +39,21 @@ make format
 
 # Clean build artifacts
 make clean
+```
+
+## Migrations
+
+Database migrations are managed with Alembic (async). The database URL is read from app settings, not `alembic.ini`.
+
+```sh
+# Run all pending migrations
+make migrate
+
+# Create a new migration (autogenerate from model changes)
+make migrate-create msg="add users table"
+
+# Roll back the last migration
+make migrate-downgrade
 ```
 
 ## Configuration

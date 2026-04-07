@@ -6,13 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.v1.router import api_router
 from .config import settings
+from .core.database import engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup
     yield
-    # Shutdown
+    await engine.dispose()
 
 
 app = FastAPI(
@@ -30,4 +30,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+app.include_router(api_router)

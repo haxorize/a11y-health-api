@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format clean
+.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade
 
 install:
 	uv sync
@@ -19,6 +19,15 @@ lint:
 format:
 	uv run ruff format .
 	uv run ruff check --fix .
+
+migrate:
+	uv run alembic upgrade head
+
+migrate-create:
+	uv run alembic revision --autogenerate -m "$(msg)"
+
+migrate-downgrade:
+	uv run alembic downgrade -1
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

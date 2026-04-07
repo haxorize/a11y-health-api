@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.v1.router import api_router
-from .config import settings
-from .core.database import engine
+from a11y_quality.api.v1.router import api_router
+from a11y_quality.config import settings
+from a11y_quality.core.database import engine
 
 
 @asynccontextmanager

@@ -4,13 +4,13 @@ install:
 	uv sync
 
 dev:
-	uv run uvicorn a11y_quality_api.main:app --reload
+	uv run uvicorn a11y_quality.main:app --reload
 
 test:
 	uv run pytest -v
 
 test-cov:
-	uv run pytest --cov=a11y_quality_api --cov-report=term-missing
+	uv run pytest --cov=a11y_quality --cov-report=term-missing
 
 lint:
 	uv run ruff check .

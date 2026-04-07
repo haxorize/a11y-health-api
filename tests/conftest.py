@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from a11y_quality_api.main import app
+from a11y_quality.main import app
 
 
 @pytest.fixture

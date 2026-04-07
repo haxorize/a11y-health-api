@@ -69,7 +69,7 @@ Configuration is managed via environment variables or a `.env` file:
 ## Project Structure
 
 ```
-src/a11y_quality_api/
+src/a11y_quality/
 ├── api/
 │   ├── deps.py          # Dependency injection
 │   └── v1/

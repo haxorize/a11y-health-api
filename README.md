@@ -63,7 +63,7 @@ Configuration is managed via environment variables or a `.env` file:
 | Variable | Default | Description |
 |---|---|---|
 | `DEBUG` | `False` | Enable debug mode |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./a11y_quality.db` | Database connection string |
+| `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_quality` | Database connection string |
 | `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins |
 
 ## Project Structure

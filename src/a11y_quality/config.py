@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
 
-    DATABASE_URL: str = "sqlite+aiosqlite:///./a11y_quality.db"
+    DATABASE_URL: str = "postgresql+asyncpg://localhost:5432/a11y_quality"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 

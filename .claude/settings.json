@@ -9,6 +9,15 @@
             "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */README.md|README.md) exit 0 ;; esac; echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"Reminder: Check if README.md needs to be updated to reflect this change.\"}}'; }"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */pyproject.toml|pyproject.toml) uv sync 2>&1 ;; esac; }"
+          }
+        ]
       }
     ]
   }

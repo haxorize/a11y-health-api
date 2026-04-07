@@ -64,7 +64,8 @@ Configuration is managed via environment variables or a `.env` file:
 |---|---|---|
 | `DEBUG` | `False` | Enable debug mode |
 | `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_quality` | Database connection string |
-| `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins |
+| `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_quality_test` | Test database connection string |
+| `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins (wildcard `*` rejected when `DEBUG=False`) |
 
 ## Project Structure
 

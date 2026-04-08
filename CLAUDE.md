@@ -22,3 +22,7 @@ uv run uvicorn a11y_health.main:app --reload  # dev server
 
 Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`.
 Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
+
+## Domain Language
+
+See `UBIQUITOUS_LANGUAGE.md` for canonical domain terms. Use those terms in code, comments, and conversation.

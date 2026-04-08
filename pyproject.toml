@@ -1,7 +1,7 @@
 [project]
-name = "a11y-quality-api"
+name = "a11y-health-api"
 version = "0.1.0"
-description = "Accessibility Quality API"
+description = "Accessibility Health API"
 readme = "README.md"
 authors = [
     { name = "Nick Bourgeois", email = "nick@haxorize.com" }
@@ -22,7 +22,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/a11y_quality"]
+packages = ["src/a11y_health"]
 
 [dependency-groups]
 dev = [
@@ -42,7 +42,7 @@ target-version = "py314"
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ASYNC"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["a11y_quality"]
+known-first-party = ["a11y_health"]
 
 [tool.ruff.format]
 quote-style = "double"

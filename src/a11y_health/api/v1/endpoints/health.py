@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from a11y_quality.schemas import HealthResponse
+from a11y_health.schemas import HealthResponse
 
 router = APIRouter(tags=["health"])
 

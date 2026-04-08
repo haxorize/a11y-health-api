@@ -1,6 +1,6 @@
-# Accessibility Quality API
+# Accessibility Health API
 
-A REST API for accessibility quality analysis, built with FastAPI, async SQLAlchemy, and Pydantic.
+A REST API for accessibility health analysis, built with FastAPI, async SQLAlchemy, and Pydantic.
 
 ## Requirements
 
@@ -63,14 +63,14 @@ Configuration is managed via environment variables or a `.env` file:
 | Variable | Default | Description |
 |---|---|---|
 | `DEBUG` | `False` | Enable debug mode |
-| `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_quality` | Database connection string |
-| `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_quality_test` | Test database connection string |
+| `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health` | Database connection string |
+| `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health_test` | Test database connection string |
 | `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins (wildcard `*` rejected when `DEBUG=False`) |
 
 ## Project Structure
 
 ```
-src/a11y_quality/
+src/a11y_health/
 ├── api/
 │   ├── deps.py          # Dependency injection
 │   └── v1/

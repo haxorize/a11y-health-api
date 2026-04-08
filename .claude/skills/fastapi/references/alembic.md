@@ -6,8 +6,8 @@ Alembic is configured with async SQLAlchemy. The `env.py` must use `run_async` w
 
 Import all models in `env.py` so autogenerate can detect them:
 ```python
-from a11y_quality.core.database import Base
-from a11y_quality.models import *  # noqa: F403
+from a11y_health.core.database import Base
+from a11y_health.models import *  # noqa: F403
 target_metadata = Base.metadata
 ```
 

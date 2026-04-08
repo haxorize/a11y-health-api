@@ -3,7 +3,7 @@ revision = 2
 requires-python = ">=3.14"
 
 [[package]]
-name = "a11y-quality-api"
+name = "a11y-health-api"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

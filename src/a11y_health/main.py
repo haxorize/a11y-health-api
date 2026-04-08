@@ -5,9 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from a11y_quality.api.v1.router import api_router
-from a11y_quality.config import settings
-from a11y_quality.core.database import engine
+from a11y_health.api.v1.router import api_router
+from a11y_health.config import settings
+from a11y_health.core.database import engine
 
 
 @asynccontextmanager

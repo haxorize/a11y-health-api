@@ -11,7 +11,7 @@ description: Test conventions for this project. Use when writing tests, adding f
 uv run pytest              # all tests
 uv run pytest tests/api/   # specific directory
 uv run pytest -x           # stop on first failure
-uv run pytest --cov=a11y_quality  # with coverage
+uv run pytest --cov=a11y_health  # with coverage
 ```
 
 Config in `pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`.

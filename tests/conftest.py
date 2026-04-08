@@ -4,9 +4,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from a11y_quality.config import settings
-from a11y_quality.core.database import Base, get_db
-from a11y_quality.main import app
+from a11y_health.config import settings
+from a11y_health.core.database import Base, get_db
+from a11y_health.main import app
 
 engine = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
 async_session = async_sessionmaker(engine, expire_on_commit=False)

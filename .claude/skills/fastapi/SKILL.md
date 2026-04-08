@@ -8,7 +8,7 @@ description: Project conventions for this FastAPI + async SQLAlchemy API. Use wh
 ## App structure
 
 ```
-src/a11y_quality/
+src/a11y_health/
   main.py          # FastAPI app, lifespan, middleware
   config.py        # pydantic-settings Settings singleton
   core/

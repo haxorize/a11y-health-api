@@ -51,12 +51,12 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 
 ## SQLAlchemy model mapping
 
-Models in `src/a11y_quality/models/` inherit from `core.database.Base`:
+Models in `src/a11y_health/models/` inherit from `core.database.Base`:
 
 ```python
 from sqlalchemy import BigInteger, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from a11y_quality.core.database import Base
+from a11y_health.core.database import Base
 
 class Scan(Base):
     __tablename__ = "scan"

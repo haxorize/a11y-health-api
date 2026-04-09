@@ -62,6 +62,13 @@ async def test_update_org_unit(db_session: AsyncSession) -> None:
     assert updated.id == created.id
 
 
+async def test_update_org_unit_with_invalid_parent(db_session: AsyncSession) -> None:
+    created = await make_org_unit(db_session, name="Humana")
+    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+    with pytest.raises(NotFoundError, match="Org unit"):
+        await org_unit_service.update_org_unit(db_session, created.id, OrgUnitUpdate(parent_id=fake_id))
+
+
 async def test_update_org_unit_not_found(db_session: AsyncSession) -> None:
     fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):

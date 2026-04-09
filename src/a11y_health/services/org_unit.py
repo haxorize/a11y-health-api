@@ -35,7 +35,12 @@ async def get_org_unit(session: AsyncSession, org_unit_id: uuid.UUID) -> OrgUnit
 
 async def update_org_unit(session: AsyncSession, org_unit_id: uuid.UUID, data: OrgUnitUpdate) -> OrgUnit:
     org_unit = await get_org_unit(session, org_unit_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    if "parent_id" in updates and updates["parent_id"] is not None:
+        parent = await session.get(OrgUnit, updates["parent_id"])
+        if parent is None:
+            raise NotFoundError("Org unit", updates["parent_id"])
+    for field, value in updates.items():
         setattr(org_unit, field, value)
     await session.flush()
     await session.refresh(org_unit)

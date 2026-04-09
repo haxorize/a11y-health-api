@@ -14,7 +14,7 @@ uv run pytest -x           # stop on first failure
 uv run pytest --cov=a11y_health  # with coverage
 ```
 
-Config in `pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`.
+Config in `pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`, `asyncio_default_fixture_loop_scope = "session"`, `asyncio_default_test_loop_scope = "session"`.
 
 ## Test layout
 
@@ -33,10 +33,11 @@ tests/
 
 ## Fixtures (from conftest.py)
 
-Three fixtures, each for a different testing need:
+Four fixtures, layered:
 
+- **`engine`** (session scope) — creates a test `AsyncEngine`, drops and recreates all tables once per session
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
-- **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access
+- **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `get_db` overridden to use `db_session`; for endpoints that touch the DB
 
 Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed.
@@ -70,19 +71,17 @@ async def test_create_scan_service(db_session: AsyncSession) -> None:
 
 ## Factory patterns
 
-For test data setup, use simple async helper functions in `tests/factories.py`:
+For test data setup, use simple async helper functions in `tests/factories.py` with explicit keyword arguments and defaults:
 
 ```python
-async def make_scan(db: AsyncSession, **overrides) -> Scan:
-    defaults = {"url": "https://example.com"}
-    defaults.update(overrides)
-    scan = Scan(**defaults)
-    db.add(scan)
+async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
+    org_unit = OrgUnit(name=name, parent_id=parent_id)
+    db.add(org_unit)
     await db.flush()
-    return scan
+    return org_unit
 ```
 
-Call in tests: `scan = await make_scan(db_session, url="https://other.com")`
+Call in tests: `org_unit = await make_org_unit(db_session, name="Humana")`
 
 ## What to test at which layer
 

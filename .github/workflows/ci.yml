@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  UV_PYTHON: "3.14"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: a11y_health_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - run: uv run pytest
+
+  migration-drift:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: a11y_health
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - name: Migration roundtrip
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+      - name: Check for model/migration drift
+        run: |
+          uv run alembic revision --autogenerate -m "_drift_check" 2>&1
+          MIGRATION=$(ls -t migrations/versions/*_drift_check.py 2>/dev/null | head -1)
+          if [ -z "$MIGRATION" ]; then
+            echo "No migration generated — models and migrations are in sync."
+            exit 0
+          fi
+          if grep -q "pass" "$MIGRATION" && ! grep -qE "op\." "$MIGRATION"; then
+            echo "Empty migration — models and migrations are in sync."
+            exit 0
+          fi
+          echo "::error::Model/migration drift detected. Run 'alembic revision --autogenerate' locally."
+          echo "--- Generated migration ---"
+          cat "$MIGRATION"
+          exit 1

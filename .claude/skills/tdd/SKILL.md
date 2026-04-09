@@ -55,7 +55,21 @@ After all tests pass, review the implementation before calling the task done:
 
 Run `uv run pytest` after each refactor step. Never refactor while red.
 
-### 5. Lint & typecheck
+### 5. Migration
+
+If the task added or changed any SQLAlchemy models, generate an Alembic migration:
+
+```bash
+alembic revision --autogenerate -m "add <resource> table"
+```
+
+Review the generated migration — remove false-positive detections. Test the roundtrip:
+
+```bash
+alembic downgrade base && alembic upgrade head
+```
+
+### 6. Lint & typecheck
 
 After refactoring is complete and all tests pass, run formatting, linting, and type checking:
 

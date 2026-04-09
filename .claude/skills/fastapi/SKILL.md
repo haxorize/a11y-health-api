@@ -31,17 +31,19 @@ src/a11y_health/
 3. **Service** in `services/<resource>.py` — async functions taking `AsyncSession`
 4. **Endpoint** in `api/v1/endpoints/<resource>.py` — thin router delegating to service
 5. **Register** router in `api/v1/router.py`
-6. **Migration** via `alembic revision --autogenerate -m "add <resource>"`
+6. **Re-export** model in `models/__init__.py`
+7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify with `alembic downgrade base && alembic upgrade head`
 
 ## Endpoints
 
-- One `APIRouter(tags=[...])` per resource module
+- One `APIRouter(prefix="/resource-name", tags=[...])` per resource module
 - Prefer `Annotated` type aliases for dependency injection:
   ```python
   DbSession = Annotated[AsyncSession, Depends(get_db)]
   ```
 - Return Pydantic response models with explicit type annotations
-- Raise `HTTPException` for client errors; let unhandled exceptions become 500s
+- Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
+- Do not raise `HTTPException` — let domain exceptions propagate to app-level exception handlers (see Error responses)
 - Use `async def` — this project uses async SQLAlchemy throughout
 
 ## Schemas (Pydantic)
@@ -79,8 +81,14 @@ async def list_items(
 ) -> list[ItemRead]: ...
 ```
 
+## Models package
+
+Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ensures Alembic autogenerate and the test conftest's `from a11y_health.models import *` discover all tables.
+
 ## Error responses
 
-- `HTTPException` with appropriate status codes for client errors
+- Services raise domain exceptions (defined in `core/exceptions.py`)
+- `main.py` registers `@app.exception_handler(...)` for each domain exception, translating to the appropriate HTTP status and JSON body
+- Endpoints never catch or raise `HTTPException` directly
 - Let FastAPI's built-in 422 handling cover validation errors
 - Use 409 for domain conflicts, 404 for missing resources

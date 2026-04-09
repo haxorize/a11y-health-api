@@ -1,7 +1,18 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum, ForeignKey, Identity, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Identity,
+    Index,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base
@@ -24,6 +35,7 @@ class App(Base):
         CheckConstraint("LENGTH(name) <= 255", name="ck_app_name_length"),
         CheckConstraint("LENGTH(slug) <= 255", name="ck_app_slug_length"),
         UniqueConstraint("slug", name=UQ_APP_SLUG),
+        Index("ix_app_org_unit_id", "org_unit_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)

@@ -24,6 +24,12 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - `snake_case` for all identifiers; never quote identifiers
 - `NOT NULL` everywhere semantically required
 - Singular table names matching the resource (`scan`, `rule`, `page`)
+- PK column named `id` (not `<resource>_id`)
+- Every table gets `created_at` and `updated_at` timestamps:
+  ```python
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+  updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+  ```
 
 ## Constraints
 
@@ -31,6 +37,7 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs)
 - **UNIQUE**: use `NULLS NOT DISTINCT` (PG15+) unless multiple NULLs are intentional
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
+- **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`). Export unique constraint names as module-level constants (e.g., `UQ_APP_SLUG`) for matching in `IntegrityError` handlers
 
 ## Indexing
 
@@ -43,7 +50,7 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 
 ## Alembic migration conventions
 
-Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
+Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
 ```python
 from a11y_health.core.database import Base
 from a11y_health.models import *  # noqa: F403
@@ -75,7 +82,7 @@ from a11y_health.core.database import Base
 
 class Scan(Base):
     __tablename__ = "scan"
-    scan_id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     url: Mapped[str] = mapped_column(Text, nullable=False)
 ```
 

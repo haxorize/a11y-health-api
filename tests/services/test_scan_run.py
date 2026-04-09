@@ -102,6 +102,17 @@ async def test_update_status_completed_to_pending_rejected(db_session: AsyncSess
         )
 
 
+async def test_update_status_completed_to_completed_rejected(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session)
+    app = await make_app(db_session, org_unit_id=org_unit.id)
+    scan_run = await make_scan_run(db_session, app_id=app.id, status=ScanRunStatus.COMPLETED)
+
+    with pytest.raises(InvalidStatusTransitionError, match="completed"):
+        await scan_run_service.update_scan_run_status(
+            db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
+        )
+
+
 async def test_completed_run_rejects_page_addition(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     app = await make_app(db_session, org_unit_id=org_unit.id)

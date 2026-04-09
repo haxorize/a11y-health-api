@@ -28,6 +28,7 @@ async def get_scan_run(session: AsyncSession, scan_run_id: int) -> ScanRun:
 
 
 async def list_scan_runs(session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20) -> Sequence[ScanRun]:
+    await get_app(session, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id).order_by(ScanRun.id).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()

@@ -12,7 +12,7 @@ class OrgUnitCreate(BaseModel):
 
 class OrgUnitUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
-    parent_id: int | None = None
+    parent_id: int | None = Field(default=None, description="Omit to leave unchanged; send null to make a root node")
 
 
 class OrgUnitRead(BaseModel):

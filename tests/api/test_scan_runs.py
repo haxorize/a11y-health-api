@@ -44,6 +44,11 @@ async def test_list_scan_runs(db_client: AsyncClient, db_session: AsyncSession) 
     assert all(r["app_id"] == app.id for r in data)
 
 
+async def test_list_scan_runs_invalid_app(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/apps/999999/scan-runs")
+    assert response.status_code == 404
+
+
 async def test_get_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     app = await make_app(db_session, org_unit_id=org_unit.id)

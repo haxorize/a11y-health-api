@@ -14,6 +14,7 @@ from a11y_health.models import *  # noqa: F403 — ensure all models are registe
 async def engine() -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
     async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()

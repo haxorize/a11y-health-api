@@ -1,9 +1,7 @@
-import uuid
-
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from tests.factories import make_org_unit
@@ -23,9 +21,8 @@ async def test_create_org_unit_with_parent(db_session: AsyncSession) -> None:
 
 
 async def test_create_org_unit_with_invalid_parent(db_session: AsyncSession) -> None:
-    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Orphan", parent_id=fake_id))
+        await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Orphan", parent_id=999999))
 
 
 async def test_list_org_units(db_session: AsyncSession) -> None:
@@ -50,9 +47,8 @@ async def test_get_org_unit(db_session: AsyncSession) -> None:
 
 
 async def test_get_org_unit_not_found(db_session: AsyncSession) -> None:
-    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.get_org_unit(db_session, fake_id)
+        await org_unit_service.get_org_unit(db_session, 999999)
 
 
 async def test_update_org_unit(db_session: AsyncSession) -> None:
@@ -64,15 +60,13 @@ async def test_update_org_unit(db_session: AsyncSession) -> None:
 
 async def test_update_org_unit_with_invalid_parent(db_session: AsyncSession) -> None:
     created = await make_org_unit(db_session, name="Humana")
-    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.update_org_unit(db_session, created.id, OrgUnitUpdate(parent_id=fake_id))
+        await org_unit_service.update_org_unit(db_session, created.id, OrgUnitUpdate(parent_id=999999))
 
 
 async def test_update_org_unit_not_found(db_session: AsyncSession) -> None:
-    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.update_org_unit(db_session, fake_id, OrgUnitUpdate(name="Ghost"))
+        await org_unit_service.update_org_unit(db_session, 999999, OrgUnitUpdate(name="Ghost"))
 
 
 async def test_delete_org_unit(db_session: AsyncSession) -> None:
@@ -83,6 +77,70 @@ async def test_delete_org_unit(db_session: AsyncSession) -> None:
 
 
 async def test_delete_org_unit_not_found(db_session: AsyncSession) -> None:
-    fake_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.delete_org_unit(db_session, fake_id)
+        await org_unit_service.delete_org_unit(db_session, 999999)
+
+
+async def test_get_ancestors_returns_path_to_root(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    middle = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    leaf = await make_org_unit(db_session, name="Primary Care", parent_id=middle.id)
+    ancestors = await org_unit_service.get_ancestors(db_session, leaf.id)
+    assert [a.id for a in ancestors] == [middle.id, root.id]
+
+
+async def test_get_ancestors_root_has_no_ancestors(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    ancestors = await org_unit_service.get_ancestors(db_session, root.id)
+    assert ancestors == []
+
+
+async def test_get_ancestors_not_found(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError, match="Org unit"):
+        await org_unit_service.get_ancestors(db_session, 999999)
+
+
+async def test_get_descendants_returns_subtree(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    child_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child_a.id)
+    descendants = await org_unit_service.get_descendants(db_session, root.id)
+    descendant_ids = {d.id for d in descendants}
+    assert descendant_ids == {child_a.id, child_b.id, grandchild.id}
+
+
+async def test_get_descendants_leaf_has_no_descendants(db_session: AsyncSession) -> None:
+    leaf = await make_org_unit(db_session, name="Humana")
+    descendants = await org_unit_service.get_descendants(db_session, leaf.id)
+    assert descendants == []
+
+
+async def test_get_descendants_not_found(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError, match="Org unit"):
+        await org_unit_service.get_descendants(db_session, 999999)
+
+
+async def test_update_rejects_self_as_parent(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    with pytest.raises(CircularReferenceError):
+        await org_unit_service.update_org_unit(db_session, org_unit.id, OrgUnitUpdate(parent_id=org_unit.id))
+
+
+async def test_update_rejects_descendant_as_parent(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+    with pytest.raises(CircularReferenceError):
+        await org_unit_service.update_org_unit(db_session, root.id, OrgUnitUpdate(parent_id=grandchild.id))
+
+
+async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
+    leaf = await make_org_unit(db_session, name="Primary Care", parent_id=branch_a.id)
+    # Reparent leaf from branch_a to branch_b
+    await org_unit_service.update_org_unit(db_session, leaf.id, OrgUnitUpdate(parent_id=branch_b.id))
+    ancestors = await org_unit_service.get_ancestors(db_session, leaf.id)
+    assert [a.id for a in ancestors] == [branch_b.id, root.id]

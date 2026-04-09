@@ -23,16 +23,16 @@ async def test_create_org_unit_with_parent(db_client: AsyncClient, db_session: A
 
     response = await db_client.post(
         "/api/v1/org-units",
-        json={"name": "CenterWell", "parent_id": str(parent.id)},
+        json={"name": "CenterWell", "parent_id": parent.id},
     )
     assert response.status_code == 201
-    assert response.json()["parent_id"] == str(parent.id)
+    assert response.json()["parent_id"] == parent.id
 
 
 async def test_create_org_unit_with_invalid_parent(db_client: AsyncClient) -> None:
     response = await db_client.post(
         "/api/v1/org-units",
-        json={"name": "Orphan", "parent_id": "00000000-0000-0000-0000-000000000000"},
+        json={"name": "Orphan", "parent_id": 999999},
     )
     assert response.status_code == 404
 
@@ -58,7 +58,7 @@ async def test_get_org_unit(db_client: AsyncClient, db_session: AsyncSession) ->
 
 
 async def test_get_org_unit_not_found(db_client: AsyncClient) -> None:
-    response = await db_client.get("/api/v1/org-units/00000000-0000-0000-0000-000000000000")
+    response = await db_client.get("/api/v1/org-units/999999")
     assert response.status_code == 404
 
 
@@ -75,7 +75,7 @@ async def test_update_org_unit(db_client: AsyncClient, db_session: AsyncSession)
 
 async def test_update_org_unit_not_found(db_client: AsyncClient) -> None:
     response = await db_client.patch(
-        "/api/v1/org-units/00000000-0000-0000-0000-000000000000",
+        "/api/v1/org-units/999999",
         json={"name": "Ghost"},
     )
     assert response.status_code == 404
@@ -92,5 +92,48 @@ async def test_delete_org_unit(db_client: AsyncClient, db_session: AsyncSession)
 
 
 async def test_delete_org_unit_not_found(db_client: AsyncClient) -> None:
-    response = await db_client.delete("/api/v1/org-units/00000000-0000-0000-0000-000000000000")
+    response = await db_client.delete("/api/v1/org-units/999999")
     assert response.status_code == 404
+
+
+async def test_get_ancestors(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+
+    response = await db_client.get(f"/api/v1/org-units/{grandchild.id}/ancestors")
+    assert response.status_code == 200
+    ids = [a["id"] for a in response.json()]
+    assert ids == [child.id, root.id]
+
+
+async def test_get_ancestors_not_found(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/org-units/999999/ancestors")
+    assert response.status_code == 404
+
+
+async def test_get_descendants(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+
+    response = await db_client.get(f"/api/v1/org-units/{root.id}/descendants")
+    assert response.status_code == 200
+    ids = {d["id"] for d in response.json()}
+    assert ids == {child.id, grandchild.id}
+
+
+async def test_get_descendants_not_found(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/org-units/999999/descendants")
+    assert response.status_code == 404
+
+
+async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+
+    response = await db_client.patch(
+        f"/api/v1/org-units/{root.id}",
+        json={"parent_id": child.id},
+    )
+    assert response.status_code == 409

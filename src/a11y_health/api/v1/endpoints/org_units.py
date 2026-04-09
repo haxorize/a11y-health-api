@@ -1,9 +1,6 @@
-import uuid
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
-from a11y_health.core.exceptions import NotFoundError
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 
@@ -12,10 +9,7 @@ router = APIRouter(prefix="/org-units", tags=["org-units"])
 
 @router.post("", status_code=201)
 async def create_org_unit(db: DbSession, data: OrgUnitCreate) -> OrgUnitRead:
-    try:
-        org_unit = await org_unit_service.create_org_unit(db, data)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    org_unit = await org_unit_service.create_org_unit(db, data)
     return OrgUnitRead.model_validate(org_unit)
 
 
@@ -30,26 +24,29 @@ async def list_org_units(
 
 
 @router.get("/{org_unit_id}")
-async def get_org_unit(db: DbSession, org_unit_id: uuid.UUID) -> OrgUnitRead:
-    try:
-        org_unit = await org_unit_service.get_org_unit(db, org_unit_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
+    org_unit = await org_unit_service.get_org_unit(db, org_unit_id)
     return OrgUnitRead.model_validate(org_unit)
 
 
+@router.get("/{org_unit_id}/ancestors")
+async def get_ancestors(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
+    ancestors = await org_unit_service.get_ancestors(db, org_unit_id)
+    return [OrgUnitRead.model_validate(a) for a in ancestors]
+
+
+@router.get("/{org_unit_id}/descendants")
+async def get_descendants(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
+    descendants = await org_unit_service.get_descendants(db, org_unit_id)
+    return [OrgUnitRead.model_validate(d) for d in descendants]
+
+
 @router.patch("/{org_unit_id}")
-async def update_org_unit(db: DbSession, org_unit_id: uuid.UUID, data: OrgUnitUpdate) -> OrgUnitRead:
-    try:
-        updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnitRead:
+    updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
     return OrgUnitRead.model_validate(updated)
 
 
 @router.delete("/{org_unit_id}", status_code=204)
-async def delete_org_unit(db: DbSession, org_unit_id: uuid.UUID) -> None:
-    try:
-        await org_unit_service.delete_org_unit(db, org_unit_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+async def delete_org_unit(db: DbSession, org_unit_id: int) -> None:
+    await org_unit_service.delete_org_unit(db, org_unit_id)

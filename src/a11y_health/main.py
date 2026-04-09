@@ -3,11 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from starlette.requests import Request
 
 from a11y_health.api.v1.router import api_router
 from a11y_health.config import settings
 from a11y_health.core.database import engine
+from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
 
 
 @asynccontextmanager
@@ -32,5 +35,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(NotFoundError)
+async def not_found_handler(_request: Request, exc: NotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(CircularReferenceError)
+async def circular_reference_handler(_request: Request, exc: CircularReferenceError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
 
 app.include_router(api_router)

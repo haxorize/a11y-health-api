@@ -54,3 +54,15 @@ After all tests pass, review the implementation before calling the task done:
 - Simplify where the accumulated implementation reveals a cleaner design
 
 Run `uv run pytest` after each refactor step. Never refactor while red.
+
+### 5. Lint & typecheck
+
+After refactoring is complete and all tests pass, run formatting, linting, and type checking:
+
+```bash
+uv run ruff format .
+uv run ruff check --fix .
+uv run ty check
+```
+
+Fix any issues, then re-run `uv run pytest` to confirm nothing broke.

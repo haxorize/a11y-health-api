@@ -10,6 +10,8 @@ description: Test-driven development workflow using vertical slices. Use when im
 Tests verify behavior through public interfaces, not implementation details. One test at a time, one implementation at a time. Never write all tests first then all code — that's horizontal slicing.
 
 See the `testing` skill for project-specific test conventions, fixtures, and patterns.
+See the `fastapi` skill for endpoint, model, schema, and service conventions.
+See the `postgres` skill for schema design, migration, and indexing conventions.
 
 ## Workflow
 

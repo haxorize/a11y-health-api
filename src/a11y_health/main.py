@@ -10,7 +10,7 @@ from starlette.requests import Request
 from a11y_health.api.v1.router import api_router
 from a11y_health.config import settings
 from a11y_health.core.database import engine
-from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
+from a11y_health.core.exceptions import CircularReferenceError, DuplicateSlugError, NotFoundError
 
 
 @asynccontextmanager
@@ -44,6 +44,11 @@ async def not_found_handler(_request: Request, exc: NotFoundError) -> JSONRespon
 
 @app.exception_handler(CircularReferenceError)
 async def circular_reference_handler(_request: Request, exc: CircularReferenceError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(DuplicateSlugError)
+async def duplicate_slug_handler(_request: Request, exc: DuplicateSlugError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 

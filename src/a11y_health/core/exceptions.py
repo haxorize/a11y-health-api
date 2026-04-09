@@ -11,3 +11,9 @@ class CircularReferenceError(Exception):
         self.resource_id = resource_id
         self.parent_id = parent_id
         super().__init__(f"{resource} {resource_id} cannot have {parent_id} as parent: circular reference")
+
+
+class DuplicateSlugError(Exception):
+    def __init__(self, slug: str) -> None:
+        self.slug = slug
+        super().__init__(f"App with slug '{slug}' already exists")

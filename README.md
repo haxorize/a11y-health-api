@@ -13,6 +13,9 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 # Install dependencies
 make install
 
+# Copy environment config
+cp .env.example .env
+
 # Enable pre-commit hooks
 git config core.hooksPath .githooks
 

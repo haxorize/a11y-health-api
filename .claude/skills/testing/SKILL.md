@@ -23,6 +23,7 @@ Mirror the app structure:
 ```
 tests/
   conftest.py              # shared fixtures (client, db_session, db_client)
+  fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
     test_<resource>.py      # one file per endpoint module
@@ -88,11 +89,3 @@ Call in tests: `scan = await make_scan(db_session, url="https://other.com")`
 - **Endpoints**: HTTP status codes, response shape, auth/permission checks
 - **Services**: business logic, edge cases, error conditions
 - **Both**: use endpoint tests as integration tests; service tests for focused unit coverage
-
-## Migration testing
-
-Verify the full migration chain applies cleanly:
-
-```bash
-alembic downgrade base && alembic upgrade head
-```

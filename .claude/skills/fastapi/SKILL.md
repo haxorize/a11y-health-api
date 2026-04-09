@@ -13,6 +13,7 @@ src/a11y_health/
   config.py        # pydantic-settings Settings singleton
   core/
     database.py    # engine, async_session, Base, get_db dependency
+    exceptions.py  # domain exceptions raised by services, caught by endpoints
   api/v1/
     router.py      # aggregates endpoint routers under API_V1_PREFIX
     endpoints/     # one module per resource
@@ -53,6 +54,7 @@ src/a11y_health/
 
 - Accept `AsyncSession` as first parameter
 - Return ORM model instances (endpoint serializes via schema)
+- Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations
 
 ## Database sessions
@@ -80,7 +82,3 @@ async def list_items(
 - `HTTPException` with appropriate status codes for client errors
 - Let FastAPI's built-in 422 handling cover validation errors
 - Use 409 for domain conflicts, 404 for missing resources
-
-## Alembic migrations
-
-See [references/alembic.md](references/alembic.md) for migration conventions.

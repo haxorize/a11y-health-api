@@ -48,7 +48,7 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Title**: short descriptive name
 - **Type**: HITL / AFK
 - **Blocked by**: which other slices (if any) must complete first
-- **Acceptance criteria addressed**: which numbered criteria from the parent spec
+- **Parent spec criteria**: which numbered criteria from the parent spec
 
 Ask the user:
 

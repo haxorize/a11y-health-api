@@ -23,7 +23,7 @@ A concise description of this vertical slice. Describe the end-to-end behavior, 
 
 Or "None - can start immediately" if no blockers.
 
-## Acceptance criteria addressed
+## Parent spec criteria
 
 Reference by number from the parent feature spec:
 

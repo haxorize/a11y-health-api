@@ -14,9 +14,11 @@ src/a11y_health/
   core/
     database.py    # engine, async_session, Base, get_db dependency
     exceptions.py  # domain exceptions raised by services, caught by endpoints
-  api/v1/
-    router.py      # aggregates endpoint routers under API_V1_PREFIX
-    endpoints/     # one module per resource
+  api/
+    deps.py        # Annotated type aliases (DbSession, etc.)
+    v1/
+      router.py    # aggregates endpoint routers under API_V1_PREFIX
+      endpoints/   # one module per resource
   models/          # SQLAlchemy ORM models (inherit Base)
   schemas/         # Pydantic request/response models
   services/        # business logic; endpoints stay thin

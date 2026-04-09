@@ -32,3 +32,9 @@ class ScanRunCompletedError(Exception):
     def __init__(self, scan_run_id: object) -> None:
         self.scan_run_id = scan_run_id
         super().__init__(f"Scan run {scan_run_id} is completed and cannot accept new pages")
+
+
+class InvalidAxePayloadError(Exception):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)

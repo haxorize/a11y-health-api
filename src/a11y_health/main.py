@@ -13,6 +13,7 @@ from a11y_health.core.database import engine
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     DuplicateSlugError,
+    InvalidAxePayloadError,
     InvalidStatusTransitionError,
     NotFoundError,
     ScanRunCompletedError,
@@ -66,6 +67,11 @@ async def invalid_status_transition_handler(_request: Request, exc: InvalidStatu
 @app.exception_handler(ScanRunCompletedError)
 async def scan_run_completed_handler(_request: Request, exc: ScanRunCompletedError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidAxePayloadError)
+async def invalid_axe_payload_handler(_request: Request, exc: InvalidAxePayloadError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 app.include_router(api_router)

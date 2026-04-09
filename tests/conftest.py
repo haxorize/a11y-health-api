@@ -1,4 +1,7 @@
+import json
 from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -8,6 +11,8 @@ from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture(scope="session")
@@ -49,3 +54,8 @@ async def db_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
             yield ac
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="session")
+def axe_payload() -> dict[str, Any]:
+    return json.loads((FIXTURE_DIR / "humana.com-home.json").read_text())

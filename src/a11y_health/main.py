@@ -10,7 +10,13 @@ from starlette.requests import Request
 from a11y_health.api.v1.router import api_router
 from a11y_health.config import settings
 from a11y_health.core.database import engine
-from a11y_health.core.exceptions import CircularReferenceError, DuplicateSlugError, NotFoundError
+from a11y_health.core.exceptions import (
+    CircularReferenceError,
+    DuplicateSlugError,
+    InvalidStatusTransitionError,
+    NotFoundError,
+    ScanRunCompletedError,
+)
 
 
 @asynccontextmanager
@@ -49,6 +55,16 @@ async def circular_reference_handler(_request: Request, exc: CircularReferenceEr
 
 @app.exception_handler(DuplicateSlugError)
 async def duplicate_slug_handler(_request: Request, exc: DuplicateSlugError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidStatusTransitionError)
+async def invalid_status_transition_handler(_request: Request, exc: InvalidStatusTransitionError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(ScanRunCompletedError)
+async def scan_run_completed_handler(_request: Request, exc: ScanRunCompletedError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 

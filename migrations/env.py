@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from a11y_health.config import settings
 from a11y_health.core.database import Base
+from a11y_health.models import *  # noqa: F403 — ensure all models are registered
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

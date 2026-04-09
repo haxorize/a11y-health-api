@@ -2,24 +2,21 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
-
-engine = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
-async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-_db_initialized = False
+from a11y_health.models import *  # noqa: F403 — ensure all models are registered
 
 
-async def _ensure_db() -> None:
-    global _db_initialized
-    if not _db_initialized:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        _db_initialized = True
+@pytest.fixture(scope="session")
+async def engine() -> AsyncIterator[AsyncEngine]:
+    eng = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
 
 
 @pytest.fixture
@@ -29,8 +26,7 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture
-async def db_session() -> AsyncIterator[AsyncSession]:
-    await _ensure_db()
+async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with engine.connect() as conn:
         txn = await conn.begin()
         session = AsyncSession(bind=conn, expire_on_commit=False)

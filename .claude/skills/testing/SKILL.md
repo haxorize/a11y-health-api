@@ -74,7 +74,7 @@ async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: 
 
 Call in tests: `org_unit = await make_org_unit(db_session, name="Humana")`
 
-Factories use `await db.flush()` (not `commit()`) — this matches the service layer pattern and works within the transactional rollback isolation of `db_session`.
+Factories use `await db.flush()` (not `commit()`) — this matches the service layer pattern and works within the transactional rollback isolation of `db_session`. When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score.py`) rather than duplicating the formula inline.
 
 For resources with required parent FK chains, add `make_<resource>_with_parents` composite helpers that create the full ancestry in one call:
 

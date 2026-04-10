@@ -50,6 +50,9 @@ def _extract_category(tags: list[str]) -> str | None:
     return None
 
 
+_REQUIRED_RULE_FIELDS = ("id", "impact", "description", "help", "helpUrl")
+
+
 def _parse_findings(
     page_result_id: int,
     rules: list[dict[str, Any]],
@@ -59,6 +62,10 @@ def _parse_findings(
     node_pairs: list[tuple[RuleFinding, NodeFinding]] = []
 
     for rule in rules:
+        missing = [f for f in _REQUIRED_RULE_FIELDS if f not in rule]
+        if missing:
+            rule_id = rule.get("id", "<unknown>")
+            raise InvalidAxePayloadError(f"Rule '{rule_id}' is missing required fields: {', '.join(missing)}")
         tags = rule.get("tags", [])
         rf = RuleFinding(
             page_result_id=page_result_id,
@@ -103,6 +110,16 @@ async def create_page_result(session: AsyncSession, scan_run_id: int, payload: d
     findings = payload["findings"]
     url = payload.get("testSubject", {}).get("fileName", "")
 
+    if not url:
+        raise InvalidAxePayloadError("Payload must contain a non-empty URL at 'testSubject.fileName'")
+
+    validated_sections: list[tuple[FindingType, list[dict[str, Any]]]] = []
+    for section, finding_type in [("violations", FindingType.VIOLATION), ("incomplete", FindingType.INCOMPLETE)]:
+        value = findings.get(section, [])
+        if not isinstance(value, list):
+            raise InvalidAxePayloadError(f"'findings.{section}' must be a list")
+        validated_sections.append((finding_type, value))
+
     page_result = PageResult(
         scan_run_id=scan_run_id,
         url=url,
@@ -116,11 +133,7 @@ async def create_page_result(session: AsyncSession, scan_run_id: int, payload: d
     all_rule_findings: list[RuleFinding] = []
     all_node_pairs: list[tuple[RuleFinding, NodeFinding]] = []
 
-    for section, finding_type in [
-        ("violations", FindingType.VIOLATION),
-        ("incomplete", FindingType.INCOMPLETE),
-    ]:
-        rules = findings.get(section, [])
+    for finding_type, rules in validated_sections:
         rule_findings, node_pairs = _parse_findings(page_result.id, rules, finding_type)
         all_rule_findings.extend(rule_findings)
         all_node_pairs.extend(node_pairs)

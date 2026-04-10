@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,3 +70,18 @@ async def make_scan_run_with_parents(
 ) -> ScanRun:
     app = await make_app_with_org_unit(db, org_name=org_name, app_name=app_name, slug=slug, brand=brand)
     return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)
+
+
+def make_axe_payload(
+    *,
+    url: str = "https://example.com",
+    violations: Any = None,
+    incomplete: Any = None,
+) -> dict[str, Any]:
+    findings: dict[str, Any] = {
+        "violations": violations if violations is not None else [],
+        "incomplete": incomplete if incomplete is not None else [],
+        "passes": [],
+        "inapplicable": [],
+    }
+    return {"testSubject": {"fileName": url}, "findings": findings}

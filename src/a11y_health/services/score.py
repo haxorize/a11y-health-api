@@ -54,18 +54,30 @@ def _worst_page_health(impacts: list[Impact]) -> PageHealth:
     return worst
 
 
-async def list_app_scores(session: AsyncSession, app_id: int) -> Sequence[ScoreSnapshot]:
+async def list_app_scores(
+    session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20
+) -> Sequence[ScoreSnapshot]:
     await app_service.get_app(session, app_id)
     result = await session.execute(
-        select(ScoreSnapshot).where(ScoreSnapshot.app_id == app_id).order_by(ScoreSnapshot.snapshot_at)
+        select(ScoreSnapshot)
+        .where(ScoreSnapshot.app_id == app_id)
+        .order_by(ScoreSnapshot.snapshot_at)
+        .offset(offset)
+        .limit(limit)
     )
     return result.scalars().all()
 
 
-async def list_org_unit_scores(session: AsyncSession, org_unit_id: int) -> Sequence[ScoreSnapshot]:
+async def list_org_unit_scores(
+    session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
+) -> Sequence[ScoreSnapshot]:
     await org_unit_service.get_org_unit(session, org_unit_id)
     result = await session.execute(
-        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id).order_by(ScoreSnapshot.snapshot_at)
+        select(ScoreSnapshot)
+        .where(ScoreSnapshot.org_unit_id == org_unit_id)
+        .order_by(ScoreSnapshot.snapshot_at)
+        .offset(offset)
+        .limit(limit)
     )
     return result.scalars().all()
 

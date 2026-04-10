@@ -32,8 +32,13 @@ async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
 
 
 @router.get("/{org_unit_id}/scores")
-async def list_org_unit_scores(db: DbSession, org_unit_id: int) -> list[ScoreSnapshotRead]:
-    snapshots = await score_service.list_org_unit_scores(db, org_unit_id)
+async def list_org_unit_scores(
+    db: DbSession,
+    org_unit_id: int,
+    offset: int = 0,
+    limit: int = Query(default=20, le=100),
+) -> list[ScoreSnapshotRead]:
+    snapshots = await score_service.list_org_unit_scores(db, org_unit_id, offset=offset, limit=limit)
     return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
 
 

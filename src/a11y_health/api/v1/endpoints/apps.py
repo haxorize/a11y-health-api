@@ -46,8 +46,13 @@ async def update_app(db: DbSession, app_id: int, data: AppUpdate) -> AppRead:
 
 
 @router.get("/{app_id}/scores")
-async def list_app_scores(db: DbSession, app_id: int) -> list[ScoreSnapshotRead]:
-    snapshots = await score_service.list_app_scores(db, app_id)
+async def list_app_scores(
+    db: DbSession,
+    app_id: int,
+    offset: int = 0,
+    limit: int = Query(default=20, le=100),
+) -> list[ScoreSnapshotRead]:
+    snapshots = await score_service.list_app_scores(db, app_id, offset=offset, limit=limit)
     return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
 
 

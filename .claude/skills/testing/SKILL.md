@@ -85,10 +85,10 @@ scan_run = await make_scan_run_with_parents(db_session, slug="my-app", status=Sc
 For building in-memory data structures (e.g., axe JSON payloads), use sync helpers that return plain dicts:
 
 ```python
-def make_violation(*, impact: str = "serious", rule_id: str = "color-contrast", ...) -> dict[str, Any]:
+def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
     return {"id": rule_id, "impact": impact, ...}
 
-def make_axe_payload(*, url: str = "https://example.com", violations: list | None = None, ...) -> dict[str, Any]:
+def make_axe_payload(*, url: str = "https://example.com", violations: Any = None, incomplete: Any = None) -> dict[str, Any]:
     return {"testSubject": {"fileName": url}, "findings": {"violations": violations or [], ...}}
 ```
 

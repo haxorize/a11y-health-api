@@ -28,6 +28,16 @@ Use `Mapped` type annotations on all columns for type checker compatibility.
 
 Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ensures Alembic autogenerate and the test conftest's `from a11y_health.models import *` discover all tables.
 
+## Table args
+
+Use a plain tuple for `__table_args__` — no trailing `{}` dict:
+```python
+__table_args__ = (
+    UniqueConstraint("slug", name=UQ_APP_SLUG),
+    Index("ix_app_org_unit_id", "org_unit_id"),
+)
+```
+
 ## Relationships
 
 Do not use `relationship()`. Use explicit FK columns only. This avoids lazy-load pitfalls with async sessions.

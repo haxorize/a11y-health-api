@@ -67,6 +67,7 @@ src/a11y_health/
 - Return ORM model instances (endpoint serializes via schema)
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations
+- Internal helpers shared across services go in `services/_<name>.py` (underscore prefix signals private/internal)
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
 - Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages

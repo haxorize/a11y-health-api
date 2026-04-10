@@ -3,7 +3,9 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.models.app import Brand
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
+from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import app as app_service
+from a11y_health.services import score as score_service
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 
@@ -41,6 +43,12 @@ async def get_app(db: DbSession, app_id: int) -> AppRead:
 async def update_app(db: DbSession, app_id: int, data: AppUpdate) -> AppRead:
     app = await app_service.update_app(db, app_id, data)
     return AppRead.model_validate(app)
+
+
+@router.get("/{app_id}/scores")
+async def list_app_scores(db: DbSession, app_id: int) -> list[ScoreSnapshotRead]:
+    snapshots = await score_service.list_app_scores(db, app_id)
+    return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
 
 
 @router.delete("/{app_id}", status_code=204)

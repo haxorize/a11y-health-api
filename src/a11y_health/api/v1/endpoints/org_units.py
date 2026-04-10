@@ -2,7 +2,9 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpdate
+from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import org_unit as org_unit_service
+from a11y_health.services import score as score_service
 
 router = APIRouter(prefix="/org-units", tags=["org-units"])
 
@@ -27,6 +29,12 @@ async def list_org_units(
 async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
     org_unit = await org_unit_service.get_org_unit(db, org_unit_id)
     return OrgUnitRead.model_validate(org_unit)
+
+
+@router.get("/{org_unit_id}/scores")
+async def list_org_unit_scores(db: DbSession, org_unit_id: int) -> list[ScoreSnapshotRead]:
+    snapshots = await score_service.list_org_unit_scores(db, org_unit_id)
+    return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
 
 
 @router.get("/{org_unit_id}/ancestors")

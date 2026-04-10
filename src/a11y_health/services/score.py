@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -10,6 +11,8 @@ from a11y_health.models.page_result import PageHealth, PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.services import app as app_service
+from a11y_health.services import org_unit as org_unit_service
 
 _IMPACT_TO_PAGE_HEALTH: dict[Impact, PageHealth] = {
     Impact.CRITICAL: PageHealth.CRITICAL,
@@ -49,6 +52,22 @@ def _worst_page_health(impacts: list[Impact]) -> PageHealth:
             if worst == PageHealth.CRITICAL:
                 break
     return worst
+
+
+async def list_app_scores(session: AsyncSession, app_id: int) -> Sequence[ScoreSnapshot]:
+    await app_service.get_app(session, app_id)
+    result = await session.execute(
+        select(ScoreSnapshot).where(ScoreSnapshot.app_id == app_id).order_by(ScoreSnapshot.snapshot_at)
+    )
+    return result.scalars().all()
+
+
+async def list_org_unit_scores(session: AsyncSession, org_unit_id: int) -> Sequence[ScoreSnapshot]:
+    await org_unit_service.get_org_unit(session, org_unit_id)
+    result = await session.execute(
+        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id).order_by(ScoreSnapshot.snapshot_at)
+    )
+    return result.scalars().all()
 
 
 async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:

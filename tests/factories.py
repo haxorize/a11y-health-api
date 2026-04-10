@@ -72,6 +72,27 @@ async def make_scan_run_with_parents(
     return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)
 
 
+def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
+    return {
+        "id": rule_id,
+        "impact": impact,
+        "description": f"{rule_id} desc",
+        "help": f"{rule_id} help",
+        "helpUrl": f"https://example.com/{rule_id}",
+        "tags": ["best-practice"],
+        "nodes": [
+            {
+                "html": "<div></div>",
+                "target": ["div"],
+                "impact": impact,
+                "any": [],
+                "all": [],
+                "none": [],
+            }
+        ],
+    }
+
+
 def make_axe_payload(
     *,
     url: str = "https://example.com",

@@ -25,7 +25,7 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - `NOT NULL` everywhere semantically required
 - Singular table names matching the resource (`scan`, `rule`, `page`)
 - PK column named `id` (not `<resource>_id`)
-- Every table gets `created_at` and `updated_at` timestamps:
+- Every mutable table gets `created_at` and `updated_at` timestamps. Omit on immutable child records that are always created and deleted with their parent (e.g., `rule_finding`, `node_finding`):
   ```python
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
   updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

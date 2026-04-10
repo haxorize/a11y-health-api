@@ -49,10 +49,9 @@ src/a11y_health/
 ## Schemas (Pydantic)
 
 - Use `Literal` types for constrained string values
-- Export public models via `__all__`
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
-- Do not use `RootModel` or `...` (Ellipsis) for required fields
+- Do not use `RootModel` for wrapping single values
 
 ## Services
 

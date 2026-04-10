@@ -87,7 +87,7 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 ## Error responses
 
 - Services raise domain exceptions (defined in `core/exceptions.py`)
-- `main.py` registers `@app.exception_handler(...)` for each domain exception, translating to the appropriate HTTP status and JSON body
+- `main.py` maps exception classes to HTTP status codes in `_EXCEPTION_STATUS_CODES` and registers handlers in a loop — add new domain exceptions there
 - Endpoints never catch or raise `HTTPException` directly
 - Let FastAPI's built-in 422 handling cover validation errors
 - Use 409 for domain conflicts, 404 for missing resources

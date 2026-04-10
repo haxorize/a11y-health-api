@@ -55,6 +55,8 @@ After all tests pass, review the implementation before calling the task done:
 
 Run `uv run pytest` after each refactor step. Never refactor while red.
 
+Then run `/simplify` to catch any remaining issues with reuse, quality, or efficiency. Fix anything it finds and re-run `uv run pytest`.
+
 ### 5. Migration
 
 If the task added or changed any SQLAlchemy models, generate an Alembic migration:

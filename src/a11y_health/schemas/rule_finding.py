@@ -1,8 +1,10 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
 
 from a11y_health.models.rule_finding import FindingType, Impact
 
-__all__ = ["RuleFindingRead"]
+__all__ = ["NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
 
 
 class RuleFindingRead(BaseModel):
@@ -20,3 +22,18 @@ class RuleFindingRead(BaseModel):
     wcag_criterion: str | None
     classifications: list[dict[str, str]]
     tags: list[str]
+
+
+class NodeFindingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    html: str
+    target: list[str]
+    impact: Impact
+    failure_summary: str | None
+    checks: dict[str, Any]
+
+
+class RuleFindingDetail(RuleFindingRead):
+    node_findings: list[NodeFindingRead] = []

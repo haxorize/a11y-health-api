@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.models.rule_finding import Impact
-from a11y_health.schemas.rule_finding import RuleFindingRead
+from a11y_health.schemas.rule_finding import NodeFindingRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 
 Classification = Literal[
@@ -42,3 +42,15 @@ async def list_findings(
         limit=limit,
     )
     return [RuleFindingRead.model_validate(f) for f in findings]
+
+
+@router.get("/{finding_id}")
+async def get_finding(
+    db: DbSession,
+    scan_run_id: int,
+    finding_id: int,
+) -> RuleFindingDetail:
+    finding, node_findings = await rule_finding_service.get_finding(db, scan_run_id, finding_id)
+    detail = RuleFindingDetail.model_validate(finding)
+    detail.node_findings = [NodeFindingRead.model_validate(nf) for nf in node_findings]
+    return detail

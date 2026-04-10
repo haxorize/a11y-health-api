@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App, Brand
+from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
@@ -153,6 +154,29 @@ async def make_rule_finding(
     db.add(rf)
     await db.flush()
     return rf
+
+
+async def make_node_finding(
+    db: AsyncSession,
+    *,
+    rule_finding_id: int,
+    html: str = "<div></div>",
+    target: list[str] | None = None,
+    impact: Impact = Impact.SERIOUS,
+    failure_summary: str | None = "Fix this element",
+    checks: dict[str, Any] | None = None,
+) -> NodeFinding:
+    nf = NodeFinding(
+        rule_finding_id=rule_finding_id,
+        html=html,
+        target=target or ["div"],
+        impact=impact,
+        failure_summary=failure_summary,
+        checks=checks or {"any": [], "all": [], "none": []},
+    )
+    db.add(nf)
+    await db.flush()
+    return nf
 
 
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:

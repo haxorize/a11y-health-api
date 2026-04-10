@@ -1,6 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
+from a11y_health.core.exceptions import NotFoundError
+from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import Impact, RuleFinding
 from a11y_health.services._tag_parsing import VALID_CLASSIFICATIONS, parse_wcag_tag
@@ -48,3 +51,35 @@ async def list_findings(
     stmt = stmt.order_by(RuleFinding.id).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+_RESOURCE = "Finding"
+
+
+async def get_finding(
+    session: AsyncSession,
+    scan_run_id: int,
+    finding_id: int,
+) -> tuple[RuleFinding, list[NodeFinding]]:
+    await get_scan_run(session, scan_run_id)
+
+    stmt = (
+        select(RuleFinding)
+        .join(PageResult, RuleFinding.page_result_id == PageResult.id)
+        .where(PageResult.scan_run_id == scan_run_id, RuleFinding.id == finding_id)
+    )
+    result = await session.execute(stmt)
+    finding = result.scalar_one_or_none()
+    if finding is None:
+        raise NotFoundError(_RESOURCE, finding_id)
+
+    nodes_stmt = (
+        select(NodeFinding)
+        .where(NodeFinding.rule_finding_id == finding_id)
+        .options(undefer(NodeFinding.checks))
+        .order_by(NodeFinding.id)
+    )
+    nodes_result = await session.execute(nodes_stmt)
+    node_findings = list(nodes_result.scalars().all())
+
+    return finding, node_findings

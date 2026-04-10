@@ -2,7 +2,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.rule_finding import Impact
-from tests.factories import make_page_result, make_rule_finding, make_scan_run_with_parents
+from tests.factories import (
+    make_node_finding,
+    make_page_result,
+    make_rule_finding,
+    make_scan_run_with_parents,
+)
 
 
 async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -143,3 +148,55 @@ async def test_pagination(db_client: AsyncClient, db_session: AsyncSession) -> N
     assert len(r2.json()) == 1
     assert r1.json()[0]["rule_id"] == "rule-0"
     assert r2.json()[0]["rule_id"] == "rule-2"
+
+
+async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    finding = await make_rule_finding(db_session, page_result_id=page.id)
+    node = await make_node_finding(
+        db_session,
+        rule_finding_id=finding.id,
+        html="<span>bad</span>",
+        target=[".main > span"],
+        failure_summary="Insufficient contrast",
+        checks={"any": [{"id": "color-contrast", "data": {}, "message": "low ratio"}], "all": [], "none": []},
+    )
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/{finding.id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == finding.id
+    assert data["rule_id"] == "color-contrast"
+    assert len(data["node_findings"]) == 1
+    nf = data["node_findings"][0]
+    assert nf["id"] == node.id
+    assert nf["html"] == "<span>bad</span>"
+    assert nf["target"] == [".main > span"]
+    assert nf["impact"] == "serious"
+    assert nf["failure_summary"] == "Insufficient contrast"
+    assert nf["checks"] == {
+        "any": [{"id": "color-contrast", "data": {}, "message": "low ratio"}],
+        "all": [],
+        "none": [],
+    }
+
+
+async def test_get_finding_not_found(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/999")
+
+    assert response.status_code == 404
+
+
+async def test_get_finding_wrong_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run_1 = await make_scan_run_with_parents(db_session)
+    scan_run_2 = await make_scan_run_with_parents(db_session, slug="other-app")
+    page = await make_page_result(db_session, scan_run_id=scan_run_1.id)
+    finding = await make_rule_finding(db_session, page_result_id=page.id)
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run_2.id}/findings/{finding.id}")
+
+    assert response.status_code == 404

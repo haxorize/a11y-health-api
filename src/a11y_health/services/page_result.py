@@ -7,31 +7,20 @@ from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
+from a11y_health.services._tag_parsing import parse_wcag_tag
 from a11y_health.services.scan_run import assert_scan_run_pending, get_scan_run
 
-_WCAG_VERSION_LEVEL = re.compile(r"^wcag2(1|2)?a{1,2}$")
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CAT_TAG = re.compile(r"^cat\.(.+)$")
 
 
 def _extract_classifications(tags: list[str]) -> list[dict[str, str]]:
-    classifications: list[dict[str, str]] = []
+    results: list[dict[str, str]] = []
     for tag in tags:
-        if tag == "best-practice":
-            classifications.append({"standard": "best-practice"})
-            continue
-        m = _WCAG_VERSION_LEVEL.match(tag)
-        if m:
-            version_suffix = m.group(1)
-            if version_suffix == "2":
-                version = "2.2"
-            elif version_suffix == "1":
-                version = "2.1"
-            else:
-                version = "2.0"
-            level = "AA" if tag.endswith("aa") else "A"
-            classifications.append({"standard": "wcag", "version": version, "level": level})
-    return classifications
+        parsed = parse_wcag_tag(tag)
+        if parsed is not None:
+            results.append(parsed)
+    return results
 
 
 def _extract_wcag_criterion(tags: list[str]) -> str | None:

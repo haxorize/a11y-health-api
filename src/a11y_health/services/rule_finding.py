@@ -1,37 +1,19 @@
-import re
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import Impact, RuleFinding
+from a11y_health.services._tag_parsing import VALID_CLASSIFICATIONS, parse_wcag_tag
 from a11y_health.services.scan_run import get_scan_run
-
-_CLASSIFICATION_PATTERN = re.compile(r"^wcag2([12])?a{1,2}$")
-
-_VALID_CLASSIFICATIONS = {
-    "wcag2a",
-    "wcag2aa",
-    "wcag21a",
-    "wcag21aa",
-    "wcag22a",
-    "wcag22aa",
-    "best-practice",
-}
-
-_VERSION_MAP = {None: "2.0", "1": "2.1", "2": "2.2"}
 
 
 def _parse_classification(value: str) -> dict[str, str]:
-    if value not in _VALID_CLASSIFICATIONS:
+    if value not in VALID_CLASSIFICATIONS:
         raise ValueError(f"Invalid classification: {value}")
-    if value == "best-practice":
-        return {"standard": "best-practice"}
-    m = _CLASSIFICATION_PATTERN.match(value)
-    assert m  # guaranteed by _VALID_CLASSIFICATIONS check
-    version = _VERSION_MAP[m.group(1)]
-    level = "AA" if value.endswith("aa") else "A"
-    return {"standard": "wcag", "version": version, "level": level}
+    parsed = parse_wcag_tag(value)
+    if parsed is None:
+        raise ValueError(f"Invalid classification: {value}")
+    return parsed
 
 
 async def list_findings(

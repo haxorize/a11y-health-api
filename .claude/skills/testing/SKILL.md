@@ -82,6 +82,18 @@ For resources with required parent FK chains, add `make_<resource>_with_parents`
 scan_run = await make_scan_run_with_parents(db_session, slug="my-app", status=ScanRunStatus.PENDING)
 ```
 
+For building in-memory data structures (e.g., axe JSON payloads), use sync helpers that return plain dicts:
+
+```python
+def make_violation(*, impact: str = "serious", rule_id: str = "color-contrast", ...) -> dict[str, Any]:
+    return {"id": rule_id, "impact": impact, ...}
+
+def make_axe_payload(*, url: str = "https://example.com", violations: list | None = None, ...) -> dict[str, Any]:
+    return {"testSubject": {"fileName": url}, "findings": {"violations": violations or [], ...}}
+```
+
+These don't touch the DB and don't need `async` or `flush()`.
+
 ## What to test at which layer
 
 - **Endpoints**: HTTP status codes, response shape, auth/permission checks

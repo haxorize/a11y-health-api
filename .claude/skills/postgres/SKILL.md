@@ -12,16 +12,18 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times
 - **Money/precision**: `NUMERIC(p,s)`, never floats
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
-- **Enums**: `CREATE TYPE ... AS ENUM` for small stable sets; `TEXT + CHECK` for evolving values. In SQLAlchemy, always pass `values_callable` so enum *values* (not names) are stored:
+- **Enums**: `CREATE TYPE ... AS ENUM` for small stable sets; `TEXT + CHECK` for evolving values. In SQLAlchemy, always pass `values_callable=enum_values` (from `core.database`) so enum *values* (not names) are stored:
   ```python
+  from a11y_health.core.database import Base, TimestampMixin, enum_values
+
   brand: Mapped[Brand] = mapped_column(
-      Enum(Brand, name="brand_type", values_callable=lambda e: [m.value for m in e]),
+      Enum(Brand, name="brand_type", values_callable=enum_values),
       nullable=False,
   )
   ```
   When reusing an enum type already created by another model, add `create_type=False`:
   ```python
-  Enum(Impact, name="impact", create_type=False, values_callable=lambda e: [m.value for m in e])
+  Enum(Impact, name="impact", create_type=False, values_callable=enum_values)
   ```
 - **JSON**: `JSONB` with GIN index; only for optional/semi-structured attributes
 

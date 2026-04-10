@@ -11,11 +11,15 @@ class ScoreSnapshot(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_score_snapshot_app_id", "app_id"),
         Index("ix_score_snapshot_scan_run_id", "scan_run_id"),
+        Index("ix_score_snapshot_org_unit_id", "org_unit_id"),
     )
 
-    app_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="RESTRICT"), nullable=False)
-    scan_run_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("scan_run.id", ondelete="RESTRICT"), nullable=False, unique=True
+    app_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="RESTRICT"), nullable=True)
+    scan_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("scan_run.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=True
     )
     score: Mapped[float] = mapped_column(Float, nullable=False)
     total_issues: Mapped[int] = mapped_column(Integer, nullable=False)

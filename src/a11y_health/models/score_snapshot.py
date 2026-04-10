@@ -13,7 +13,6 @@ class ScoreSnapshot(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("scan_run_id", name=UQ_SCORE_SNAPSHOT_SCAN_RUN_ID),
         Index("ix_score_snapshot_app_id", "app_id"),
-        Index("ix_score_snapshot_scan_run_id", "scan_run_id"),
         Index("ix_score_snapshot_org_unit_id", "org_unit_id"),
     )
 

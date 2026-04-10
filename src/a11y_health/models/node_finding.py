@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from a11y_health.core.database import Base, enum_values
 from a11y_health.models.rule_finding import Impact
@@ -22,4 +22,4 @@ class NodeFinding(Base):
         nullable=False,
     )
     failure_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    checks: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    checks: Mapped[dict[str, Any]] = deferred(mapped_column(JSONB, nullable=False))

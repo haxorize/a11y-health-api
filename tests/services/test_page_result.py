@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.node_finding import NodeFinding
@@ -47,7 +48,7 @@ async def test_node_findings_stored(db_session: AsyncSession, page_result: PageR
     violation = result.scalars().first()
     assert violation is not None
 
-    stmt = select(NodeFinding).where(NodeFinding.rule_finding_id == violation.id)
+    stmt = select(NodeFinding).options(undefer(NodeFinding.checks)).where(NodeFinding.rule_finding_id == violation.id)
     result = await db_session.execute(stmt)
     nodes = result.scalars().all()
 

@@ -77,21 +77,22 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
             pages_with_critical_issues += 1
 
     page_healths = [p.page_health for p in pages]
-    assert all(h is not None for h in page_healths)
     weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
-    score = weighted_sum / total_pages if total_pages > 0 else 0.0
+
+    def _ratio(numerator: float) -> float:
+        return numerator / total_pages if total_pages > 0 else 0.0
 
     snapshot = ScoreSnapshot(
         app_id=scan_run.app_id,
         scan_run_id=scan_run.id,
-        score=score,
+        score=_ratio(weighted_sum),
         total_issues=total_issues,
         pages_with_issues=pages_with_issues,
         pages_with_critical_issues=pages_with_critical_issues,
         total_pages=total_pages,
-        avg_issues_per_page=total_issues / total_pages if total_pages > 0 else 0.0,
-        pct_pages_with_issues=pages_with_issues / total_pages if total_pages > 0 else 0.0,
-        pct_pages_with_critical_issues=pages_with_critical_issues / total_pages if total_pages > 0 else 0.0,
+        avg_issues_per_page=_ratio(total_issues),
+        pct_pages_with_issues=_ratio(pages_with_issues),
+        pct_pages_with_critical_issues=_ratio(pages_with_critical_issues),
         snapshot_at=scan_run.scanned_at,
     )
     session.add(snapshot)

@@ -50,6 +50,11 @@ def _extract_category(tags: list[str]) -> str | None:
     return None
 
 
+_AXE_SECTION_FINDING_TYPE: dict[str, FindingType] = {
+    "violations": FindingType.VIOLATION,
+    "incomplete": FindingType.INCOMPLETE,
+}
+
 _REQUIRED_RULE_FIELDS = ("id", "impact", "description", "help", "helpUrl")
 
 
@@ -114,7 +119,7 @@ async def create_page_result(session: AsyncSession, scan_run_id: int, payload: d
         raise InvalidAxePayloadError("Payload must contain a non-empty URL at 'testSubject.fileName'")
 
     validated_sections: list[tuple[FindingType, list[dict[str, Any]]]] = []
-    for section, finding_type in [("violations", FindingType.VIOLATION), ("incomplete", FindingType.INCOMPLETE)]:
+    for section, finding_type in _AXE_SECTION_FINDING_TYPE.items():
         value = findings.get(section, [])
         if not isinstance(value, list):
             raise InvalidAxePayloadError(f"'findings.{section}' must be a list")

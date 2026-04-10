@@ -47,7 +47,7 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
         raise InvalidStatusTransitionError(_RESOURCE, scan_run_id, scan_run.status, data.status)
     scan_run.status = data.status
     await session.flush()
-    if scan_run.status == ScanRunStatus.COMPLETED:
+    if data.status == ScanRunStatus.COMPLETED:
         await compute_scores(session, scan_run)
     await session.refresh(scan_run)
     return scan_run

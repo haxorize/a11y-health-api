@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Identity, Index, Text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,7 +12,6 @@ class NodeFinding(Base):
     __tablename__ = "node_finding"
     __table_args__ = (Index("ix_node_finding_rule_finding_id", "rule_finding_id"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     rule_finding_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("rule_finding.id", ondelete="CASCADE"), nullable=False
     )

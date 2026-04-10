@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Identity, Index, Text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,7 +23,6 @@ class RuleFinding(Base):
     __tablename__ = "rule_finding"
     __table_args__ = (Index("ix_rule_finding_page_result_id", "page_result_id"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     page_result_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("page_result.id", ondelete="CASCADE"), nullable=False
     )

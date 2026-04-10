@@ -132,7 +132,7 @@ async def create_page_result(session: AsyncSession, scan_run_id: int, payload: d
     if all_node_pairs:
         for rf, nf in all_node_pairs:
             nf.rule_finding_id = rf.id
-        session.add_all([nf for _, nf in all_node_pairs])
+        session.add_all(nf for _, nf in all_node_pairs)
         await session.flush()
 
     await session.refresh(page_result)

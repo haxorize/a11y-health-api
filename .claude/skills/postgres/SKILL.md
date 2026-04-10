@@ -73,16 +73,15 @@ alembic downgrade -1                                  # roll back one
 
 ## SQLAlchemy model mapping
 
-Models in `src/a11y_health/models/` inherit from `core.database.Base`:
+Models in `src/a11y_health/models/` inherit from `core.database.Base`. `Base` provides `id` (BIGINT IDENTITY PK). Mutable tables also inherit `TimestampMixin` for `created_at`/`updated_at`:
 
 ```python
-from sqlalchemy import BigInteger, Identity, Text
+from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
-from a11y_health.core.database import Base
+from a11y_health.core.database import Base, TimestampMixin
 
-class Scan(Base):
+class Scan(TimestampMixin, Base):
     __tablename__ = "scan"
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     url: Mapped[str] = mapped_column(Text, nullable=False)
 ```
 

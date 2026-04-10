@@ -1,5 +1,6 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,34 +45,24 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(NotFoundError)
-async def not_found_handler(_request: Request, exc: NotFoundError) -> JSONResponse:
-    return JSONResponse(status_code=404, content={"detail": str(exc)})
+_EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
+    NotFoundError: 404,
+    CircularReferenceError: 409,
+    DuplicateSlugError: 409,
+    InvalidStatusTransitionError: 409,
+    ScanRunCompletedError: 409,
+    InvalidAxePayloadError: 422,
+}
 
+for _exc_cls, _status_code in _EXCEPTION_STATUS_CODES.items():
 
-@app.exception_handler(CircularReferenceError)
-async def circular_reference_handler(_request: Request, exc: CircularReferenceError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
+    def _make_handler(status: int) -> Callable[..., Coroutine[Any, Any, JSONResponse]]:
+        async def handler(_request: Request, exc: Exception) -> JSONResponse:
+            return JSONResponse(status_code=status, content={"detail": str(exc)})
 
+        return handler
 
-@app.exception_handler(DuplicateSlugError)
-async def duplicate_slug_handler(_request: Request, exc: DuplicateSlugError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-
-@app.exception_handler(InvalidStatusTransitionError)
-async def invalid_status_transition_handler(_request: Request, exc: InvalidStatusTransitionError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-
-@app.exception_handler(ScanRunCompletedError)
-async def scan_run_completed_handler(_request: Request, exc: ScanRunCompletedError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-
-@app.exception_handler(InvalidAxePayloadError)
-async def invalid_axe_payload_handler(_request: Request, exc: InvalidAxePayloadError) -> JSONResponse:
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
+    app.exception_handler(_exc_cls)(_make_handler(_status_code))
 
 
 app.include_router(api_router)

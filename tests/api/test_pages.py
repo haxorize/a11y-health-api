@@ -4,15 +4,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.scan_run import ScanRunStatus
-from tests.factories import make_app, make_org_unit, make_scan_run
+from tests.factories import make_scan_run_with_parents
 
 
 async def test_create_page_result(
     db_client: AsyncClient, db_session: AsyncSession, axe_payload: dict[str, Any]
 ) -> None:
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, org_unit_id=org_unit.id)
-    scan_run = await make_scan_run(db_session, app_id=app.id)
+    scan_run = await make_scan_run_with_parents(db_session)
 
     response = await db_client.post(
         f"/api/v1/scan-runs/{scan_run.id}/pages",
@@ -33,9 +31,7 @@ async def test_create_page_result(
 async def test_reject_upload_on_completed_scan_run(
     db_client: AsyncClient, db_session: AsyncSession, axe_payload: dict[str, Any]
 ) -> None:
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, org_unit_id=org_unit.id)
-    scan_run = await make_scan_run(db_session, app_id=app.id, status=ScanRunStatus.COMPLETED)
+    scan_run = await make_scan_run_with_parents(db_session, status=ScanRunStatus.COMPLETED)
 
     response = await db_client.post(
         f"/api/v1/scan-runs/{scan_run.id}/pages",
@@ -45,9 +41,7 @@ async def test_reject_upload_on_completed_scan_run(
 
 
 async def test_reject_malformed_json(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, org_unit_id=org_unit.id)
-    scan_run = await make_scan_run(db_session, app_id=app.id)
+    scan_run = await make_scan_run_with_parents(db_session)
 
     response = await db_client.post(
         f"/api/v1/scan-runs/{scan_run.id}/pages",
@@ -57,9 +51,7 @@ async def test_reject_malformed_json(db_client: AsyncClient, db_session: AsyncSe
 
 
 async def test_reject_missing_findings_key(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, org_unit_id=org_unit.id)
-    scan_run = await make_scan_run(db_session, app_id=app.id)
+    scan_run = await make_scan_run_with_parents(db_session)
 
     response = await db_client.post(
         f"/api/v1/scan-runs/{scan_run.id}/pages",

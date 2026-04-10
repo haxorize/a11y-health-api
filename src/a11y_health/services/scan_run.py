@@ -43,7 +43,7 @@ _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {
 async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRun:
     scan_run = await get_scan_run(session, scan_run_id)
     if data.status not in _VALID_TRANSITIONS[scan_run.status]:
-        raise InvalidStatusTransitionError(_RESOURCE, scan_run_id, scan_run.status.value, data.status.value)
+        raise InvalidStatusTransitionError(_RESOURCE, scan_run_id, scan_run.status, data.status)
     scan_run.status = data.status
     await session.flush()
     await session.refresh(scan_run)

@@ -8,14 +8,12 @@ from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
 from a11y_health.services.page_result import create_page_result
-from tests.factories import make_app, make_org_unit, make_scan_run
+from tests.factories import make_scan_run_with_parents
 
 
 @pytest.fixture
 async def page_result(db_session: AsyncSession, axe_payload: dict[str, Any]) -> PageResult:
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, org_unit_id=org_unit.id)
-    scan_run = await make_scan_run(db_session, app_id=app.id)
+    scan_run = await make_scan_run_with_parents(db_session)
     return await create_page_result(db_session, scan_run.id, axe_payload)
 
 

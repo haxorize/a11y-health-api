@@ -43,3 +43,29 @@ async def make_scan_run(
     db.add(scan_run)
     await db.flush()
     return scan_run
+
+
+async def make_app_with_org_unit(
+    db: AsyncSession,
+    *,
+    org_name: str = "Test Org",
+    app_name: str = "Test App",
+    slug: str = "test-app",
+    brand: Brand = Brand.HUMANA,
+) -> App:
+    org_unit = await make_org_unit(db, name=org_name)
+    return await make_app(db, name=app_name, slug=slug, brand=brand, org_unit_id=org_unit.id)
+
+
+async def make_scan_run_with_parents(
+    db: AsyncSession,
+    *,
+    org_name: str = "Test Org",
+    app_name: str = "Test App",
+    slug: str = "test-app",
+    brand: Brand = Brand.HUMANA,
+    status: ScanRunStatus = ScanRunStatus.PENDING,
+    scanned_at: datetime | None = None,
+) -> ScanRun:
+    app = await make_app_with_org_unit(db, org_name=org_name, app_name=app_name, slug=slug, brand=brand)
+    return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)

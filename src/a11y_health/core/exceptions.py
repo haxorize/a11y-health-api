@@ -1,3 +1,6 @@
+import enum
+
+
 class NotFoundError(Exception):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
@@ -20,12 +23,14 @@ class DuplicateSlugError(Exception):
 
 
 class InvalidStatusTransitionError(Exception):
-    def __init__(self, resource: str, resource_id: object, current_status: str, target_status: str) -> None:
+    def __init__(self, resource: str, resource_id: object, current_status: enum.Enum, target_status: enum.Enum) -> None:
         self.resource = resource
         self.resource_id = resource_id
         self.current_status = current_status
         self.target_status = target_status
-        super().__init__(f"{resource} {resource_id} cannot transition from {current_status} to {target_status}")
+        super().__init__(
+            f"{resource} {resource_id} cannot transition from {current_status.value} to {target_status.value}"
+        )
 
 
 class ScanRunCompletedError(Exception):

@@ -1,0 +1,44 @@
+from typing import Literal
+
+from fastapi import APIRouter, Query
+
+from a11y_health.api.deps import DbSession
+from a11y_health.models.rule_finding import Impact
+from a11y_health.schemas.rule_finding import RuleFindingRead
+from a11y_health.services import rule_finding as rule_finding_service
+
+Classification = Literal[
+    "wcag2a",
+    "wcag2aa",
+    "wcag21a",
+    "wcag21aa",
+    "wcag22a",
+    "wcag22aa",
+    "best-practice",
+]
+
+router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
+
+
+@router.get("")
+async def list_findings(
+    db: DbSession,
+    scan_run_id: int,
+    impact: Impact | None = None,
+    category: str | None = None,
+    wcag_criterion: str | None = None,
+    classification: Classification | None = None,
+    offset: int = 0,
+    limit: int = Query(default=20, le=100),
+) -> list[RuleFindingRead]:
+    findings = await rule_finding_service.list_findings(
+        db,
+        scan_run_id,
+        impact=impact,
+        category=category,
+        wcag_criterion=wcag_criterion,
+        classification=classification,
+        offset=offset,
+        limit=limit,
+    )
+    return [RuleFindingRead.model_validate(f) for f in findings]

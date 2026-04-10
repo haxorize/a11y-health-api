@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from a11y_health.api.v1.endpoints import apps, health, org_units, pages, scan_runs
+from a11y_health.api.v1.endpoints import apps, findings, health, org_units, pages, scan_runs
 from a11y_health.config import settings
 
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -10,3 +10,4 @@ api_router.include_router(apps.router)
 api_router.include_router(scan_runs.app_router)
 api_router.include_router(scan_runs.router)
 api_router.include_router(pages.router)
+api_router.include_router(findings.router)

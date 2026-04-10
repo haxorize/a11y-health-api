@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App, Brand
 from a11y_health.models.org_unit import OrgUnit
+from a11y_health.models.page_result import PageResult
+from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
 from a11y_health.models.scan_run import ScanRun, ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
 
@@ -103,6 +105,54 @@ async def make_score_snapshot(
     db.add(snapshot)
     await db.flush()
     return snapshot
+
+
+async def make_page_result(
+    db: AsyncSession,
+    *,
+    scan_run_id: int,
+    url: str = "https://example.com",
+) -> PageResult:
+    page_result = PageResult(
+        scan_run_id=scan_run_id,
+        url=url,
+        raw_json={},
+        passes_count=0,
+        inapplicable_count=0,
+    )
+    db.add(page_result)
+    await db.flush()
+    return page_result
+
+
+async def make_rule_finding(
+    db: AsyncSession,
+    *,
+    page_result_id: int,
+    rule_id: str = "color-contrast",
+    finding_type: FindingType = FindingType.VIOLATION,
+    impact: Impact = Impact.SERIOUS,
+    category: str | None = "color",
+    wcag_criterion: str | None = "1.4.3",
+    classifications: list[dict[str, str]] | None = None,
+    tags: list[str] | None = None,
+) -> RuleFinding:
+    rf = RuleFinding(
+        page_result_id=page_result_id,
+        rule_id=rule_id,
+        type=finding_type,
+        impact=impact,
+        description=f"{rule_id} description",
+        help=f"{rule_id} help",
+        help_url=f"https://example.com/{rule_id}",
+        category=category,
+        wcag_criterion=wcag_criterion,
+        classifications=classifications or [{"standard": "wcag", "version": "2.0", "level": "AA"}],
+        tags=tags or ["wcag2aa", "cat.color"],
+    )
+    db.add(rf)
+    await db.flush()
+    return rf
 
 
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:

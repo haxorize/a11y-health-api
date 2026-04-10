@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["app_id"], ["app.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["scan_run_id"], ["scan_run.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("scan_run_id"),
+        sa.UniqueConstraint("scan_run_id", name="uq_score_snapshot_scan_run_id"),
     )
     op.create_index("ix_score_snapshot_app_id", "score_snapshot", ["app_id"], unique=False)
     op.create_index("ix_score_snapshot_scan_run_id", "score_snapshot", ["scan_run_id"], unique=False)

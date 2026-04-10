@@ -10,7 +10,8 @@ description: Test-driven development workflow using vertical slices. Use when im
 Tests verify behavior through public interfaces, not implementation details. One test at a time, one implementation at a time. Never write all tests first then all code — that's horizontal slicing.
 
 See the `testing` skill for project-specific test conventions, fixtures, and patterns.
-See the `fastapi` skill for endpoint, model, schema, and service conventions.
+See the `fastapi` skill for endpoint, schema, and service conventions.
+See the `sqlalchemy` skill for ORM model conventions.
 See the `postgres` skill for schema design, migration, and indexing conventions.
 
 ## Workflow
@@ -62,13 +63,13 @@ Then run `/simplify` to catch any remaining issues with reuse, quality, or effic
 If the task added or changed any SQLAlchemy models, generate an Alembic migration:
 
 ```bash
-alembic revision --autogenerate -m "add <resource> table"
+uv run alembic revision --autogenerate -m "add <resource> table"
 ```
 
 Review the generated migration — remove false-positive detections. Test the roundtrip:
 
 ```bash
-alembic downgrade base && alembic upgrade head
+uv run alembic downgrade base && uv run alembic upgrade head
 ```
 
 ### 6. Lint & typecheck

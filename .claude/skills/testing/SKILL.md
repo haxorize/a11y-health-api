@@ -5,17 +5,6 @@ description: Test conventions for this project. Use when writing tests, adding f
 
 # Testing Conventions
 
-## Running tests
-
-```bash
-uv run pytest              # all tests
-uv run pytest tests/api/   # specific directory
-uv run pytest -x           # stop on first failure
-uv run pytest --cov=a11y_health  # with coverage
-```
-
-Config in `pyproject.toml`: `testpaths = ["tests"]`, `asyncio_mode = "auto"`, `asyncio_default_fixture_loop_scope = "session"`, `asyncio_default_test_loop_scope = "session"`.
-
 ## Test layout
 
 Mirror the app structure:
@@ -98,3 +87,26 @@ scan_run = await make_scan_run_with_parents(db_session, slug="my-app", status=Sc
 - **Endpoints**: HTTP status codes, response shape, auth/permission checks
 - **Services**: business logic, edge cases, error conditions
 - **Both**: use endpoint tests as integration tests; service tests for focused unit coverage
+
+## Class-based test grouping
+
+Group related tests into a class when testing facets of a single concept (e.g., scoring logic). No `__init__`, no fixtures on `self` — just a namespace:
+
+```python
+class TestPageHealthCategorization:
+    async def test_critical_impact_lowers_health(self, db_session: AsyncSession) -> None:
+        ...
+
+    async def test_minor_impact_stays_healthy(self, db_session: AsyncSession) -> None:
+        ...
+```
+
+Use flat `async def test_*` functions for standalone cases that don't benefit from grouping.
+
+## Float comparisons
+
+Use `pytest.approx` for float assertions (scores, percentages):
+```python
+from pytest import approx
+assert score == approx(0.85)
+```

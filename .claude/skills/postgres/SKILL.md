@@ -49,15 +49,6 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
 - **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`). Export unique constraint names as module-level constants (e.g., `UQ_APP_SLUG`) for matching in `IntegrityError` handlers
 
-## Indexing
-
-- B-tree (default): equality, range, ORDER BY
-- GIN: JSONB containment/existence, arrays, full-text search
-- GiST: ranges, geometry, exclusion constraints
-- Partial indexes for hot subsets (`WHERE status = 'active'`)
-- Expression indexes for computed lookups (`LOWER(email)`)
-- Composite indexes: most selective column first; leftmost-prefix rule applies
-
 ## Alembic migration conventions
 
 Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
@@ -81,18 +72,3 @@ alembic downgrade -1                                  # roll back one
 - Data migrations use `op.execute()` with raw SQL, not ORM models
 - Test with `alembic downgrade base && alembic upgrade head`
 
-## SQLAlchemy model mapping
-
-Models in `src/a11y_health/models/` inherit from `core.database.Base`. `Base` provides `id` (BIGINT IDENTITY PK). Mutable tables also inherit `TimestampMixin` for `created_at`/`updated_at`:
-
-```python
-from sqlalchemy import Text
-from sqlalchemy.orm import Mapped, mapped_column
-from a11y_health.core.database import Base, TimestampMixin
-
-class Scan(TimestampMixin, Base):
-    __tablename__ = "scan"
-    url: Mapped[str] = mapped_column(Text, nullable=False)
-```
-
-Use `Mapped` type annotations on all columns for type checker compatibility.

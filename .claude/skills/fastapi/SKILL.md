@@ -1,6 +1,6 @@
 ---
 name: fastapi
-description: Project conventions for this FastAPI + async SQLAlchemy API. Use when creating endpoints, models, schemas, services, or configuring the app.
+description: Project conventions for this FastAPI API. Use when creating endpoints, schemas, services, or configuring the app.
 ---
 
 # FastAPI Project Conventions
@@ -37,6 +37,12 @@ src/a11y_health/
 ## Endpoints
 
 - One `APIRouter(prefix="/resource-name", tags=[...])` per resource module
+- For sub-resources scoped under a parent, export a second router with a nested prefix and register both in `router.py`:
+  ```python
+  # endpoints/scan_runs.py
+  app_router = APIRouter(prefix="/apps/{app_id}/scan-runs", tags=["scan-runs"])
+  router = APIRouter(prefix="/scan-runs", tags=["scan-runs"])
+  ```
 - Prefer `Annotated` type aliases for dependency injection:
   ```python
   DbSession = Annotated[AsyncSession, Depends(get_db)]
@@ -53,6 +59,7 @@ src/a11y_health/
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
 - Do not use `RootModel` for wrapping single values
+- Omit deferred columns from Read schemas (see sqlalchemy skill)
 
 ## Services
 
@@ -94,10 +101,6 @@ async def list_items(
     limit: int = Query(default=20, le=100),
 ) -> list[ItemRead]: ...
 ```
-
-## Models package
-
-Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ensures Alembic autogenerate and the test conftest's `from a11y_health.models import *` discover all tables.
 
 ## Error responses
 

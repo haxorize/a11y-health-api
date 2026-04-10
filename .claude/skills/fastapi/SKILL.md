@@ -67,7 +67,7 @@ src/a11y_health/
 - Return ORM model instances (endpoint serializes via schema)
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations
-- Internal helpers shared across services go in `services/_<name>.py` (underscore prefix signals private/internal)
+- Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too (e.g., `Classification` from `_tag_parsing.py`)
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
 - Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages
@@ -108,8 +108,8 @@ async def list_items(
 - Services raise domain exceptions (defined in `core/exceptions.py`)
 - `main.py` maps exception classes to HTTP status codes in `_EXCEPTION_STATUS_CODES` and registers handlers in a loop — add new domain exceptions there
 - Endpoints never catch or raise `HTTPException` directly
-- Let FastAPI's built-in 422 handling cover validation errors
-- Use 409 for domain conflicts, 404 for missing resources
+- Let FastAPI's built-in 422 handling cover Pydantic schema validation errors
+- Use 404 for missing resources, 409 for domain conflicts, 422 for domain payload validation (e.g., `InvalidAxePayloadError`)
 
 ## Domain exceptions
 

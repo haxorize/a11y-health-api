@@ -44,6 +44,15 @@ make format
 make clean
 ```
 
+## CLI
+
+Upload a directory of axe DevTools JSON files as a single scan run:
+
+```sh
+uv run a11y-upload <app_id> <directory>
+uv run a11y-upload 42 ./scans/2026-03-30 --base-url http://localhost:8000
+```
+
 ## Migrations
 
 Database migrations are managed with Alembic (async). The database URL is read from app settings, not `alembic.ini`.
@@ -84,6 +93,7 @@ src/a11y_health/
 ├── models/              # SQLAlchemy models
 ├── schemas/             # Pydantic schemas
 ├── services/            # Business logic
+├── cli.py               # CLI upload tool
 ├── config.py            # Settings
 └── main.py              # Application entrypoint
 ```

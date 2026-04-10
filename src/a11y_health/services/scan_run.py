@@ -118,7 +118,7 @@ async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> Score
     result = await session.execute(select(ScoreSnapshot).where(ScoreSnapshot.scan_run_id == scan_run_id))
     snapshot = result.scalar_one_or_none()
     if snapshot is None:
-        raise NotFoundError("Scan run summary", scan_run_id)
+        raise NotFoundError(f"{_RESOURCE} summary", scan_run_id)
     return snapshot
 
 

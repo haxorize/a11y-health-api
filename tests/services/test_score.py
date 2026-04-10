@@ -27,7 +27,6 @@ async def _ingest_and_score(db_session: AsyncSession, scan_run_id: int, payloads
     sr = await get_scan_run(db_session, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
     await db_session.flush()
-    sr = await get_scan_run(db_session, scan_run_id)
     return await compute_scores(db_session, sr)
 
 

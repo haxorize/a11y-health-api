@@ -35,7 +35,7 @@ _PAGE_HEALTH_WEIGHT: dict[PageHealth, float] = {
 }
 
 
-def _safe_ratio(numerator: float, denominator: int) -> float:
+def safe_ratio(numerator: float, denominator: int) -> float:
     return numerator / denominator if denominator > 0 else 0.0
 
 
@@ -118,7 +118,7 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
 
     snapshot = _build_snapshot(
-        score=_safe_ratio(weighted_sum, total_pages),
+        score=safe_ratio(weighted_sum, total_pages),
         total_issues=total_issues,
         total_pages=total_pages,
         pages_with_issues=pages_with_issues,
@@ -158,9 +158,9 @@ def _build_snapshot(
         total_pages=total_pages,
         pages_with_issues=pages_with_issues,
         pages_with_critical_issues=pages_with_critical_issues,
-        avg_issues_per_page=_safe_ratio(total_issues, total_pages),
-        pct_pages_with_issues=_safe_ratio(pages_with_issues, total_pages),
-        pct_pages_with_critical_issues=_safe_ratio(pages_with_critical_issues, total_pages),
+        avg_issues_per_page=safe_ratio(total_issues, total_pages),
+        pct_pages_with_issues=safe_ratio(pages_with_issues, total_pages),
+        pct_pages_with_critical_issues=safe_ratio(pages_with_critical_issues, total_pages),
         snapshot_at=snapshot_at,
     )
 

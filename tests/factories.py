@@ -10,6 +10,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
 from a11y_health.models.scan_run import ScanRun, ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.services.score import safe_ratio
 
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
@@ -98,9 +99,9 @@ async def make_score_snapshot(
         pages_with_issues=pages_with_issues,
         pages_with_critical_issues=pages_with_critical_issues,
         total_pages=total_pages,
-        avg_issues_per_page=total_issues / total_pages if total_pages else 0.0,
-        pct_pages_with_issues=pages_with_issues / total_pages if total_pages else 0.0,
-        pct_pages_with_critical_issues=pages_with_critical_issues / total_pages if total_pages else 0.0,
+        avg_issues_per_page=safe_ratio(total_issues, total_pages),
+        pct_pages_with_issues=safe_ratio(pages_with_issues, total_pages),
+        pct_pages_with_critical_issues=safe_ratio(pages_with_critical_issues, total_pages),
         snapshot_at=snapshot_at or datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
     )
     db.add(snapshot)

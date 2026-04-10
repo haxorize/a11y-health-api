@@ -13,7 +13,6 @@ async def test_get_scan_run_pages(db_client: AsyncClient, db_session: AsyncSessi
     page1.page_health = PageHealth.CRITICAL
     await make_rule_finding(db_session, page_result_id=page1.id, impact=Impact.CRITICAL)
     await make_rule_finding(db_session, page_result_id=page1.id, impact=Impact.SERIOUS)
-    # Incomplete should not count toward issues
     await make_rule_finding(
         db_session,
         page_result_id=page1.id,

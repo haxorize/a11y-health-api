@@ -1,19 +1,20 @@
 import re
+from typing import Literal
 
 _WCAG_VERSION_LEVEL = re.compile(r"^wcag2(1|2)?a{1,2}$")
 _VERSION_MAP: dict[str | None, str] = {None: "2.0", "1": "2.1", "2": "2.2"}
 
-VALID_CLASSIFICATIONS = frozenset(
-    {
-        "wcag2a",
-        "wcag2aa",
-        "wcag21a",
-        "wcag21aa",
-        "wcag22a",
-        "wcag22aa",
-        "best-practice",
-    }
-)
+Classification = Literal[
+    "wcag2a",
+    "wcag2aa",
+    "wcag21a",
+    "wcag21aa",
+    "wcag22a",
+    "wcag22aa",
+    "best-practice",
+]
+
+VALID_CLASSIFICATIONS: frozenset[Classification] = frozenset(Classification.__args__)
 
 
 def parse_wcag_tag(tag: str) -> dict[str, str] | None:

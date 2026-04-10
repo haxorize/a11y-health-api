@@ -21,16 +21,19 @@ from tests.factories import (
 )
 
 
+async def _ingest_and_score(db_session: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScoreSnapshot:
+    for payload in payloads:
+        await create_page_result(db_session, scan_run_id, payload)
+    sr = await get_scan_run(db_session, scan_run_id)
+    sr.status = ScanRunStatus.COMPLETED
+    await db_session.flush()
+    sr = await get_scan_run(db_session, scan_run_id)
+    return await compute_scores(db_session, sr)
+
+
 async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[list[PageResult], ScoreSnapshot]:
     scan_run = await make_scan_run_with_parents(db_session)
-    for payload in payloads:
-        await create_page_result(db_session, scan_run.id, payload)
-
-    scan_run.status = ScanRunStatus.COMPLETED
-    await db_session.flush()
-    scan_run = await get_scan_run(db_session, scan_run.id)
-
-    snapshot = await compute_scores(db_session, scan_run)
+    snapshot = await _ingest_and_score(db_session, scan_run.id, list(payloads))
 
     result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
     return list(result.scalars().all()), snapshot
@@ -184,12 +187,7 @@ async def _complete_and_score(
     scanned_at: datetime | None = None,
 ) -> ScoreSnapshot:
     sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    for payload in payloads:
-        await create_page_result(db_session, sr.id, payload)
-    sr.status = ScanRunStatus.COMPLETED
-    await db_session.flush()
-    sr = await get_scan_run(db_session, sr.id)
-    return await compute_scores(db_session, sr)
+    return await _ingest_and_score(db_session, sr.id, payloads)
 
 
 async def _latest_ou_snapshot(db_session: AsyncSession, org_unit_id: int) -> ScoreSnapshot:

@@ -1,21 +1,10 @@
-from typing import Literal
-
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.models.rule_finding import Impact
 from a11y_health.schemas.rule_finding import NodeFindingRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
-
-Classification = Literal[
-    "wcag2a",
-    "wcag2aa",
-    "wcag21a",
-    "wcag21aa",
-    "wcag22a",
-    "wcag22aa",
-    "best-practice",
-]
+from a11y_health.services._tag_parsing import Classification
 
 router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
 

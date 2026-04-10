@@ -45,6 +45,7 @@ src/a11y_health/
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
 - Do not raise `HTTPException` — let domain exceptions propagate to app-level exception handlers (see Error responses)
 - Use `async def` — this project uses async SQLAlchemy throughout
+- POST endpoints set `status_code=201`, DELETE endpoints set `status_code=204`
 
 ## Schemas (Pydantic)
 
@@ -59,6 +60,20 @@ src/a11y_health/
 - Return ORM model instances (endpoint serializes via schema)
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations
+- Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
+- Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
+- Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages
+- Catch `IntegrityError` on flush, match against exported constraint name constants, and raise a domain exception:
+  ```python
+  try:
+      await session.flush()
+  except IntegrityError as exc:
+      await session.rollback()
+      if UQ_APP_SLUG in str(exc):
+          raise DuplicateSlugError(data.slug) from exc
+      raise
+  await session.refresh(app)
+  ```
 
 ## Database sessions
 
@@ -91,3 +106,16 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 - Endpoints never catch or raise `HTTPException` directly
 - Let FastAPI's built-in 422 handling cover validation errors
 - Use 409 for domain conflicts, 404 for missing resources
+
+## Domain exceptions
+
+Exception classes store context as instance attributes before calling `super().__init__()`:
+```python
+class NotFoundError(Exception):
+    def __init__(self, resource: str, resource_id: object) -> None:
+        self.resource = resource
+        self.resource_id = resource_id
+        super().__init__(f"{resource} {resource_id} not found")
+```
+
+Follow this pattern for new exceptions — attributes enable structured logging and testing; `str(exc)` provides the HTTP response detail.

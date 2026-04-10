@@ -12,7 +12,17 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times
 - **Money/precision**: `NUMERIC(p,s)`, never floats
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
-- **Enums**: `CREATE TYPE ... AS ENUM` for small stable sets; `TEXT + CHECK` for evolving values
+- **Enums**: `CREATE TYPE ... AS ENUM` for small stable sets; `TEXT + CHECK` for evolving values. In SQLAlchemy, always pass `values_callable` so enum *values* (not names) are stored:
+  ```python
+  brand: Mapped[Brand] = mapped_column(
+      Enum(Brand, name="brand_type", values_callable=lambda e: [m.value for m in e]),
+      nullable=False,
+  )
+  ```
+  When reusing an enum type already created by another model, add `create_type=False`:
+  ```python
+  Enum(Impact, name="impact", create_type=False, values_callable=lambda e: [m.value for m in e])
+  ```
 - **JSON**: `JSONB` with GIN index; only for optional/semi-structured attributes
 
 ### Do not use
@@ -34,7 +44,7 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 ## Constraints
 
 - **PK**: every reference table gets one
-- **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs)
+- **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs). Use `RESTRICT` for parent/reference relationships (prevent deleting a parent while children exist) and `CASCADE` for owned children that should be deleted with their parent
 - **UNIQUE**: use `NULLS NOT DISTINCT` (PG15+) unless multiple NULLs are intentional
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
 - **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`). Export unique constraint names as module-level constants (e.g., `UQ_APP_SLUG`) for matching in `IntegrityError` handlers

@@ -47,7 +47,6 @@ class TestPageHealthCategorization:
         assert pages[0].page_health == PageHealth.FAIR
 
     async def test_minor_violation_gives_good_health(self, db_session: AsyncSession):
-        """Minor violations don't count against the score."""
         pages, _ = await _setup_and_score(db_session, make_axe_payload(violations=[make_violation("rule-1", "minor")]))
         assert pages[0].page_health == PageHealth.GOOD
 
@@ -56,7 +55,6 @@ class TestPageHealthCategorization:
         assert pages[0].page_health == PageHealth.GOOD
 
     async def test_worst_severity_wins(self, db_session: AsyncSession):
-        """A page with both minor and critical violations gets CRITICAL."""
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(violations=[make_violation("rule-1", "minor"), make_violation("rule-2", "critical")]),
@@ -66,7 +64,6 @@ class TestPageHealthCategorization:
 
 class TestIncompleteExcluded:
     async def test_only_incomplete_findings_gives_good_health(self, db_session: AsyncSession):
-        """Incomplete findings are excluded from page health — page should be GOOD."""
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(incomplete=[make_violation("rule-1", "critical")]),
@@ -74,7 +71,6 @@ class TestIncompleteExcluded:
         assert pages[0].page_health == PageHealth.GOOD
 
     async def test_incomplete_does_not_worsen_violation_health(self, db_session: AsyncSession):
-        """A critical incomplete alongside a moderate violation should give FAIR, not CRITICAL."""
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(
@@ -87,7 +83,7 @@ class TestIncompleteExcluded:
 
 class TestAppScoreFormula:
     async def test_all_good_pages_score_1(self, db_session: AsyncSession):
-        """3 pages with no violations → score = (1+1+1)/3 = 1.0"""
+        # (1+1+1)/3 = 1.0
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a"),
@@ -97,7 +93,7 @@ class TestAppScoreFormula:
         assert snapshot.score == approx(1.0)
 
     async def test_all_critical_pages_score_0(self, db_session: AsyncSession):
-        """2 pages with critical violations → score = (0+0)/2 = 0.0"""
+        # (0+0)/2 = 0.0
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
@@ -106,7 +102,7 @@ class TestAppScoreFormula:
         assert snapshot.score == approx(0.0)
 
     async def test_mixed_pages_weighted_average(self, db_session: AsyncSession):
-        """1 critical(0) + 1 serious(0.4) + 1 fair(0.8) + 1 good(1.0) → (0+0.4+0.8+1.0)/4 = 0.55"""
+        # critical(0) + serious(0.4) + fair(0.8) + good(1.0) → 0.55
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
@@ -119,7 +115,6 @@ class TestAppScoreFormula:
 
 class TestScoreSnapshotMetrics:
     async def test_all_metrics_computed(self, db_session: AsyncSession):
-        """Verify all 8 metrics on the snapshot with known inputs."""
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(
@@ -144,7 +139,6 @@ class TestScoreSnapshotMetrics:
 
 class TestStatusUpdateTriggersScoring:
     async def test_completing_run_creates_snapshot(self, db_session: AsyncSession):
-        """Patching status to COMPLETED triggers score computation end-to-end."""
         scan_run = await make_scan_run_with_parents(db_session)
         await create_page_result(
             db_session,
@@ -166,7 +160,6 @@ class TestStatusUpdateTriggersScoring:
 
 class TestBestPracticeViolations:
     async def test_best_practice_counts_at_severity_level(self, db_session: AsyncSession):
-        """Best-practice violations count toward scoring based on their severity."""
         pages, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(violations=[make_violation("bp-rule", "critical")]),

@@ -58,6 +58,7 @@ async def test_create_scan(db_client: AsyncClient) -> None:
 - Use `client` for stateless endpoints (e.g., health check)
 - All test functions are `async def` (asyncio_mode is auto)
 - Explicit return type annotation: `-> None`
+- No docstrings on tests — the test name is the documentation. Use inline comments only when showing non-obvious context like formulas or math
 
 ## Writing service tests
 

@@ -4,7 +4,7 @@ from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from a11y_health.core.database import Base
+from a11y_health.core.database import Base, enum_values
 from a11y_health.models.rule_finding import Impact
 
 
@@ -18,7 +18,7 @@ class NodeFinding(Base):
     html: Mapped[str] = mapped_column(Text, nullable=False)
     target: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     impact: Mapped[Impact] = mapped_column(
-        Enum(Impact, name="impact", create_type=False, values_callable=lambda e: [m.value for m in e]),
+        Enum(Impact, name="impact", create_type=False, values_callable=enum_values),
         nullable=False,
     )
     failure_summary: Mapped[str | None] = mapped_column(Text, nullable=True)

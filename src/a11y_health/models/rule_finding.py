@@ -4,7 +4,7 @@ from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from a11y_health.core.database import Base
+from a11y_health.core.database import Base, enum_values
 
 
 class FindingType(enum.Enum):
@@ -28,11 +28,11 @@ class RuleFinding(Base):
     )
     rule_id: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[FindingType] = mapped_column(
-        Enum(FindingType, name="finding_type", values_callable=lambda e: [m.value for m in e]),
+        Enum(FindingType, name="finding_type", values_callable=enum_values),
         nullable=False,
     )
     impact: Mapped[Impact] = mapped_column(
-        Enum(Impact, name="impact", values_callable=lambda e: [m.value for m in e]),
+        Enum(Impact, name="impact", values_callable=enum_values),
         nullable=False,
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)

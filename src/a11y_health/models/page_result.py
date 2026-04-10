@@ -3,9 +3,9 @@ from typing import Any
 
 from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
-from a11y_health.core.database import Base, TimestampMixin
+from a11y_health.core.database import Base, TimestampMixin, enum_values
 
 
 class PageHealth(enum.Enum):
@@ -22,9 +22,9 @@ class PageResult(TimestampMixin, Base):
     scan_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scan_run.id", ondelete="RESTRICT"), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     page_health: Mapped[PageHealth | None] = mapped_column(
-        Enum(PageHealth, name="page_health", values_callable=lambda e: [m.value for m in e]),
+        Enum(PageHealth, name="page_health", values_callable=enum_values),
         nullable=True,
     )
-    raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    raw_json: Mapped[dict[str, Any]] = deferred(mapped_column(JSONB, nullable=False))
     passes_count: Mapped[int] = mapped_column(Integer, nullable=False)
     inapplicable_count: Mapped[int] = mapped_column(Integer, nullable=False)

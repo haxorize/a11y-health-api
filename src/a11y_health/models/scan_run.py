@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-from a11y_health.core.database import Base, TimestampMixin
+from a11y_health.core.database import Base, TimestampMixin, enum_values
 
 
 class ScanRunStatus(enum.Enum):
@@ -18,7 +18,7 @@ class ScanRun(TimestampMixin, Base):
 
     app_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="RESTRICT"), nullable=False)
     status: Mapped[ScanRunStatus] = mapped_column(
-        Enum(ScanRunStatus, name="scan_run_status", values_callable=lambda e: [m.value for m in e]),
+        Enum(ScanRunStatus, name="scan_run_status", values_callable=enum_values),
         nullable=False,
     )
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

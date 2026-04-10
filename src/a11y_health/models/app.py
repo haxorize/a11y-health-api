@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from a11y_health.core.database import Base, TimestampMixin
+from a11y_health.core.database import Base, TimestampMixin, enum_values
 
 
 class Brand(enum.Enum):
@@ -37,7 +37,7 @@ class App(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     slug: Mapped[str] = mapped_column(Text, nullable=False)
     brand: Mapped[Brand] = mapped_column(
-        Enum(Brand, name="brand_type", values_callable=lambda e: [m.value for m in e]),
+        Enum(Brand, name="brand_type", values_callable=enum_values),
         nullable=False,
     )
     org_unit_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=False)

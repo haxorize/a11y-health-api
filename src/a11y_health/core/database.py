@@ -1,3 +1,4 @@
+import enum
 from collections.abc import AsyncIterator
 from datetime import datetime
 
@@ -6,6 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from a11y_health.config import settings
+
+
+def enum_values(e: type[enum.Enum]) -> list[str]:
+    return [m.value for m in e]
+
 
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
 async_session = async_sessionmaker(engine, expire_on_commit=False)

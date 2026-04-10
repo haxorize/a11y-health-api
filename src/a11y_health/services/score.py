@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
@@ -86,18 +86,15 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     page_healths = [p.page_health for p in pages]
     weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
 
-    snapshot = ScoreSnapshot(
-        app_id=scan_run.app_id,
-        scan_run_id=scan_run.id,
+    snapshot = _build_snapshot(
         score=_safe_ratio(weighted_sum, total_pages),
         total_issues=total_issues,
+        total_pages=total_pages,
         pages_with_issues=pages_with_issues,
         pages_with_critical_issues=pages_with_critical_issues,
-        total_pages=total_pages,
-        avg_issues_per_page=_safe_ratio(total_issues, total_pages),
-        pct_pages_with_issues=_safe_ratio(pages_with_issues, total_pages),
-        pct_pages_with_critical_issues=_safe_ratio(pages_with_critical_issues, total_pages),
         snapshot_at=scan_run.scanned_at,
+        app_id=scan_run.app_id,
+        scan_run_id=scan_run.id,
     )
     session.add(snapshot)
     await session.flush()
@@ -109,45 +106,55 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     return snapshot
 
 
+def _build_snapshot(
+    *,
+    score: float,
+    total_issues: int,
+    total_pages: int,
+    pages_with_issues: int,
+    pages_with_critical_issues: int,
+    snapshot_at: datetime,
+    app_id: int | None = None,
+    scan_run_id: int | None = None,
+    org_unit_id: int | None = None,
+) -> ScoreSnapshot:
+    return ScoreSnapshot(
+        app_id=app_id,
+        scan_run_id=scan_run_id,
+        org_unit_id=org_unit_id,
+        score=score,
+        total_issues=total_issues,
+        total_pages=total_pages,
+        pages_with_issues=pages_with_issues,
+        pages_with_critical_issues=pages_with_critical_issues,
+        avg_issues_per_page=_safe_ratio(total_issues, total_pages),
+        pct_pages_with_issues=_safe_ratio(pages_with_issues, total_pages),
+        pct_pages_with_critical_issues=_safe_ratio(pages_with_critical_issues, total_pages),
+        snapshot_at=snapshot_at,
+    )
+
+
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    from sqlalchemy import func
-
-    # Latest snapshot per direct child app (one query)
-    app_max_subq = (
-        select(func.max(ScoreSnapshot.snapshot_at))
-        .join(App, ScoreSnapshot.app_id == App.id)
-        .where(App.org_unit_id == org_unit_id)
-        .group_by(ScoreSnapshot.app_id)
-        .correlate(App)
-    ).subquery()
-    app_result = await session.execute(
-        select(ScoreSnapshot)
-        .join(App, ScoreSnapshot.app_id == App.id)
-        .where(App.org_unit_id == org_unit_id, ScoreSnapshot.snapshot_at.in_(select(app_max_subq)))
-    )
-    snapshots = list(app_result.scalars().all())
-
-    # Latest snapshot per direct child org unit (one query)
-    ou_max_subq = (
-        select(func.max(ScoreSnapshot.snapshot_at))
-        .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
-        .where(OrgUnit.parent_id == org_unit_id)
-        .group_by(ScoreSnapshot.org_unit_id)
-        .correlate(OrgUnit)
-    ).subquery()
-    ou_result = await session.execute(
-        select(ScoreSnapshot)
-        .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
-        .where(OrgUnit.parent_id == org_unit_id, ScoreSnapshot.snapshot_at.in_(select(ou_max_subq)))
-    )
-    snapshots.extend(ou_result.scalars().all())
+    snapshots: list[ScoreSnapshot] = []
+    for join_target, join_cond, filter_col in (
+        (App, ScoreSnapshot.app_id == App.id, App.org_unit_id),
+        (OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id),
+    ):
+        row_num = (
+            func.row_number().over(partition_by=join_cond.left, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
+        )
+        subq = (
+            select(ScoreSnapshot.id, row_num).join(join_target, join_cond).where(filter_col == org_unit_id)
+        ).subquery()
+        result = await session.execute(
+            select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
+        )
+        snapshots.extend(result.scalars().all())
 
     return snapshots
 
 
-async def rollup_org_unit_scores(
-    session: AsyncSession, org_unit_id: int, snapshot_at: datetime, *, parent_id: int | None = None
-) -> None:
+async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapshot_at: datetime) -> None:
     children = await _latest_child_snapshots(session, org_unit_id)
     if not children:
         return
@@ -158,23 +165,18 @@ async def rollup_org_unit_scores(
     pages_with_issues = sum(c.pages_with_issues for c in children)
     pages_with_critical_issues = sum(c.pages_with_critical_issues for c in children)
 
-    snapshot = ScoreSnapshot(
-        org_unit_id=org_unit_id,
+    snapshot = _build_snapshot(
         score=sum(c.score for c in children) / count,
         total_issues=total_issues,
         total_pages=total_pages,
         pages_with_issues=pages_with_issues,
         pages_with_critical_issues=pages_with_critical_issues,
-        avg_issues_per_page=_safe_ratio(total_issues, total_pages),
-        pct_pages_with_issues=_safe_ratio(pages_with_issues, total_pages),
-        pct_pages_with_critical_issues=_safe_ratio(pages_with_critical_issues, total_pages),
         snapshot_at=snapshot_at,
+        org_unit_id=org_unit_id,
     )
     session.add(snapshot)
     await session.flush()
 
-    if parent_id is None:
-        org_unit = await session.get(OrgUnit, org_unit_id)
-        parent_id = org_unit.parent_id if org_unit else None
-    if parent_id is not None:
-        await rollup_org_unit_scores(session, parent_id, snapshot_at)
+    org_unit = await session.get(OrgUnit, org_unit_id)
+    if org_unit is not None and org_unit.parent_id is not None:
+        await rollup_org_unit_scores(session, org_unit.parent_id, snapshot_at)

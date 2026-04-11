@@ -32,13 +32,13 @@ async def test_get_scan_run_pages(db_client: AsyncClient, db_session: AsyncSessi
     assert len(data) == 2
 
     p1 = next(p for p in data if p["url"] == "https://example.com/home")
-    assert p1["issues_count"] == 2
-    assert p1["critical_issues_count"] == 1
+    assert p1["violation_count"] == 2
+    assert p1["critical_violation_count"] == 1
     assert p1["page_health"] == "critical"
 
     p2 = next(p for p in data if p["url"] == "https://example.com/about")
-    assert p2["issues_count"] == 0
-    assert p2["critical_issues_count"] == 0
+    assert p2["violation_count"] == 0
+    assert p2["critical_violation_count"] == 0
     assert p2["page_health"] == "good"
 
 

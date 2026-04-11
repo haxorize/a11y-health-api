@@ -13,8 +13,8 @@ class PageMetricsRead(BaseModel):
     id: int
     url: str
     page_health: PageHealth | None
-    issues_count: int
-    critical_issues_count: int
+    violation_count: int
+    critical_violation_count: int
 
 
 class PageResultRead(BaseModel):

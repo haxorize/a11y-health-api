@@ -39,8 +39,7 @@ async def list_scan_run_pages(
     offset: int = 0,
     limit: int = Query(default=20, le=100),
 ) -> list[PageMetricsRead]:
-    pages = await scan_run_service.list_page_metrics(db, scan_run_id, offset=offset, limit=limit)
-    return [PageMetricsRead.model_validate(p) for p in pages]
+    return await scan_run_service.list_page_metrics(db, scan_run_id, offset=offset, limit=limit)
 
 
 @router.get("/{scan_run_id}/summary")

@@ -1,27 +1,18 @@
 from collections.abc import Sequence
-from typing import NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
-from a11y_health.models.enums import FindingType, Impact, PageHealth, ScanRunStatus
+from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services.app import get_app
 from a11y_health.services.score import compute_scores
-
-
-class PageMetrics(NamedTuple):
-    id: int
-    url: str
-    page_health: PageHealth | None
-    issues_count: int
-    critical_issues_count: int
-
 
 _RESOURCE = "Scan run"
 
@@ -69,7 +60,7 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
 
 async def list_page_metrics(
     session: AsyncSession, scan_run_id: int, *, offset: int = 0, limit: int = 20
-) -> Sequence[PageMetrics]:
+) -> list[PageMetricsRead]:
     await get_scan_run(session, scan_run_id)
 
     violation_count = (
@@ -77,7 +68,7 @@ async def list_page_metrics(
         .filter(
             RuleFinding.type == FindingType.VIOLATION,
         )
-        .label("issues_count")
+        .label("violation_count")
     )
     critical_count = (
         func.count(RuleFinding.id)
@@ -85,7 +76,7 @@ async def list_page_metrics(
             RuleFinding.type == FindingType.VIOLATION,
             RuleFinding.impact == Impact.CRITICAL,
         )
-        .label("critical_issues_count")
+        .label("critical_violation_count")
     )
 
     stmt = (
@@ -99,14 +90,14 @@ async def list_page_metrics(
     )
     result = await session.execute(stmt)
     return [
-        PageMetrics(
+        PageMetricsRead(
             id=page.id,
             url=page.url,
             page_health=page.page_health,
-            issues_count=issues,
-            critical_issues_count=critical,
+            violation_count=violations,
+            critical_violation_count=critical,
         )
-        for page, issues, critical in result.all()
+        for page, violations, critical in result.all()
     ]
 
 

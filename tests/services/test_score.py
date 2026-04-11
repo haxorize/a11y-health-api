@@ -167,6 +167,30 @@ class TestStatusUpdateTriggersScoring:
         assert page.page_health == PageHealth.SERIOUS
 
 
+class TestScoreIndependentOfPageHealth:
+    async def test_score_correct_when_page_health_preset_to_wrong_value(self, db_session: AsyncSession) -> None:
+        scan_run = await make_scan_run_with_parents(db_session)
+        await create_page_result(
+            db_session,
+            scan_run.id,
+            make_axe_payload(violations=[make_violation("r1", "critical")]),
+        )
+
+        result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
+        page = result.scalar_one()
+        page.page_health = PageHealth.GOOD
+        await db_session.flush()
+
+        sr = await get_scan_run(db_session, scan_run.id)
+        sr.status = ScanRunStatus.COMPLETED
+        await db_session.flush()
+        snapshot = await compute_scores(db_session, sr)
+
+        assert snapshot.score == approx(0.0)
+        assert snapshot.pages_with_critical_violations == 1
+        assert page.page_health == PageHealth.CRITICAL
+
+
 class TestBestPracticeViolations:
     async def test_best_practice_counts_at_severity_level(self, db_session: AsyncSession) -> None:
         pages, snapshot = await _setup_and_score(

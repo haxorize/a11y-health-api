@@ -111,20 +111,24 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     total_violations = 0
     pages_with_violations = 0
     pages_with_critical_violations = 0
+    weighted_sum = 0.0
+    page_health_by_id: dict[int, PageHealth] = {}
 
     for page in pages:
         impacts = violations_by_page.get(page.id, [])
-        page.page_health = _worst_page_health(impacts)
+        health = _worst_page_health(impacts)
+        page_health_by_id[page.id] = health
+        weighted_sum += _PAGE_HEALTH_WEIGHT[health]
 
         violation_count = len(impacts)
         total_violations += violation_count
         if violation_count > 0:
             pages_with_violations += 1
-        if page.page_health == PageHealth.CRITICAL:
+        if health == PageHealth.CRITICAL:
             pages_with_critical_violations += 1
 
-    page_healths = [p.page_health for p in pages]
-    weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
+    for page in pages:
+        page.page_health = page_health_by_id[page.id]
 
     snapshot = build_snapshot(
         score=safe_ratio(weighted_sum, total_pages),

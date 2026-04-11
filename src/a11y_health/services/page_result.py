@@ -16,14 +16,15 @@ _AXE_SECTION_FINDING_TYPE: list[tuple[FindingType, str]] = [
 ]
 
 
-def _parse_findings(
+async def _persist_findings(
+    session: AsyncSession,
     page_result_id: int,
     rules: list[AxeRule],
     finding_type: FindingType,
     raw_rules: list[dict[str, Any]],
-) -> tuple[list[RuleFinding], list[tuple[RuleFinding, NodeFinding]]]:
+) -> None:
     rule_findings: list[RuleFinding] = []
-    node_pairs: list[tuple[RuleFinding, NodeFinding]] = []
+    node_findings: list[tuple[RuleFinding, NodeFinding]] = []
 
     for rule, raw_rule in zip(rules, raw_rules, strict=True):
         rf = RuleFinding(
@@ -54,9 +55,17 @@ def _parse_findings(
                 failure_summary=node.failure_summary,
                 checks=checks,
             )
-            node_pairs.append((rf, nf))
+            node_findings.append((rf, nf))
 
-    return rule_findings, node_pairs
+    if rule_findings:
+        session.add_all(rule_findings)
+        await session.flush()
+
+    if node_findings:
+        for rf, nf in node_findings:
+            nf.rule_finding_id = rf.id
+        session.add_all(nf for _, nf in node_findings)
+        await session.flush()
 
 
 async def create_page_result(
@@ -77,25 +86,10 @@ async def create_page_result(
     session.add(page_result)
     await session.flush()
 
-    all_rule_findings: list[RuleFinding] = []
-    all_node_pairs: list[tuple[RuleFinding, NodeFinding]] = []
-
     for finding_type, section in _AXE_SECTION_FINDING_TYPE:
         typed_rules = getattr(payload.findings, section)
         raw_rules = raw_findings.get(section, [])
-        rule_findings, node_pairs = _parse_findings(page_result.id, typed_rules, finding_type, raw_rules)
-        all_rule_findings.extend(rule_findings)
-        all_node_pairs.extend(node_pairs)
-
-    if all_rule_findings:
-        session.add_all(all_rule_findings)
-        await session.flush()
-
-    if all_node_pairs:
-        for rf, nf in all_node_pairs:
-            nf.rule_finding_id = rf.id
-        session.add_all(nf for _, nf in all_node_pairs)
-        await session.flush()
+        await _persist_findings(session, page_result.id, typed_rules, finding_type, raw_rules)
 
     await session.refresh(page_result)
     return page_result

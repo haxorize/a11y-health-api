@@ -8,10 +8,10 @@ from a11y_health.models.enums import PageHealth, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload
-from a11y_health.schemas.scan_run import ScanRunStatusUpdate
+from a11y_health.services import app as app_service
 from a11y_health.services.page_result import create_page_result
-from a11y_health.services.scan_run import get_scan_run, update_scan_run_status
-from a11y_health.services.score import compute_scores
+from a11y_health.services.scan_run import get_scan_run
+from a11y_health.services.score import compute_app_score, rollup_org_unit_scores
 from tests.factories import (
     latest_ou_snapshot,
     make_app,
@@ -30,7 +30,7 @@ async def _ingest_and_score(db_session: AsyncSession, scan_run_id: int, payloads
     sr = await get_scan_run(db_session, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
     await db_session.flush()
-    return await compute_scores(db_session, sr)
+    return await compute_app_score(db_session, sr)
 
 
 async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[list[PageResult], ScoreSnapshot]:
@@ -148,16 +148,16 @@ class TestScoreSnapshotMetrics:
         assert snapshot.pct_pages_with_critical_violations == approx(1 / 3)
 
 
-class TestStatusUpdateTriggersScoring:
-    async def test_completing_run_creates_snapshot(self, db_session: AsyncSession) -> None:
+class TestComputeAppScoreCreatesSnapshot:
+    async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
         parsed, raw = parse_axe_payload(violations=[make_violation("r1", "serious")])
         await create_page_result(db_session, scan_run.id, parsed, raw)
+        scan_run.status = ScanRunStatus.COMPLETED
+        await db_session.flush()
 
-        await update_scan_run_status(db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED))
+        snapshot = await compute_app_score(db_session, scan_run)
 
-        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.scan_run_id == scan_run.id))
-        snapshot = result.scalar_one()
         assert snapshot.score == approx(0.4)
         assert snapshot.total_pages == 1
 
@@ -180,7 +180,7 @@ class TestScoreIndependentOfPageHealth:
         sr = await get_scan_run(db_session, scan_run.id)
         sr.status = ScanRunStatus.COMPLETED
         await db_session.flush()
-        snapshot = await compute_scores(db_session, sr)
+        snapshot = await compute_app_score(db_session, sr)
 
         assert snapshot.score == approx(0.0)
         assert snapshot.pages_with_critical_violations == 1
@@ -204,7 +204,10 @@ async def _complete_and_score(
     scanned_at: datetime | None = None,
 ) -> ScoreSnapshot:
     sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    return await _ingest_and_score(db_session, sr.id, payloads)
+    snapshot = await _ingest_and_score(db_session, sr.id, payloads)
+    app = await app_service.get_app(db_session, app_id)
+    await rollup_org_unit_scores(db_session, app.org_unit_id, snapshot.snapshot_at)
+    return snapshot
 
 
 class TestDecoupledImports:
@@ -217,21 +220,23 @@ class TestDecoupledImports:
         assert "from a11y_health.services.org_unit" not in source
         assert "import a11y_health.services.org_unit" not in source
 
-    def test_org_unit_module_imports_rollup_at_top_level(self) -> None:
-        import ast
+    def test_org_unit_module_does_not_import_score(self) -> None:
         import inspect
 
         import a11y_health.services.org_unit as org_unit_module
 
-        tree = ast.parse(inspect.getsource(org_unit_module))
-        top_level_imports = [
-            node
-            for node in ast.iter_child_nodes(tree)
-            if isinstance(node, ast.ImportFrom)
-            and node.module == "a11y_health.services.score"
-            and any(alias.name == "rollup_org_unit_scores" for alias in node.names)
-        ]
-        assert len(top_level_imports) == 1
+        source = inspect.getsource(org_unit_module)
+        assert "from a11y_health.services.score" not in source
+        assert "import a11y_health.services.score" not in source
+
+    def test_scan_run_module_does_not_import_score(self) -> None:
+        import inspect
+
+        import a11y_health.services.scan_run as scan_run_module
+
+        source = inspect.getsource(scan_run_module)
+        assert "from a11y_health.services.score" not in source
+        assert "import a11y_health.services.score" not in source
 
 
 class TestOrgUnitRollup:

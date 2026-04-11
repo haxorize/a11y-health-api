@@ -91,7 +91,7 @@ async def list_org_unit_scores(
     return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, offset=offset, limit=limit)
 
 
-async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:
+async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:
     result = await session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
     pages = list(result.scalars().all())
     page_ids = [p.id for p in pages]
@@ -142,10 +142,6 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     )
     session.add(snapshot)
     await session.flush()
-
-    app = await session.get(App, scan_run.app_id)
-    assert app is not None
-    await rollup_org_unit_scores(session, app.org_unit_id, snapshot.snapshot_at)
 
     return snapshot
 

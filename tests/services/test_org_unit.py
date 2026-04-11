@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
-from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
+from tests.factories import make_org_unit
 
 
 async def test_create_org_unit(db_session: AsyncSession) -> None:
@@ -146,58 +146,10 @@ async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:
     assert [a.id for a in ancestors] == [branch_b.id, root.id]
 
 
-async def test_reparent_recomputes_rollup_scores(db_session: AsyncSession) -> None:
+async def test_reparent_does_not_trigger_rollup(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
 
-    app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=branch_a.id)
-    await make_score_snapshot(
-        db_session,
-        app_id=app_a.id,
-        score=0.4,
-        total_pages=2,
-        total_violations=3,
-        pages_with_violations=1,
-        pages_with_critical_violations=0,
-    )
-
-    app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=branch_b.id)
-    await make_score_snapshot(
-        db_session,
-        app_id=app_b.id,
-        score=1.0,
-        total_pages=1,
-        total_violations=0,
-        pages_with_violations=0,
-        pages_with_critical_violations=0,
-    )
-
-    child_ou = await make_org_unit(db_session, name="Sub-unit", parent_id=branch_a.id)
-    app_c = await make_app(db_session, name="App C", slug="app-c", org_unit_id=child_ou.id)
-    await make_score_snapshot(
-        db_session,
-        app_id=app_c.id,
-        score=0.8,
-        total_pages=5,
-        total_violations=1,
-        pages_with_violations=1,
-        pages_with_critical_violations=0,
-    )
-    await make_score_snapshot(
-        db_session,
-        org_unit_id=child_ou.id,
-        score=0.8,
-        total_pages=5,
-        total_violations=1,
-        pages_with_violations=1,
-        pages_with_critical_violations=0,
-    )
-
-    await org_unit_service.update_org_unit(db_session, child_ou.id, OrgUnitUpdate(parent_id=branch_b.id))
-
-    latest_b = await latest_ou_snapshot(db_session, branch_b.id)
-    assert latest_b.score == pytest.approx((1.0 + 0.8) / 2)
-
-    latest_a = await latest_ou_snapshot(db_session, branch_a.id)
-    assert latest_a.score == pytest.approx(0.4)
+    await org_unit_service.update_org_unit(db_session, branch_a.id, OrgUnitUpdate(parent_id=branch_b.id))
+    assert branch_a.parent_id == branch_b.id

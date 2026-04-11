@@ -30,7 +30,7 @@ Five fixtures, layered:
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB
-- **`axe_payload`** (session scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests
+- **`axe_payload`** (function scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests. Function scope prevents cross-test pollution from mutations
 
 Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed.
 

@@ -1,8 +1,8 @@
 import pytest
 
-from a11y_health.services.page_result import _extract_category, _extract_classifications, _extract_wcag_criterion
+from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criterion
 
-# --- _extract_classifications ---
+# --- extract_classifications ---
 
 
 @pytest.mark.parametrize(
@@ -17,15 +17,15 @@ from a11y_health.services.page_result import _extract_category, _extract_classif
     ],
 )
 def test_classifications_wcag_version_and_level(tag: str, expected: dict[str, str]) -> None:
-    assert _extract_classifications([tag]) == [expected]
+    assert extract_classifications([tag]) == [expected]
 
 
 def test_classifications_best_practice() -> None:
-    assert _extract_classifications(["best-practice"]) == [{"standard": "best-practice"}]
+    assert extract_classifications(["best-practice"]) == [{"standard": "best-practice"}]
 
 
 def test_classifications_multiple_standards() -> None:
-    result = _extract_classifications(["wcag2a", "wcag21a", "best-practice"])
+    result = extract_classifications(["wcag2a", "wcag21a", "best-practice"])
     assert len(result) == 3
     assert {"standard": "wcag", "version": "2.0", "level": "A"} in result
     assert {"standard": "wcag", "version": "2.1", "level": "A"} in result
@@ -33,14 +33,14 @@ def test_classifications_multiple_standards() -> None:
 
 
 def test_classifications_unrelated_tags_ignored() -> None:
-    assert _extract_classifications(["cat.color", "wcag143", "ACT"]) == []
+    assert extract_classifications(["cat.color", "wcag143", "ACT"]) == []
 
 
 def test_classifications_empty_tags() -> None:
-    assert _extract_classifications([]) == []
+    assert extract_classifications([]) == []
 
 
-# --- _extract_wcag_criterion ---
+# --- extract_wcag_criterion ---
 
 
 @pytest.mark.parametrize(
@@ -52,39 +52,39 @@ def test_classifications_empty_tags() -> None:
     ],
 )
 def test_wcag_criterion_parsed(tag: str, expected: str) -> None:
-    assert _extract_wcag_criterion([tag]) == expected
+    assert extract_wcag_criterion([tag]) == expected
 
 
 def test_wcag_criterion_returns_first_match() -> None:
-    assert _extract_wcag_criterion(["wcag111", "wcag143"]) == "1.1.1"
+    assert extract_wcag_criterion(["wcag111", "wcag143"]) == "1.1.1"
 
 
 def test_wcag_criterion_skips_non_criterion_tags() -> None:
-    assert _extract_wcag_criterion(["wcag2a", "cat.color", "wcag143"]) == "1.4.3"
+    assert extract_wcag_criterion(["wcag2a", "cat.color", "wcag143"]) == "1.4.3"
 
 
 def test_wcag_criterion_no_match_returns_none() -> None:
-    assert _extract_wcag_criterion(["wcag2a", "best-practice"]) is None
+    assert extract_wcag_criterion(["wcag2a", "best-practice"]) is None
 
 
-# --- _extract_category ---
+# --- extract_category ---
 
 
 def test_category_simple() -> None:
-    assert _extract_category(["cat.color"]) == "color"
+    assert extract_category(["cat.color"]) == "color"
 
 
 def test_category_hyphenated() -> None:
-    assert _extract_category(["cat.text-alternatives"]) == "text-alternatives"
+    assert extract_category(["cat.text-alternatives"]) == "text-alternatives"
 
 
 def test_category_returns_first_match() -> None:
-    assert _extract_category(["cat.color", "cat.forms"]) == "color"
+    assert extract_category(["cat.color", "cat.forms"]) == "color"
 
 
 def test_category_skips_non_category_tags() -> None:
-    assert _extract_category(["wcag2a", "cat.structure"]) == "structure"
+    assert extract_category(["wcag2a", "cat.structure"]) == "structure"
 
 
 def test_category_no_match_returns_none() -> None:
-    assert _extract_category(["wcag2a", "best-practice"]) is None
+    assert extract_category(["wcag2a", "best-practice"]) is None

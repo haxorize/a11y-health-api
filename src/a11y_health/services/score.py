@@ -1,6 +1,8 @@
+import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,32 +56,36 @@ def _worst_page_health(impacts: list[Impact]) -> PageHealth:
     return worst
 
 
-async def list_app_scores(
-    session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20
+async def _list_scores(
+    session: AsyncSession,
+    filter_col: Any,
+    filter_val: int,
+    *,
+    offset: int = 0,
+    limit: int = 20,
 ) -> Sequence[ScoreSnapshot]:
-    await app_service.get_app(session, app_id)
     result = await session.execute(
         select(ScoreSnapshot)
-        .where(ScoreSnapshot.app_id == app_id)
+        .where(filter_col == filter_val)
         .order_by(ScoreSnapshot.snapshot_at)
         .offset(offset)
         .limit(limit)
     )
     return result.scalars().all()
+
+
+async def list_app_scores(
+    session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20
+) -> Sequence[ScoreSnapshot]:
+    await app_service.get_app(session, app_id)
+    return await _list_scores(session, ScoreSnapshot.app_id, app_id, offset=offset, limit=limit)
 
 
 async def list_org_unit_scores(
     session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
     await org_unit_service.get_org_unit(session, org_unit_id)
-    result = await session.execute(
-        select(ScoreSnapshot)
-        .where(ScoreSnapshot.org_unit_id == org_unit_id)
-        .order_by(ScoreSnapshot.snapshot_at)
-        .offset(offset)
-        .limit(limit)
-    )
-    return result.scalars().all()
+    return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, offset=offset, limit=limit)
 
 
 async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:
@@ -166,11 +172,7 @@ def _build_snapshot(
 
 
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    snapshots: list[ScoreSnapshot] = []
-    for join_target, join_cond, filter_col in (
-        (App, ScoreSnapshot.app_id == App.id, App.org_unit_id),
-        (OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id),
-    ):
+    async def _query(join_target: Any, join_cond: Any, filter_col: Any) -> list[ScoreSnapshot]:
         row_num = (
             func.row_number().over(partition_by=join_cond.left, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
         )
@@ -180,9 +182,13 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
         result = await session.execute(
             select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
         )
-        snapshots.extend(result.scalars().all())
+        return list(result.scalars().all())
 
-    return snapshots
+    app_snapshots, ou_snapshots = await asyncio.gather(
+        _query(App, ScoreSnapshot.app_id == App.id, App.org_unit_id),
+        _query(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id),
+    )
+    return app_snapshots + ou_snapshots
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapshot_at: datetime) -> None:

@@ -1,4 +1,3 @@
-import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,37 +6,8 @@ from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
-from a11y_health.services._tag_parsing import parse_wcag_tag
+from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criterion
 from a11y_health.services.scan_run import assert_scan_run_pending, get_scan_run
-
-_WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
-_CAT_TAG = re.compile(r"^cat\.(.+)$")
-
-
-def _extract_classifications(tags: list[str]) -> list[dict[str, str]]:
-    results: list[dict[str, str]] = []
-    for tag in tags:
-        parsed = parse_wcag_tag(tag)
-        if parsed is not None:
-            results.append(parsed)
-    return results
-
-
-def _extract_wcag_criterion(tags: list[str]) -> str | None:
-    for tag in tags:
-        m = _WCAG_CRITERION.match(tag)
-        if m:
-            return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-    return None
-
-
-def _extract_category(tags: list[str]) -> str | None:
-    for tag in tags:
-        m = _CAT_TAG.match(tag)
-        if m:
-            return m.group(1)
-    return None
-
 
 _AXE_SECTION_FINDING_TYPE: dict[str, FindingType] = {
     "violations": FindingType.VIOLATION,
@@ -69,9 +39,9 @@ def _parse_findings(
             description=rule["description"],
             help=rule["help"],
             help_url=rule["helpUrl"],
-            category=_extract_category(tags),
-            wcag_criterion=_extract_wcag_criterion(tags),
-            classifications=_extract_classifications(tags),
+            category=extract_category(tags),
+            wcag_criterion=extract_wcag_criterion(tags),
+            classifications=extract_classifications(tags),
             tags=tags,
         )
         rule_findings.append(rf)

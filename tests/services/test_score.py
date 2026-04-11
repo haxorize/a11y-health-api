@@ -94,7 +94,6 @@ class TestIncompleteExcluded:
 
 class TestAppScoreFormula:
     async def test_all_good_pages_score_1(self, db_session: AsyncSession) -> None:
-        # (1+1+1)/3 = 1.0
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a"),
@@ -104,7 +103,6 @@ class TestAppScoreFormula:
         assert snapshot.score == approx(1.0)
 
     async def test_all_critical_pages_score_0(self, db_session: AsyncSession) -> None:
-        # (0+0)/2 = 0.0
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
@@ -113,7 +111,6 @@ class TestAppScoreFormula:
         assert snapshot.score == approx(0.0)
 
     async def test_mixed_pages_weighted_average(self, db_session: AsyncSession) -> None:
-        # critical(0) + serious(0.4) + fair(0.8) + good(1.0) → 0.55
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),

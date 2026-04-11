@@ -18,6 +18,8 @@ tests/
     test_<resource>.py      # one file per endpoint module
   services/
     test_<resource>.py      # direct service-layer tests
+  cli/
+    test_<command>.py       # CLI tool tests (e.g., test_upload.py)
 ```
 
 ## Fixtures (from conftest.py)

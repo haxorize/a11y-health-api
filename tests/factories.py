@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
@@ -179,6 +180,13 @@ async def make_node_finding(
     db.add(nf)
     await db.flush()
     return nf
+
+
+async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
+    result = await db.execute(
+        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id).order_by(ScoreSnapshot.id.desc()).limit(1)
+    )
+    return result.scalar_one()
 
 
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:

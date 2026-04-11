@@ -12,6 +12,7 @@ from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run, update_scan_run_status
 from a11y_health.services.score import compute_scores
 from tests.factories import (
+    latest_ou_snapshot,
     make_app,
     make_axe_payload,
     make_org_unit,
@@ -186,13 +187,6 @@ async def _complete_and_score(
     return await _ingest_and_score(db_session, sr.id, payloads)
 
 
-async def _latest_ou_snapshot(db_session: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
-    result = await db_session.execute(
-        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id).order_by(ScoreSnapshot.id.desc()).limit(1)
-    )
-    return result.scalar_one()
-
-
 class TestOrgUnitRollup:
     async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Parent Org")
@@ -201,7 +195,7 @@ class TestOrgUnitRollup:
             db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
 
-        ou_snapshot = await _latest_ou_snapshot(db_session, org_unit.id)
+        ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
         assert ou_snapshot.score == approx(app_snapshot.score)
         assert ou_snapshot.total_issues == app_snapshot.total_issues
         assert ou_snapshot.total_pages == app_snapshot.total_pages
@@ -229,7 +223,7 @@ class TestOrgUnitRollup:
             scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
         )
 
-        ou_snapshot = await _latest_ou_snapshot(db_session, org_unit.id)
+        ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
 
         assert ou_snapshot.score == approx(0.7)
         assert ou_snapshot.total_issues == 1
@@ -251,7 +245,7 @@ class TestOrgUnitRollup:
         )
 
         for ou in [leaf, middle, root]:
-            ou_snap = await _latest_ou_snapshot(db_session, ou.id)
+            ou_snap = await latest_ou_snapshot(db_session, ou.id)
             assert ou_snap.score == approx(app_snapshot.score)
             assert ou_snap.total_issues == app_snapshot.total_issues
             assert ou_snap.total_pages == app_snapshot.total_pages
@@ -275,9 +269,9 @@ class TestOrgUnitRollup:
             scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
         )
 
-        assert (await _latest_ou_snapshot(db_session, child_ou.id)).score == approx(1.0)
+        assert (await latest_ou_snapshot(db_session, child_ou.id)).score == approx(1.0)
 
-        parent_snap = await _latest_ou_snapshot(db_session, parent.id)
+        parent_snap = await latest_ou_snapshot(db_session, parent.id)
         assert parent_snap.score == approx(0.5)
         assert parent_snap.total_issues == 1
         assert parent_snap.total_pages == 2
@@ -300,4 +294,4 @@ class TestOrgUnitRollup:
             scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
         )
 
-        assert (await _latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)
+        assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)

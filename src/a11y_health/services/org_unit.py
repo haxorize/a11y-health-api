@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,18 +37,33 @@ async def get_org_unit(session: AsyncSession, org_unit_id: int) -> OrgUnit:
 async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnit:
     org_unit = await get_org_unit(session, org_unit_id)
     updates = data.model_dump(exclude_unset=True)
-    if "parent_id" in updates and updates["parent_id"] is not None:
+    old_parent_id = org_unit.parent_id
+    if "parent_id" in updates:
         new_parent_id = updates["parent_id"]
-        await get_org_unit(session, new_parent_id)
-        if new_parent_id == org_unit_id:
-            raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
-        descendant_ids = {d.id for d in await get_descendants(session, org_unit_id)}
-        if new_parent_id in descendant_ids:
-            raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
+        if new_parent_id is not None:
+            await get_org_unit(session, new_parent_id)
+            if new_parent_id == org_unit_id:
+                raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
+            descendant_ids = {d.id for d in await get_descendants(session, org_unit_id)}
+            if new_parent_id in descendant_ids:
+                raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
+        reparented = new_parent_id != old_parent_id
+    else:
+        reparented = False
     for field, value in updates.items():
         setattr(org_unit, field, value)
     await session.flush()
     await session.refresh(org_unit)
+
+    if reparented:
+        from a11y_health.services.score import rollup_org_unit_scores
+
+        now = datetime.now(UTC)
+        if old_parent_id is not None:
+            await rollup_org_unit_scores(session, old_parent_id, now)
+        if org_unit.parent_id is not None:
+            await rollup_org_unit_scores(session, org_unit.parent_id, now)
+
     return org_unit
 
 

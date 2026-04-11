@@ -76,7 +76,7 @@
 
 ## Flagged ambiguities
 
-- **"Issue"** was used informally to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). In this domain, "issue" should refer to a **Rule Finding**. Use **Node Finding** when referring to a specific element instance.
+- **"Issue"** was used informally to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). Avoid "issue" entirely in code — use **Violation** when counting failures that affect scoring (the former `issues_count` fields are being renamed to `violation_count` in #18). Use **Rule Finding** for the general concept and **Node Finding** for a specific element instance.
 - **"Score"** can refer to both the computed percentage (the **Score** value) and the full **Score Snapshot** record. Use **Score** for the percentage and **Score Snapshot** for the persisted record with all metrics.
 - **"Page"** was used to mean both a URL being tested and the **Page Result** record. Use **Page Result** when referring to the stored data. "Page" is acceptable in compound metrics like "pages with issues" where the meaning is clear.
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.

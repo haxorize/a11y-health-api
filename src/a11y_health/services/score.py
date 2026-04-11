@@ -137,8 +137,8 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     await session.flush()
 
     app = await session.get(App, scan_run.app_id)
-    if app is not None:
-        await rollup_org_unit_scores(session, app.org_unit_id, snapshot.snapshot_at)
+    assert app is not None
+    await rollup_org_unit_scores(session, app.org_unit_id, snapshot.snapshot_at)
 
     return snapshot
 
@@ -215,5 +215,6 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapsh
     await session.flush()
 
     org_unit = await session.get(OrgUnit, org_unit_id)
-    if org_unit is not None and org_unit.parent_id is not None:
+    assert org_unit is not None
+    if org_unit.parent_id is not None:
         await rollup_org_unit_scores(session, org_unit.parent_id, snapshot_at)

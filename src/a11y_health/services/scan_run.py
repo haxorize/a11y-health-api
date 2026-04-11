@@ -72,30 +72,26 @@ async def list_page_metrics(
     await get_scan_run(session, scan_run_id)
 
     violation_count = (
-        select(func.count())
-        .where(
-            RuleFinding.page_result_id == PageResult.id,
+        func.count(RuleFinding.id)
+        .filter(
             RuleFinding.type == FindingType.VIOLATION,
         )
-        .correlate(PageResult)
-        .scalar_subquery()
         .label("issues_count")
     )
     critical_count = (
-        select(func.count())
-        .where(
-            RuleFinding.page_result_id == PageResult.id,
+        func.count(RuleFinding.id)
+        .filter(
             RuleFinding.type == FindingType.VIOLATION,
             RuleFinding.impact == Impact.CRITICAL,
         )
-        .correlate(PageResult)
-        .scalar_subquery()
         .label("critical_issues_count")
     )
 
     stmt = (
         select(PageResult, violation_count, critical_count)
+        .outerjoin(RuleFinding, RuleFinding.page_result_id == PageResult.id)
         .where(PageResult.scan_run_id == scan_run_id)
+        .group_by(PageResult.id)
         .order_by(PageResult.id)
         .offset(offset)
         .limit(limit)

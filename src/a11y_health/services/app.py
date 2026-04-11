@@ -42,9 +42,9 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     app = App(**data.model_dump())
     session.add(app)
     try:
-        await session.flush()
+        async with session.begin_nested():
+            await session.flush()
     except IntegrityError as exc:
-        await session.rollback()
         if UQ_APP_SLUG in str(exc):
             raise DuplicateSlugError(data.slug) from exc
         raise

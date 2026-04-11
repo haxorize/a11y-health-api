@@ -35,7 +35,7 @@ async def client() -> AsyncIterator[AsyncClient]:
 async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with engine.connect() as conn:
         txn = await conn.begin()
-        session = AsyncSession(bind=conn, expire_on_commit=False)
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
         try:
             yield session
         finally:

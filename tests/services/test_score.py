@@ -195,7 +195,6 @@ async def _latest_ou_snapshot(db_session: AsyncSession, org_unit_id: int) -> Sco
 
 class TestOrgUnitRollup:
     async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
-        # org_unit -> app -> scan_run with one serious violation
         org_unit = await make_org_unit(db_session, name="Parent Org")
         app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
         app_snapshot = await _complete_and_score(
@@ -213,7 +212,6 @@ class TestOrgUnitRollup:
         assert ou_snapshot.pct_pages_with_critical_issues == approx(app_snapshot.pct_pages_with_critical_issues)
 
     async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
-        # org_unit -> app_a (score 0.4, serious) + app_b (score 1.0, clean)
         org_unit = await make_org_unit(db_session, name="Parent Org")
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
@@ -233,9 +231,7 @@ class TestOrgUnitRollup:
 
         ou_snapshot = await _latest_ou_snapshot(db_session, org_unit.id)
 
-        # score = mean(0.4, 1.0) = 0.7
         assert ou_snapshot.score == approx(0.7)
-        # counts are sums: 1+0 issues, 1+1 pages, 1+0 with issues, 0+0 critical
         assert ou_snapshot.total_issues == 1
         assert ou_snapshot.total_pages == 2
         assert ou_snapshot.pages_with_issues == 1
@@ -245,7 +241,6 @@ class TestOrgUnitRollup:
         assert ou_snapshot.pct_pages_with_critical_issues == approx(0.0)
 
     async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession) -> None:
-        # root -> middle -> leaf (org units), app under leaf
         root = await make_org_unit(db_session, name="Root")
         middle = await make_org_unit(db_session, name="Middle", parent_id=root.id)
         leaf = await make_org_unit(db_session, name="Leaf", parent_id=middle.id)
@@ -255,7 +250,6 @@ class TestOrgUnitRollup:
             db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
 
-        # all three org units should have snapshots with the same score
         for ou in [leaf, middle, root]:
             ou_snap = await _latest_ou_snapshot(db_session, ou.id)
             assert ou_snap.score == approx(app_snapshot.score)
@@ -263,8 +257,6 @@ class TestOrgUnitRollup:
             assert ou_snap.total_pages == app_snapshot.total_pages
 
     async def test_mixed_children_org_units_and_apps(self, db_session: AsyncSession) -> None:
-        # parent has a direct app (score 0.0) and a child org unit with its own app (score 1.0)
-        # parent score = mean(app_score=0.0, child_ou_score=1.0) = 0.5
         parent = await make_org_unit(db_session, name="Parent")
         child_ou = await make_org_unit(db_session, name="Child OU", parent_id=parent.id)
         direct_app = await make_app(db_session, name="Direct App", slug="direct", org_unit_id=parent.id)
@@ -292,7 +284,6 @@ class TestOrgUnitRollup:
         assert parent_snap.pages_with_critical_issues == 1
 
     async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
-        # app has two scan runs; only the latest snapshot should be used for rollup
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id)
 
@@ -309,5 +300,4 @@ class TestOrgUnitRollup:
             scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
         )
 
-        # org unit should reflect the latest score (1.0), not the old one (0.0)
         assert (await _latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)

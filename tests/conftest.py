@@ -56,6 +56,6 @@ async def db_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
         app.dependency_overrides.clear()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def axe_payload() -> dict[str, Any]:
     return json.loads((FIXTURE_DIR / "humana.com-home.json").read_text())

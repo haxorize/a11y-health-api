@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
-from a11y_health.models.app import UQ_APP_SLUG, App, Brand
+from a11y_health.models.app import UQ_APP_SLUG, App
+from a11y_health.models.enums import Brand
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services.org_unit import get_org_unit
 

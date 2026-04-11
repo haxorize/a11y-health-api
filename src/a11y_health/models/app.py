@@ -1,5 +1,3 @@
-import enum
-
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -12,15 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base, TimestampMixin, enum_values
-
-
-class Brand(enum.Enum):
-    HUMANA = "Humana"
-    CENTERWELL = "CenterWell"
-    GO365 = "Go365"
-    CAREPLUS = "CarePlus"
-    RELIANCE = "Reliance"
-
+from a11y_health.models.enums import Brand
 
 UQ_APP_SLUG = "uq_app_slug"
 
@@ -37,7 +27,7 @@ class App(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     slug: Mapped[str] = mapped_column(Text, nullable=False)
     brand: Mapped[Brand] = mapped_column(
-        Enum(Brand, name="brand_type", values_callable=enum_values),
+        Enum(Brand, name="brand", values_callable=enum_values),
         nullable=False,
     )
     org_unit_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=False)

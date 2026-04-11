@@ -1,22 +1,9 @@
-import enum
-
 from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base, enum_values
-
-
-class FindingType(enum.Enum):
-    VIOLATION = "violation"
-    INCOMPLETE = "incomplete"
-
-
-class Impact(enum.Enum):
-    CRITICAL = "critical"
-    SERIOUS = "serious"
-    MODERATE = "moderate"
-    MINOR = "minor"
+from a11y_health.models.enums import FindingType, Impact
 
 
 class RuleFinding(Base):

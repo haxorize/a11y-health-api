@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
+from a11y_health.models.enums import FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
-from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
+from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.services.page_result import create_page_result
 from tests.factories import make_axe_payload, make_scan_run_with_parents
 

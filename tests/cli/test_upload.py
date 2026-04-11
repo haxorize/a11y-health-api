@@ -9,7 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.cli import upload_scan
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 from tests.factories import make_app_with_org_unit, make_axe_payload
 
 

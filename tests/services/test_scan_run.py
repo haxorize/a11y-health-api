@@ -8,7 +8,7 @@ from a11y_health.core.exceptions import (
     NotFoundError,
     ScanRunCompletedError,
 )
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
 from tests.factories import make_app_with_org_unit, make_scan_run, make_scan_run_with_parents

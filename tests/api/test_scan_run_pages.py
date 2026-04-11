@@ -1,8 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.page_result import PageHealth
-from a11y_health.models.rule_finding import FindingType, Impact
+from a11y_health.models.enums import FindingType, Impact, PageHealth
 from tests.factories import make_page_result, make_rule_finding, make_scan_run_with_parents
 
 

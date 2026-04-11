@@ -2,10 +2,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core.exceptions import InvalidAxePayloadError, NotFoundError
+from a11y_health.models.enums import Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
-from a11y_health.models.rule_finding import Impact, RuleFinding
+from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.services._tag_parsing import parse_wcag_tag
 from a11y_health.services.scan_run import get_scan_run
 
@@ -15,7 +16,7 @@ _RESOURCE = "Finding"
 def _parse_classification(value: str) -> dict[str, str]:
     parsed = parse_wcag_tag(value)
     if parsed is None:
-        raise ValueError(f"Invalid classification: {value}")
+        raise InvalidAxePayloadError(f"Invalid classification: {value}")
     return parsed
 
 

@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 from tests.factories import make_scan_run, make_scan_run_with_parents
 
 

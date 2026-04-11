@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from a11y_health.models.page_result import PageHealth
+from a11y_health.models.enums import PageHealth
 
 __all__ = ["PageMetricsRead", "PageResultRead"]
 

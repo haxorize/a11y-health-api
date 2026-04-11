@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
-from a11y_health.models.app import Brand
+from a11y_health.models.enums import Brand
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import app as app_service
 from tests.factories import make_app, make_org_unit

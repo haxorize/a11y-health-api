@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from a11y_health.models.app import Brand
+from a11y_health.models.enums import Brand
 
 __all__ = ["AppCreate", "AppRead", "AppUpdate"]
 

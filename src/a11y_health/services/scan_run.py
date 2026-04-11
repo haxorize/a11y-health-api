@@ -5,9 +5,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
-from a11y_health.models.page_result import PageHealth, PageResult
-from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
-from a11y_health.models.scan_run import ScanRun, ScanRunStatus
+from a11y_health.models.enums import FindingType, Impact, PageHealth, ScanRunStatus
+from a11y_health.models.page_result import PageResult
+from a11y_health.models.rule_finding import RuleFinding
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services.app import get_app

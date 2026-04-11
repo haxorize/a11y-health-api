@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
-from a11y_health.models.app import Brand
+from a11y_health.models.enums import Brand
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import app as app_service

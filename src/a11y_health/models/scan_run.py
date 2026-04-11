@@ -1,15 +1,10 @@
-import enum
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base, TimestampMixin, enum_values
-
-
-class ScanRunStatus(enum.Enum):
-    PENDING = "pending"
-    COMPLETED = "completed"
+from a11y_health.models.enums import ScanRunStatus
 
 
 class ScanRun(TimestampMixin, Base):

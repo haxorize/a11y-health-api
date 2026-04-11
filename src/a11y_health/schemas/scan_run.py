@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 from a11y_health.schemas.score_snapshot import ScoreMetrics
 
 __all__ = ["ScanRunCreate", "ScanRunRead", "ScanRunStatusUpdate", "ScanRunSummaryRead"]
@@ -16,7 +16,8 @@ class ScanRunStatusUpdate(BaseModel):
     status: ScanRunStatus
 
 
-ScanRunSummaryRead = ScoreMetrics
+class ScanRunSummaryRead(ScoreMetrics):
+    pass
 
 
 class ScanRunRead(BaseModel):

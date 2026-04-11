@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from a11y_health.core.database import Base, enum_values
-from a11y_health.models.rule_finding import Impact
+from a11y_health.models.enums import Impact
 
 
 class NodeFinding(Base):

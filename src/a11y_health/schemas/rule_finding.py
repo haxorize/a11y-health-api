@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from a11y_health.models.rule_finding import FindingType, Impact
+from a11y_health.models.enums import FindingType, Impact
 
 __all__ = ["NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
 

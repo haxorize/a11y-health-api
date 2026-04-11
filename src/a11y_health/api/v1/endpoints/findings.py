@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
-from a11y_health.models.rule_finding import Impact
+from a11y_health.models.enums import Impact
 from a11y_health.schemas.rule_finding import NodeFindingRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 from a11y_health.services._tag_parsing import Classification

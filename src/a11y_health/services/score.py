@@ -8,9 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
+from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
-from a11y_health.models.page_result import PageHealth, PageResult
-from a11y_health.models.rule_finding import FindingType, Impact, RuleFinding
+from a11y_health.models.page_result import PageResult
+from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import app as app_service

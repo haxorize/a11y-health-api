@@ -4,8 +4,8 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.page_result import PageHealth, PageResult
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import PageHealth, ScanRunStatus
+from a11y_health.models.page_result import PageResult
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.scan_run import ScanRunStatusUpdate
 from a11y_health.services.page_result import create_page_result

@@ -1,4 +1,3 @@
-import enum
 from typing import Any
 
 from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Integer, Text
@@ -6,13 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from a11y_health.core.database import Base, TimestampMixin, enum_values
-
-
-class PageHealth(enum.Enum):
-    CRITICAL = "critical"
-    SERIOUS = "serious"
-    FAIR = "fair"
-    GOOD = "good"
+from a11y_health.models.enums import PageHealth
 
 
 class PageResult(TimestampMixin, Base):

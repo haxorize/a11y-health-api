@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from a11y_health.models.scan_run import ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 
 ProgressCallback = Callable[[str], None]
 

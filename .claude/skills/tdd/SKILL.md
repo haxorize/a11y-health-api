@@ -83,3 +83,7 @@ uv run ty check
 ```
 
 Fix any issues, then re-run `uv run pytest` to confirm nothing broke.
+
+### 7. Update docs
+
+Check whether the changes affect anything documented in `README.md`, `CLAUDE.md`, or `UBIQUITOUS_LANGUAGE.md` (e.g., new commands, changed structure, new conventions, new or renamed domain terms). Update if needed, skip if not.

@@ -22,9 +22,9 @@ Use the Agent tool with subagent_type=Explore to navigate the codebase. Do NOT f
 
 The friction you encounter IS the signal.
 
-### 2. Present candidates
+### 2. Consolidate and present candidates
 
-Present a numbered list of deepening opportunities. For each candidate, show:
+Group related findings into coherent candidates — don't present overlapping or sub-issues separately. Present a numbered list of deepening opportunities. For each candidate, show:
 
 - **Cluster**: Which modules/concepts are involved
 - **Why they're coupled**: Shared types, call patterns, co-ownership of a concept
@@ -43,6 +43,8 @@ Write a user-facing explanation of the chosen candidate:
 - The dependencies it would need to rely on
 - A rough illustrative code sketch to make the constraints concrete — this is not a proposal, just a way to ground the discussion
 
+If framing reveals this isn't a deepening candidate (e.g., modules are thin for good reason, or the friction is a bug/test gap rather than an architecture problem), say so and offer alternatives — a bug fix issue, test coverage issue, or skipping it entirely.
+
 ### 5. Propose a design
 
 Present one recommended interface design:
@@ -57,11 +59,11 @@ Be opinionated — the user wants a strong recommendation, not a menu.
 
 Offer to run `/grill-me` on the design if the user wants to stress-test it.
 
-### 6. Create GitHub issue
+### 6. Create issue(s)
 
-Once the user approves, create a refactor RFC as a GitHub issue using `gh issue create` (title and body only — no labels or assignees). Use the template below.
+Once the user approves, create the appropriate issue(s) using `gh issue create` (title and body only — no labels or assignees). This might be a single refactor RFC, multiple issues (e.g., merged candidates), or a simpler bug/test ticket if the candidate turned out not to need deepening.
 
-Do NOT ask the user to review before creating — just create it and share the URL.
+Do NOT ask the user to review before creating — just create it and share the URL. Use the template below for refactor RFCs; adapt the format for simpler issues.
 
 ## Issue template
 
@@ -81,7 +83,7 @@ Do NOT ask the user to review before creating — just create it and share the U
 ## Testing Strategy
 
 - New boundary tests to write (behaviors to verify at the interface)
-- Old tests to delete (shallow module tests that become redundant)
+- Tests to update or remove (shallow module tests that become redundant, or tests that need renaming/restructuring)
 
 ## Implementation Decisions
 

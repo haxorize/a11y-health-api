@@ -137,13 +137,13 @@ class TestScoreSnapshotMetrics:
             ),
         )
         assert snapshot.score == approx(1.4 / 3)
-        assert snapshot.total_issues == 3
-        assert snapshot.pages_with_issues == 2
-        assert snapshot.pages_with_critical_issues == 1
+        assert snapshot.total_violations == 3
+        assert snapshot.pages_with_violations == 2
+        assert snapshot.pages_with_critical_violations == 1
         assert snapshot.total_pages == 3
-        assert snapshot.avg_issues_per_page == approx(1.0)
-        assert snapshot.pct_pages_with_issues == approx(2 / 3)
-        assert snapshot.pct_pages_with_critical_issues == approx(1 / 3)
+        assert snapshot.avg_violations_per_page == approx(1.0)
+        assert snapshot.pct_pages_with_violations == approx(2 / 3)
+        assert snapshot.pct_pages_with_critical_violations == approx(1 / 3)
 
 
 class TestStatusUpdateTriggersScoring:
@@ -197,13 +197,13 @@ class TestOrgUnitRollup:
 
         ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
         assert ou_snapshot.score == approx(app_snapshot.score)
-        assert ou_snapshot.total_issues == app_snapshot.total_issues
+        assert ou_snapshot.total_violations == app_snapshot.total_violations
         assert ou_snapshot.total_pages == app_snapshot.total_pages
-        assert ou_snapshot.pages_with_issues == app_snapshot.pages_with_issues
-        assert ou_snapshot.pages_with_critical_issues == app_snapshot.pages_with_critical_issues
-        assert ou_snapshot.avg_issues_per_page == approx(app_snapshot.avg_issues_per_page)
-        assert ou_snapshot.pct_pages_with_issues == approx(app_snapshot.pct_pages_with_issues)
-        assert ou_snapshot.pct_pages_with_critical_issues == approx(app_snapshot.pct_pages_with_critical_issues)
+        assert ou_snapshot.pages_with_violations == app_snapshot.pages_with_violations
+        assert ou_snapshot.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
+        assert ou_snapshot.avg_violations_per_page == approx(app_snapshot.avg_violations_per_page)
+        assert ou_snapshot.pct_pages_with_violations == approx(app_snapshot.pct_pages_with_violations)
+        assert ou_snapshot.pct_pages_with_critical_violations == approx(app_snapshot.pct_pages_with_critical_violations)
 
     async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Parent Org")
@@ -226,13 +226,13 @@ class TestOrgUnitRollup:
         ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
 
         assert ou_snapshot.score == approx(0.7)
-        assert ou_snapshot.total_issues == 1
+        assert ou_snapshot.total_violations == 1
         assert ou_snapshot.total_pages == 2
-        assert ou_snapshot.pages_with_issues == 1
-        assert ou_snapshot.pages_with_critical_issues == 0
-        assert ou_snapshot.avg_issues_per_page == approx(0.5)
-        assert ou_snapshot.pct_pages_with_issues == approx(0.5)
-        assert ou_snapshot.pct_pages_with_critical_issues == approx(0.0)
+        assert ou_snapshot.pages_with_violations == 1
+        assert ou_snapshot.pages_with_critical_violations == 0
+        assert ou_snapshot.avg_violations_per_page == approx(0.5)
+        assert ou_snapshot.pct_pages_with_violations == approx(0.5)
+        assert ou_snapshot.pct_pages_with_critical_violations == approx(0.0)
 
     async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession) -> None:
         root = await make_org_unit(db_session, name="Root")
@@ -247,7 +247,7 @@ class TestOrgUnitRollup:
         for ou in [leaf, middle, root]:
             ou_snap = await latest_ou_snapshot(db_session, ou.id)
             assert ou_snap.score == approx(app_snapshot.score)
-            assert ou_snap.total_issues == app_snapshot.total_issues
+            assert ou_snap.total_violations == app_snapshot.total_violations
             assert ou_snap.total_pages == app_snapshot.total_pages
 
     async def test_mixed_children_org_units_and_apps(self, db_session: AsyncSession) -> None:
@@ -273,9 +273,9 @@ class TestOrgUnitRollup:
 
         parent_snap = await latest_ou_snapshot(db_session, parent.id)
         assert parent_snap.score == approx(0.5)
-        assert parent_snap.total_issues == 1
+        assert parent_snap.total_violations == 1
         assert parent_snap.total_pages == 2
-        assert parent_snap.pages_with_critical_issues == 1
+        assert parent_snap.pages_with_critical_violations == 1
 
     async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Org")

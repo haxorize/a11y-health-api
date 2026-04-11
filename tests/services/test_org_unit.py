@@ -157,9 +157,9 @@ async def test_reparent_recomputes_rollup_scores(db_session: AsyncSession) -> No
         app_id=app_a.id,
         score=0.4,
         total_pages=2,
-        total_issues=3,
-        pages_with_issues=1,
-        pages_with_critical_issues=0,
+        total_violations=3,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
     )
 
     app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=branch_b.id)
@@ -168,9 +168,9 @@ async def test_reparent_recomputes_rollup_scores(db_session: AsyncSession) -> No
         app_id=app_b.id,
         score=1.0,
         total_pages=1,
-        total_issues=0,
-        pages_with_issues=0,
-        pages_with_critical_issues=0,
+        total_violations=0,
+        pages_with_violations=0,
+        pages_with_critical_violations=0,
     )
 
     child_ou = await make_org_unit(db_session, name="Sub-unit", parent_id=branch_a.id)
@@ -180,18 +180,18 @@ async def test_reparent_recomputes_rollup_scores(db_session: AsyncSession) -> No
         app_id=app_c.id,
         score=0.8,
         total_pages=5,
-        total_issues=1,
-        pages_with_issues=1,
-        pages_with_critical_issues=0,
+        total_violations=1,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
     )
     await make_score_snapshot(
         db_session,
         org_unit_id=child_ou.id,
         score=0.8,
         total_pages=5,
-        total_issues=1,
-        pages_with_issues=1,
-        pages_with_critical_issues=0,
+        total_violations=1,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
     )
 
     await org_unit_service.update_org_unit(db_session, child_ou.id, OrgUnitUpdate(parent_id=branch_b.id))

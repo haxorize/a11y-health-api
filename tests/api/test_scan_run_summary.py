@@ -12,9 +12,9 @@ async def test_get_scan_run_summary(db_client: AsyncClient, db_session: AsyncSes
         app_id=scan_run.app_id,
         scan_run_id=scan_run.id,
         score=0.8,
-        total_issues=10,
-        pages_with_issues=3,
-        pages_with_critical_issues=1,
+        total_violations=10,
+        pages_with_violations=3,
+        pages_with_critical_violations=1,
         total_pages=5,
     )
 
@@ -22,13 +22,13 @@ async def test_get_scan_run_summary(db_client: AsyncClient, db_session: AsyncSes
     assert response.status_code == 200
 
     data = response.json()
-    assert data["total_issues"] == 10
-    assert data["pages_with_issues"] == 3
-    assert data["pages_with_critical_issues"] == 1
+    assert data["total_violations"] == 10
+    assert data["pages_with_violations"] == 3
+    assert data["pages_with_critical_violations"] == 1
     assert data["total_pages"] == 5
-    assert data["avg_issues_per_page"] == approx(2.0)
-    assert data["pct_pages_with_issues"] == approx(0.6)
-    assert data["pct_pages_with_critical_issues"] == approx(0.2)
+    assert data["avg_violations_per_page"] == approx(2.0)
+    assert data["pct_pages_with_violations"] == approx(0.6)
+    assert data["pct_pages_with_critical_violations"] == approx(0.2)
     assert data["score"] == approx(0.8)
 
 

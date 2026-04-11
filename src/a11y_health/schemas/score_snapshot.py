@@ -9,13 +9,13 @@ class ScoreMetrics(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     score: float
-    total_issues: int
-    pages_with_issues: int
-    pages_with_critical_issues: int
+    total_violations: int
+    pages_with_violations: int
+    pages_with_critical_violations: int
     total_pages: int
-    avg_issues_per_page: float
-    pct_pages_with_issues: float
-    pct_pages_with_critical_issues: float
+    avg_violations_per_page: float
+    pct_pages_with_violations: float
+    pct_pages_with_critical_violations: float
 
 
 class ScoreSnapshotRead(ScoreMetrics):

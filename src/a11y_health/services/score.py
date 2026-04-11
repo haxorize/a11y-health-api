@@ -106,30 +106,30 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
             violations_by_page[page_result_id].append(impact)
 
     total_pages = len(pages)
-    total_issues = 0
-    pages_with_issues = 0
-    pages_with_critical_issues = 0
+    total_violations = 0
+    pages_with_violations = 0
+    pages_with_critical_violations = 0
 
     for page in pages:
         impacts = violations_by_page.get(page.id, [])
         page.page_health = _worst_page_health(impacts)
 
         violation_count = len(impacts)
-        total_issues += violation_count
+        total_violations += violation_count
         if violation_count > 0:
-            pages_with_issues += 1
+            pages_with_violations += 1
         if page.page_health == PageHealth.CRITICAL:
-            pages_with_critical_issues += 1
+            pages_with_critical_violations += 1
 
     page_healths = [p.page_health for p in pages]
     weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
 
     snapshot = build_snapshot(
         score=safe_ratio(weighted_sum, total_pages),
-        total_issues=total_issues,
+        total_violations=total_violations,
         total_pages=total_pages,
-        pages_with_issues=pages_with_issues,
-        pages_with_critical_issues=pages_with_critical_issues,
+        pages_with_violations=pages_with_violations,
+        pages_with_critical_violations=pages_with_critical_violations,
         snapshot_at=scan_run.scanned_at,
         app_id=scan_run.app_id,
         scan_run_id=scan_run.id,
@@ -147,10 +147,10 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
 def build_snapshot(
     *,
     score: float,
-    total_issues: int,
+    total_violations: int,
     total_pages: int,
-    pages_with_issues: int,
-    pages_with_critical_issues: int,
+    pages_with_violations: int,
+    pages_with_critical_violations: int,
     snapshot_at: datetime,
     app_id: int | None = None,
     scan_run_id: int | None = None,
@@ -161,13 +161,13 @@ def build_snapshot(
         scan_run_id=scan_run_id,
         org_unit_id=org_unit_id,
         score=score,
-        total_issues=total_issues,
+        total_violations=total_violations,
         total_pages=total_pages,
-        pages_with_issues=pages_with_issues,
-        pages_with_critical_issues=pages_with_critical_issues,
-        avg_issues_per_page=safe_ratio(total_issues, total_pages),
-        pct_pages_with_issues=safe_ratio(pages_with_issues, total_pages),
-        pct_pages_with_critical_issues=safe_ratio(pages_with_critical_issues, total_pages),
+        pages_with_violations=pages_with_violations,
+        pages_with_critical_violations=pages_with_critical_violations,
+        avg_violations_per_page=safe_ratio(total_violations, total_pages),
+        pct_pages_with_violations=safe_ratio(pages_with_violations, total_pages),
+        pct_pages_with_critical_violations=safe_ratio(pages_with_critical_violations, total_pages),
         snapshot_at=snapshot_at,
     )
 
@@ -198,17 +198,17 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapsh
         return
 
     count = len(children)
-    total_issues = sum(c.total_issues for c in children)
+    total_violations = sum(c.total_violations for c in children)
     total_pages = sum(c.total_pages for c in children)
-    pages_with_issues = sum(c.pages_with_issues for c in children)
-    pages_with_critical_issues = sum(c.pages_with_critical_issues for c in children)
+    pages_with_violations = sum(c.pages_with_violations for c in children)
+    pages_with_critical_violations = sum(c.pages_with_critical_violations for c in children)
 
     snapshot = build_snapshot(
         score=sum(c.score for c in children) / count,
-        total_issues=total_issues,
+        total_violations=total_violations,
         total_pages=total_pages,
-        pages_with_issues=pages_with_issues,
-        pages_with_critical_issues=pages_with_critical_issues,
+        pages_with_violations=pages_with_violations,
+        pages_with_critical_violations=pages_with_critical_violations,
         snapshot_at=snapshot_at,
         org_unit_id=org_unit_id,
     )

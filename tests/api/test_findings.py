@@ -112,7 +112,6 @@ async def test_filter_by_classification(db_client: AsyncClient, db_session: Asyn
 
 
 async def test_filter_by_classification_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    """A rule with multiple classifications appears when filtering by any of them."""
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(

@@ -39,33 +39,33 @@ async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[l
 
 
 class TestPageHealthCategorization:
-    async def test_critical_violation_gives_critical_health(self, db_session: AsyncSession):
+    async def test_critical_violation_gives_critical_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session, make_axe_payload(violations=[make_violation("rule-1", "critical")])
         )
         assert pages[0].page_health == PageHealth.CRITICAL
 
-    async def test_serious_violation_gives_serious_health(self, db_session: AsyncSession):
+    async def test_serious_violation_gives_serious_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session, make_axe_payload(violations=[make_violation("rule-1", "serious")])
         )
         assert pages[0].page_health == PageHealth.SERIOUS
 
-    async def test_moderate_violation_gives_fair_health(self, db_session: AsyncSession):
+    async def test_moderate_violation_gives_fair_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session, make_axe_payload(violations=[make_violation("rule-1", "moderate")])
         )
         assert pages[0].page_health == PageHealth.FAIR
 
-    async def test_minor_violation_gives_good_health(self, db_session: AsyncSession):
+    async def test_minor_violation_gives_good_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(db_session, make_axe_payload(violations=[make_violation("rule-1", "minor")]))
         assert pages[0].page_health == PageHealth.GOOD
 
-    async def test_no_violations_gives_good_health(self, db_session: AsyncSession):
+    async def test_no_violations_gives_good_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(db_session, make_axe_payload())
         assert pages[0].page_health == PageHealth.GOOD
 
-    async def test_worst_severity_wins(self, db_session: AsyncSession):
+    async def test_worst_severity_wins(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(violations=[make_violation("rule-1", "minor"), make_violation("rule-2", "critical")]),
@@ -74,14 +74,14 @@ class TestPageHealthCategorization:
 
 
 class TestIncompleteExcluded:
-    async def test_only_incomplete_findings_gives_good_health(self, db_session: AsyncSession):
+    async def test_only_incomplete_findings_gives_good_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(incomplete=[make_violation("rule-1", "critical")]),
         )
         assert pages[0].page_health == PageHealth.GOOD
 
-    async def test_incomplete_does_not_worsen_violation_health(self, db_session: AsyncSession):
+    async def test_incomplete_does_not_worsen_violation_health(self, db_session: AsyncSession) -> None:
         pages, _ = await _setup_and_score(
             db_session,
             make_axe_payload(
@@ -93,7 +93,7 @@ class TestIncompleteExcluded:
 
 
 class TestAppScoreFormula:
-    async def test_all_good_pages_score_1(self, db_session: AsyncSession):
+    async def test_all_good_pages_score_1(self, db_session: AsyncSession) -> None:
         # (1+1+1)/3 = 1.0
         _, snapshot = await _setup_and_score(
             db_session,
@@ -103,7 +103,7 @@ class TestAppScoreFormula:
         )
         assert snapshot.score == approx(1.0)
 
-    async def test_all_critical_pages_score_0(self, db_session: AsyncSession):
+    async def test_all_critical_pages_score_0(self, db_session: AsyncSession) -> None:
         # (0+0)/2 = 0.0
         _, snapshot = await _setup_and_score(
             db_session,
@@ -112,7 +112,7 @@ class TestAppScoreFormula:
         )
         assert snapshot.score == approx(0.0)
 
-    async def test_mixed_pages_weighted_average(self, db_session: AsyncSession):
+    async def test_mixed_pages_weighted_average(self, db_session: AsyncSession) -> None:
         # critical(0) + serious(0.4) + fair(0.8) + good(1.0) → 0.55
         _, snapshot = await _setup_and_score(
             db_session,
@@ -125,7 +125,7 @@ class TestAppScoreFormula:
 
 
 class TestScoreSnapshotMetrics:
-    async def test_all_metrics_computed(self, db_session: AsyncSession):
+    async def test_all_metrics_computed(self, db_session: AsyncSession) -> None:
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(
@@ -149,7 +149,7 @@ class TestScoreSnapshotMetrics:
 
 
 class TestStatusUpdateTriggersScoring:
-    async def test_completing_run_creates_snapshot(self, db_session: AsyncSession):
+    async def test_completing_run_creates_snapshot(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
         await create_page_result(
             db_session,
@@ -170,7 +170,7 @@ class TestStatusUpdateTriggersScoring:
 
 
 class TestBestPracticeViolations:
-    async def test_best_practice_counts_at_severity_level(self, db_session: AsyncSession):
+    async def test_best_practice_counts_at_severity_level(self, db_session: AsyncSession) -> None:
         pages, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(violations=[make_violation("bp-rule", "critical")]),
@@ -197,7 +197,7 @@ async def _latest_ou_snapshot(db_session: AsyncSession, org_unit_id: int) -> Sco
 
 
 class TestOrgUnitRollup:
-    async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession):
+    async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
         # org_unit -> app -> scan_run with one serious violation
         org_unit = await make_org_unit(db_session, name="Parent Org")
         app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
@@ -215,7 +215,7 @@ class TestOrgUnitRollup:
         assert ou_snapshot.pct_pages_with_issues == approx(app_snapshot.pct_pages_with_issues)
         assert ou_snapshot.pct_pages_with_critical_issues == approx(app_snapshot.pct_pages_with_critical_issues)
 
-    async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession):
+    async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
         # org_unit -> app_a (score 0.4, serious) + app_b (score 1.0, clean)
         org_unit = await make_org_unit(db_session, name="Parent Org")
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
@@ -247,7 +247,7 @@ class TestOrgUnitRollup:
         assert ou_snapshot.pct_pages_with_issues == approx(0.5)
         assert ou_snapshot.pct_pages_with_critical_issues == approx(0.0)
 
-    async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession):
+    async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession) -> None:
         # root -> middle -> leaf (org units), app under leaf
         root = await make_org_unit(db_session, name="Root")
         middle = await make_org_unit(db_session, name="Middle", parent_id=root.id)
@@ -265,7 +265,7 @@ class TestOrgUnitRollup:
             assert ou_snap.total_issues == app_snapshot.total_issues
             assert ou_snap.total_pages == app_snapshot.total_pages
 
-    async def test_mixed_children_org_units_and_apps(self, db_session: AsyncSession):
+    async def test_mixed_children_org_units_and_apps(self, db_session: AsyncSession) -> None:
         # parent has a direct app (score 0.0) and a child org unit with its own app (score 1.0)
         # parent score = mean(app_score=0.0, child_ou_score=1.0) = 0.5
         parent = await make_org_unit(db_session, name="Parent")
@@ -294,7 +294,7 @@ class TestOrgUnitRollup:
         assert parent_snap.total_pages == 2
         assert parent_snap.pages_with_critical_issues == 1
 
-    async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession):
+    async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
         # app has two scan runs; only the latest snapshot should be used for rollup
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id)

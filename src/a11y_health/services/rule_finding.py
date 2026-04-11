@@ -9,6 +9,8 @@ from a11y_health.models.rule_finding import Impact, RuleFinding
 from a11y_health.services._tag_parsing import parse_wcag_tag
 from a11y_health.services.scan_run import get_scan_run
 
+_RESOURCE = "Finding"
+
 
 def _parse_classification(value: str) -> dict[str, str]:
     parsed = parse_wcag_tag(value)
@@ -49,9 +51,6 @@ async def list_findings(
     stmt = stmt.order_by(RuleFinding.id).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
-
-
-_RESOURCE = "Finding"
 
 
 async def get_finding(

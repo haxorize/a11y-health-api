@@ -10,7 +10,7 @@ description: PostgreSQL schema conventions for this project. Use when designing 
 - **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` for PKs; `UUID` only when opacity or federation is needed
 - **Strings**: `TEXT` always; enforce length with `CHECK (LENGTH(col) <= n)`, never `VARCHAR(n)` or `CHAR(n)`
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times
-- **Money/precision**: `NUMERIC(p,s)`, never floats
+- **Money/precision**: `NUMERIC(p,s)` for financial or precision-critical values (e.g., currency, billing); `FLOAT` is fine for informational ratios and scores
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
 - **Enums**: `CREATE TYPE ... AS ENUM` for small stable sets; `TEXT + CHECK` for evolving values. In SQLAlchemy, always pass `values_callable=enum_values` (from `core.database`) so enum *values* (not names) are stored:
   ```python

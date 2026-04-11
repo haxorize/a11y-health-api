@@ -13,13 +13,15 @@ from a11y_health.core.database import Base, TimestampMixin, enum_values
 from a11y_health.models.enums import Brand
 
 UQ_APP_SLUG = "uq_app_slug"
+CK_APP_NAME_LENGTH = "ck_app_name_length"
+CK_APP_SLUG_LENGTH = "ck_app_slug_length"
 
 
 class App(TimestampMixin, Base):
     __tablename__ = "app"
     __table_args__ = (
-        CheckConstraint("LENGTH(name) <= 255", name="ck_app_name_length"),
-        CheckConstraint("LENGTH(slug) <= 255", name="ck_app_slug_length"),
+        CheckConstraint("LENGTH(name) <= 255", name=CK_APP_NAME_LENGTH),
+        CheckConstraint("LENGTH(slug) <= 255", name=CK_APP_SLUG_LENGTH),
         UniqueConstraint("slug", name=UQ_APP_SLUG),
         Index("ix_app_org_unit_id", "org_unit_id"),
     )

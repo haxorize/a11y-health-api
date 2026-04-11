@@ -2,10 +2,11 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import literal, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
+from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError, NotFoundError
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services.score import rollup_org_unit_scores
@@ -89,5 +90,8 @@ async def get_descendants(session: AsyncSession, org_unit_id: int) -> list[OrgUn
 
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
-    await session.delete(org_unit)
-    await session.flush()
+    try:
+        await session.delete(org_unit)
+        await session.flush()
+    except IntegrityError as exc:
+        raise HasDependentsError(_RESOURCE, org_unit_id) from exc

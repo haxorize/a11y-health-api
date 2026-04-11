@@ -39,6 +39,13 @@ class ScanRunCompletedError(Exception):
         super().__init__(f"Scan run {scan_run_id} is completed and cannot accept new pages")
 
 
+class HasDependentsError(Exception):
+    def __init__(self, resource: str, resource_id: object) -> None:
+        self.resource = resource
+        self.resource_id = resource_id
+        super().__init__(f"Cannot delete {resource} {resource_id}: it has dependent records")
+
+
 class InvalidAxePayloadError(Exception):
     def __init__(self, detail: str) -> None:
         self.detail = detail

@@ -2,7 +2,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.enums import Brand
-from tests.factories import make_app, make_org_unit
+from tests.factories import make_app, make_org_unit, make_scan_run, make_score_snapshot
 
 
 async def test_create_app(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -144,3 +144,23 @@ async def test_delete_app(db_client: AsyncClient, db_session: AsyncSession) -> N
 async def test_delete_app_not_found(db_client: AsyncClient) -> None:
     response = await db_client.delete("/api/v1/apps/999999")
     assert response.status_code == 404
+
+
+async def test_delete_app_with_scan_runs(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    app = await make_app(db_session, name="MyHumana", slug="myhumana", brand=Brand.HUMANA, org_unit_id=org_unit.id)
+    await make_scan_run(db_session, app_id=app.id)
+
+    response = await db_client.delete(f"/api/v1/apps/{app.id}")
+    assert response.status_code == 409
+    assert "dependent" in response.json()["detail"].lower()
+
+
+async def test_delete_app_with_score_snapshots(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    app = await make_app(db_session, name="MyHumana", slug="myhumana", brand=Brand.HUMANA, org_unit_id=org_unit.id)
+    await make_score_snapshot(db_session, app_id=app.id)
+
+    response = await db_client.delete(f"/api/v1/apps/{app.id}")
+    assert response.status_code == 409
+    assert "dependent" in response.json()["detail"].lower()

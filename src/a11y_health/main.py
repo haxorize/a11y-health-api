@@ -14,6 +14,7 @@ from a11y_health.core.database import engine
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     DuplicateSlugError,
+    HasDependentsError,
     InvalidAxePayloadError,
     InvalidStatusTransitionError,
     NotFoundError,
@@ -49,6 +50,7 @@ _EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
     NotFoundError: 404,
     CircularReferenceError: 409,
     DuplicateSlugError: 409,
+    HasDependentsError: 409,
     InvalidStatusTransitionError: 409,
     ScanRunCompletedError: 409,
     InvalidAxePayloadError: 422,

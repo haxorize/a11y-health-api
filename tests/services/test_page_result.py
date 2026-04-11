@@ -66,7 +66,6 @@ async def test_node_findings_stored(db_session: AsyncSession, page_result: PageR
 
 
 async def test_classifications_extracted(db_session: AsyncSession, page_result: PageResult) -> None:
-    # svg-img-alt has tags: wcag2a, wcag111 → classification wcag 2.0 A
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
         RuleFinding.rule_id == "svg-img-alt",
@@ -77,7 +76,6 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
 
     assert {"standard": "wcag", "version": "2.0", "level": "A"} in finding.classifications
 
-    # color-contrast (incomplete) has wcag2aa → wcag 2.0 AA
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
         RuleFinding.rule_id == "color-contrast",
@@ -90,7 +88,6 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
 
 
 async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, page_result: PageResult) -> None:
-    # svg-img-alt: cat.text-alternatives → "text-alternatives", wcag111 → "1.1.1"
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
         RuleFinding.rule_id == "svg-img-alt",
@@ -102,7 +99,6 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
     assert finding.category == "text-alternatives"
     assert finding.wcag_criterion == "1.1.1"
 
-    # color-contrast: cat.color → "color", wcag143 → "1.4.3"
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
         RuleFinding.rule_id == "color-contrast",

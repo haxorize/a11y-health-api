@@ -15,7 +15,7 @@ async def test_create_scan_run(db_client: AsyncClient, db_session: AsyncSession)
     assert response.status_code == 201
     data = response.json()
     assert data["app_id"] == scan_run.app_id
-    assert data["status"] == "pending"
+    assert data["status"] == ScanRunStatus.PENDING.value
     assert data["scanned_at"] == "2026-04-01T12:00:00Z"
     assert "id" in data
     assert "created_at" in data
@@ -66,10 +66,10 @@ async def test_update_scan_run_status(db_client: AsyncClient, db_session: AsyncS
 
     response = await db_client.patch(
         f"/api/v1/scan-runs/{scan_run.id}",
-        json={"status": "completed"},
+        json={"status": ScanRunStatus.COMPLETED.value},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "completed"
+    assert response.json()["status"] == ScanRunStatus.COMPLETED.value
 
 
 async def test_update_scan_run_invalid_transition(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -77,6 +77,6 @@ async def test_update_scan_run_invalid_transition(db_client: AsyncClient, db_ses
 
     response = await db_client.patch(
         f"/api/v1/scan-runs/{scan_run.id}",
-        json={"status": "pending"},
+        json={"status": ScanRunStatus.PENDING.value},
     )
     assert response.status_code == 409

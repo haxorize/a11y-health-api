@@ -85,6 +85,7 @@ async def list_app_scores(
 async def list_org_unit_scores(
     session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
+    # Inline instead of org_unit_service.get_org_unit() to avoid circular import
     org_unit = await session.get(OrgUnit, org_unit_id)
     if org_unit is None:
         raise NotFoundError("Org unit", org_unit_id)

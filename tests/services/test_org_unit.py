@@ -140,7 +140,6 @@ async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:
     branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
     leaf = await make_org_unit(db_session, name="Primary Care", parent_id=branch_a.id)
-    # Reparent leaf from branch_a to branch_b
     await org_unit_service.update_org_unit(db_session, leaf.id, OrgUnitUpdate(parent_id=branch_b.id))
     ancestors = await org_unit_service.get_ancestors(db_session, leaf.id)
     assert [a.id for a in ancestors] == [branch_b.id, root.id]

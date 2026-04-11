@@ -3,6 +3,7 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import (
     latest_ou_snapshot,
@@ -29,7 +30,7 @@ class TestScanRunCompletionTriggersScoring:
         resp = await db_client.post(f"/api/v1/scan-runs/{scan_run.id}/pages", json=payload)
         assert resp.status_code == 201
 
-        resp = await db_client.patch(f"/api/v1/scan-runs/{scan_run.id}", json={"status": "completed"})
+        resp = await db_client.patch(f"/api/v1/scan-runs/{scan_run.id}", json={"status": ScanRunStatus.COMPLETED.value})
         assert resp.status_code == 200
 
         app_snap = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))

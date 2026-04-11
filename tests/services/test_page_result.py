@@ -5,19 +5,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.enums import FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
+from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services.page_result import create_page_result
-from tests.factories import make_axe_payload, make_scan_run_with_parents
+from tests.factories import make_scan_run_with_parents
 
 
 @pytest.fixture
 async def page_result(db_session: AsyncSession, axe_payload: dict[str, Any]) -> PageResult:
     scan_run = await make_scan_run_with_parents(db_session)
-    return await create_page_result(db_session, scan_run.id, axe_payload)
+    parsed = AxePayload.model_validate(axe_payload)
+    return await create_page_result(db_session, scan_run.id, parsed, axe_payload)
 
 
 async def test_violations_stored_as_rule_findings(db_session: AsyncSession, page_result: PageResult) -> None:
@@ -112,60 +113,6 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
 
     assert finding.category == "color"
     assert finding.wcag_criterion == "1.4.3"
-
-
-async def test_reject_missing_url(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    payload = make_axe_payload()
-    del payload["testSubject"]
-
-    with pytest.raises(InvalidAxePayloadError, match="URL"):
-        await create_page_result(db_session, scan_run.id, payload)
-
-
-async def test_reject_empty_url(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-
-    with pytest.raises(InvalidAxePayloadError, match="URL"):
-        await create_page_result(db_session, scan_run.id, make_axe_payload(url=""))
-
-
-async def test_reject_missing_findings(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-
-    with pytest.raises(InvalidAxePayloadError, match="findings"):
-        await create_page_result(db_session, scan_run.id, {"testSubject": {"fileName": "https://example.com"}})
-
-
-@pytest.mark.parametrize(
-    ("section", "bad_value"),
-    [("violations", "not-a-list"), ("incomplete", 42)],
-)
-async def test_reject_non_list_finding_section(db_session: AsyncSession, section: str, bad_value: object) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-
-    payload = make_axe_payload()
-    payload["findings"][section] = bad_value
-
-    with pytest.raises(InvalidAxePayloadError, match=section):
-        await create_page_result(db_session, scan_run.id, payload)
-
-
-async def test_reject_rule_missing_required_fields(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-
-    with pytest.raises(InvalidAxePayloadError, match="missing required fields"):
-        await create_page_result(db_session, scan_run.id, make_axe_payload(violations=[{"id": "some-rule"}]))
-
-
-async def test_reject_rule_missing_id(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    payload = make_axe_payload(
-        violations=[{"impact": "serious", "description": "d", "help": "h", "helpUrl": "u"}],
-    )
-
-    with pytest.raises(InvalidAxePayloadError, match="id"):
-        await create_page_result(db_session, scan_run.id, payload)
 
 
 async def test_incompletes_stored_as_incomplete_type(db_session: AsyncSession, page_result: PageResult) -> None:

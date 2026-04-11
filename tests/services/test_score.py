@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.models.enums import PageHealth, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.schemas.scan_run import ScanRunStatusUpdate
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run, update_scan_run_status
@@ -19,12 +20,13 @@ from tests.factories import (
     make_scan_run,
     make_scan_run_with_parents,
     make_violation,
+    parse_axe_payload,
 )
 
 
 async def _ingest_and_score(db_session: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScoreSnapshot:
-    for payload in payloads:
-        await create_page_result(db_session, scan_run_id, payload)
+    for raw in payloads:
+        await create_page_result(db_session, scan_run_id, AxePayload.model_validate(raw), raw)
     sr = await get_scan_run(db_session, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
     await db_session.flush()
@@ -149,11 +151,8 @@ class TestScoreSnapshotMetrics:
 class TestStatusUpdateTriggersScoring:
     async def test_completing_run_creates_snapshot(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        await create_page_result(
-            db_session,
-            scan_run.id,
-            make_axe_payload(violations=[make_violation("r1", "serious")]),
-        )
+        parsed, raw = parse_axe_payload(violations=[make_violation("r1", "serious")])
+        await create_page_result(db_session, scan_run.id, parsed, raw)
 
         await update_scan_run_status(db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED))
 
@@ -170,11 +169,8 @@ class TestStatusUpdateTriggersScoring:
 class TestScoreIndependentOfPageHealth:
     async def test_score_correct_when_page_health_preset_to_wrong_value(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        await create_page_result(
-            db_session,
-            scan_run.id,
-            make_axe_payload(violations=[make_violation("r1", "critical")]),
-        )
+        parsed, raw = parse_axe_payload(violations=[make_violation("r1", "critical")])
+        await create_page_result(db_session, scan_run.id, parsed, raw)
 
         result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
         page = result.scalar_one()

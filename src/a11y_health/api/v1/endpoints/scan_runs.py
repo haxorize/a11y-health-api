@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.models.enums import ScanRunStatus
 from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
+from a11y_health.services import app as app_service
 from a11y_health.services import scan_run as scan_run_service
+from a11y_health.services import score as score_service
 
 app_router = APIRouter(prefix="/apps/{app_id}/scan-runs", tags=["scan-runs"])
 router = APIRouter(prefix="/scan-runs", tags=["scan-runs"])
@@ -51,4 +54,8 @@ async def get_scan_run_summary(db: DbSession, scan_run_id: int) -> ScanRunSummar
 @router.patch("/{scan_run_id}")
 async def update_scan_run_status(db: DbSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRunRead:
     scan_run = await scan_run_service.update_scan_run_status(db, scan_run_id, data)
+    if data.status == ScanRunStatus.COMPLETED:
+        snapshot = await score_service.compute_app_score(db, scan_run)
+        app = await app_service.get_app(db, scan_run.app_id)
+        await score_service.rollup_org_unit_scores(db, app.org_unit_id, snapshot.snapshot_at)
     return ScanRunRead.model_validate(scan_run)

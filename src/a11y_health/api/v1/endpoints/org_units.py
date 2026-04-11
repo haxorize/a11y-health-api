@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
@@ -56,7 +58,16 @@ async def get_descendants(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
 
 @router.patch("/{org_unit_id}")
 async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnitRead:
+    old_parent_id = None
+    if "parent_id" in data.model_fields_set:
+        old_parent_id = (await org_unit_service.get_org_unit(db, org_unit_id)).parent_id
     updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
+    if "parent_id" in data.model_fields_set and updated.parent_id != old_parent_id:
+        now = datetime.now(UTC)
+        if old_parent_id is not None:
+            await score_service.rollup_org_unit_scores(db, old_parent_id, now)
+        if updated.parent_id is not None:
+            await score_service.rollup_org_unit_scores(db, updated.parent_id, now)
     return OrgUnitRead.model_validate(updated)
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.orm import aliased
 from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
+from a11y_health.services.score import rollup_org_unit_scores
 
 _RESOURCE = "Org unit"
 
@@ -56,8 +57,6 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
     await session.refresh(org_unit)
 
     if reparented:
-        from a11y_health.services.score import rollup_org_unit_scores
-
         now = datetime.now(UTC)
         if old_parent_id is not None:
             await rollup_org_unit_scores(session, old_parent_id, now)

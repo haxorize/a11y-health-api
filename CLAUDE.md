@@ -16,7 +16,8 @@ uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
 uv run uvicorn a11y_health.main:app --reload  # dev server
-uv run a11y-upload <app_id> <directory>       # upload axe scan results
+uv run a11y-upload upload <app_id> <directory>       # upload single scan
+uv run a11y-upload bulk <directory> --org-unit-id <id> --brand <brand>  # bulk import
 ```
 
 ## Structure

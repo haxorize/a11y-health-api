@@ -19,7 +19,7 @@ tests/
   services/
     test_<resource>.py      # direct service-layer tests
   cli/
-    test_<command>.py       # CLI tool tests (e.g., test_upload.py)
+    test_<command>.py       # CLI tool tests (e.g., test_upload.py, test_bulk_import.py)
 ```
 
 ## Fixtures (from conftest.py)

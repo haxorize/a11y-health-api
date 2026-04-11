@@ -14,14 +14,17 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Scan Run** | A single test execution across one or more pages of an **App**. The timestamp reflects when the scan was performed (from test data), not when it was uploaded. | Test run, scan, batch, execution, report |
+| **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending** (accepting **Page Results**) or **Completed** (finalized, triggers scoring). Only the forward transition Pending → Completed is valid. | State, phase, stage |
 | **Page Result** | The outcome of scanning a single URL within a **Scan Run**, including raw JSON, health category, and summary counts. | Page scan, page report, test result |
 | **Raw JSON** | The full axe DevTools JSON payload preserved as JSONB on a **Page Result** for reprocessing and debugging. | Payload, source data |
+| **Bulk Import** | A CLI operation that ingests multiple date-stamped scan directories for an **App**, auto-creating the **App** if it doesn't exist. Each subdirectory becomes a **Scan Run**. | Batch upload, mass import |
 
 ## Findings & Rules
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Rule Finding** | A single axe rule outcome (violation or incomplete) for a **Page Result**, with severity, classification, and WCAG metadata. The **Impact** reflects the worst across its **Node Findings**. | Issue, rule result, defect, result |
+| **Finding Type** | Whether a **Rule Finding** is a **Violation** (definite failure, counts toward scoring) or **Incomplete** (needs manual review, excluded from scoring). | Result type, finding kind |
 | **Node Finding** | A specific DOM element instance that triggered a **Rule Finding**, with HTML snippet, selector, and failure details. | Instance, node result, occurrence, element |
 | **Impact** | The severity of a **Rule Finding**: critical, serious, moderate, or minor. | Severity, priority, level |
 | **Classification** | A standard that a **Rule Finding** belongs to — either a WCAG version/level pair (e.g., WCAG 2.1 AA) or best-practice. | Standard, conformance, tag |
@@ -44,32 +47,37 @@
 - An **Org Unit** owns zero or more **Apps**
 - An **App** has exactly one **Brand** and one **Slug**
 - An **App** has zero or more **Scan Runs**
-- A **Scan Run** has one or more **Page Results**
-- A **Page Result** has zero or more **Rule Findings** (violations and incompletes only) and exactly one **Page Health**
-- A **Rule Finding** has zero or more **Node Findings** (in practice, violations always have at least one) and one or more **Classifications**
+- A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**
+- A **Page Result** has zero or more **Rule Findings** and exactly one **Page Health**
+- A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), and one or more **Classifications**
 - A **Score Snapshot** belongs to either an **App** (linked to a **Scan Run**) or an **Org Unit** (recomputed via **Rollup**)
 
 ## Example dialogue
 
-> **Builder:** "When a **Scan Run** is marked completed, do we compute **Page Health** for every **Page Result** at once?"
+> **Builder:** "Walk me through the ingestion flow — what happens when we upload scan data?"
 >
-> **Specifier:** "Yes — on completion, each **Page Result** gets a **Page Health** based on the worst **Impact** among its **Rule Findings**. Then the **Score** is computed from those **Page Health** categories."
+> **Specifier:** "A **Scan Run** is created in **Pending** status. While it's **Pending**, you add **Page Results** — each one parses the **Raw JSON** and stores **Rule Findings** with their **Finding Type** (either **Violation** or **Incomplete**). Then you transition the **Scan Run Status** to **Completed**."
 >
-> **Builder:** "What about **Incompletes** — do they affect **Page Health**?"
+> **Builder:** "What triggers scoring?"
 >
-> **Specifier:** "No. **Incompletes** are stored as **Rule Findings** for manual review but excluded from **Page Health** and **Score** computation. Only violations count."
+> **Specifier:** "The transition to **Completed**. Each **Page Result** gets a **Page Health** based on the worst **Impact** among its **Violation**-type **Rule Findings**. Then the **Score** is computed from those **Page Health** categories and saved as a **Score Snapshot**."
 >
-> **Builder:** "And if a violation is a best-practice rather than WCAG — does it still affect the **Score**?"
+> **Builder:** "So **Incompletes** don't affect the **Score** at all?"
 >
-> **Specifier:** "Yes. Best-practice is just a **Classification**. All violations count toward **Page Health** based on their **Impact**, regardless of **Classification**."
+> **Specifier:** "Correct. **Incompletes** are stored for manual review but excluded from **Page Health** and **Score** computation. Only **Violations** count — and all of them, regardless of **Classification**. A best-practice **Violation** affects the **Score** just like a WCAG one."
 >
-> **Builder:** "Once the app **Score Snapshot** is saved, the **Rollup** kicks in for ancestor **Org Units**?"
+> **Builder:** "And the **Rollup** happens automatically after that?"
 >
-> **Specifier:** "Exactly. Each ancestor's **Score Snapshot** is recomputed as the mean of its children's latest snapshots, cascading up to the root **Org Unit**."
+> **Specifier:** "Yes. Once the app's **Score Snapshot** is saved, each ancestor **Org Unit** recomputes its own **Score Snapshot** as the mean of its children's latest snapshots, cascading up to the root."
+>
+> **Builder:** "What about **Bulk Import** — does that follow the same flow?"
+>
+> **Specifier:** "Exactly the same. **Bulk Import** just automates it — it creates the **App** if needed, then uploads each date subdirectory as a separate **Scan Run** through the same Pending → Completed lifecycle."
 
 ## Flagged ambiguities
 
-- **"Issue"** was used informally throughout the conversation to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). In this domain, "issue" should refer to a **Rule Finding**. Use **Node Finding** when referring to a specific element instance.
+- **"Issue"** was used informally to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). In this domain, "issue" should refer to a **Rule Finding**. Use **Node Finding** when referring to a specific element instance.
 - **"Score"** can refer to both the computed percentage (the **Score** value) and the full **Score Snapshot** record. Use **Score** for the percentage and **Score Snapshot** for the persisted record with all metrics.
 - **"Page"** was used to mean both a URL being tested and the **Page Result** record. Use **Page Result** when referring to the stored data. "Page" is acceptable in compound metrics like "pages with issues" where the meaning is clear.
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.
+- **"Status"** is overloaded — **Scan Run Status** (Pending/Completed) vs. the health check endpoint's `"healthy"` status. Context usually disambiguates, but prefer **Scan Run Status** when referring to the lifecycle.

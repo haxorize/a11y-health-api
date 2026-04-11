@@ -211,6 +211,33 @@ async def _complete_and_score(
     return await _ingest_and_score(db_session, sr.id, payloads)
 
 
+class TestDecoupledImports:
+    def test_score_module_does_not_import_org_unit_service(self) -> None:
+        import inspect
+
+        import a11y_health.services.score as score_module
+
+        source = inspect.getsource(score_module)
+        assert "from a11y_health.services.org_unit" not in source
+        assert "import a11y_health.services.org_unit" not in source
+
+    def test_org_unit_module_imports_rollup_at_top_level(self) -> None:
+        import ast
+        import inspect
+
+        import a11y_health.services.org_unit as org_unit_module
+
+        tree = ast.parse(inspect.getsource(org_unit_module))
+        top_level_imports = [
+            node
+            for node in ast.iter_child_nodes(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "a11y_health.services.score"
+            and any(alias.name == "rollup_org_unit_scores" for alias in node.names)
+        ]
+        assert len(top_level_imports) == 1
+
+
 class TestOrgUnitRollup:
     async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Parent Org")

@@ -72,12 +72,12 @@ src/a11y_health/
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
 - Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages. For derived resource labels, use f-string composition: `f"{_RESOURCE} summary"`
-- Catch `IntegrityError` on flush, match against exported constraint name constants, and raise a domain exception:
+- Catch `IntegrityError` on flush, match against exported constraint name constants, and raise a domain exception. Use `begin_nested()` to create a savepoint so only the failed flush is rolled back (not the entire transaction):
   ```python
   try:
-      await session.flush()
+      async with session.begin_nested():
+          await session.flush()
   except IntegrityError as exc:
-      await session.rollback()
       if UQ_APP_SLUG in str(exc):
           raise DuplicateSlugError(data.slug) from exc
       raise

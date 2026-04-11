@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
+from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories import make_app_with_org_unit, make_org_unit, make_score_snapshot
@@ -20,7 +21,7 @@ async def test_list_app_scores_ordered_chronologically(db_client: AsyncClient, d
     data = response.json()
     assert len(data) == 3
     scores = [s["score"] for s in data]
-    assert scores == [0.9, 0.75, 0.6]
+    assert scores == approx([0.9, 0.75, 0.6])
 
 
 async def test_list_org_unit_scores_ordered_chronologically(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -42,7 +43,7 @@ async def test_list_org_unit_scores_ordered_chronologically(db_client: AsyncClie
     data = response.json()
     assert len(data) == 3
     scores = [s["score"] for s in data]
-    assert scores == [0.7, 0.6, 0.5]
+    assert scores == approx([0.7, 0.6, 0.5])
 
 
 async def test_list_app_scores_empty(db_client: AsyncClient, db_session: AsyncSession) -> None:

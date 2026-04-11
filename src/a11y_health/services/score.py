@@ -124,7 +124,7 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     page_healths = [p.page_health for p in pages]
     weighted_sum = sum(_PAGE_HEALTH_WEIGHT[h] for h in page_healths if h is not None)
 
-    snapshot = _build_snapshot(
+    snapshot = build_snapshot(
         score=safe_ratio(weighted_sum, total_pages),
         total_issues=total_issues,
         total_pages=total_pages,
@@ -144,7 +144,7 @@ async def compute_scores(session: AsyncSession, scan_run: ScanRun) -> ScoreSnaps
     return snapshot
 
 
-def _build_snapshot(
+def build_snapshot(
     *,
     score: float,
     total_issues: int,
@@ -203,7 +203,7 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapsh
     pages_with_issues = sum(c.pages_with_issues for c in children)
     pages_with_critical_issues = sum(c.pages_with_critical_issues for c in children)
 
-    snapshot = _build_snapshot(
+    snapshot = build_snapshot(
         score=sum(c.score for c in children) / count,
         total_issues=total_issues,
         total_pages=total_pages,

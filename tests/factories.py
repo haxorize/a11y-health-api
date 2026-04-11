@@ -12,7 +12,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.services.score import safe_ratio
+from a11y_health.services.score import build_snapshot
 
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
@@ -92,19 +92,16 @@ async def make_score_snapshot(
     total_pages: int = 10,
     snapshot_at: datetime | None = None,
 ) -> ScoreSnapshot:
-    snapshot = ScoreSnapshot(
+    snapshot = build_snapshot(
+        score=score,
+        total_issues=total_issues,
+        total_pages=total_pages,
+        pages_with_issues=pages_with_issues,
+        pages_with_critical_issues=pages_with_critical_issues,
+        snapshot_at=snapshot_at or datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
         app_id=app_id,
         scan_run_id=scan_run_id,
         org_unit_id=org_unit_id,
-        score=score,
-        total_issues=total_issues,
-        pages_with_issues=pages_with_issues,
-        pages_with_critical_issues=pages_with_critical_issues,
-        total_pages=total_pages,
-        avg_issues_per_page=safe_ratio(total_issues, total_pages),
-        pct_pages_with_issues=safe_ratio(pages_with_issues, total_pages),
-        pct_pages_with_critical_issues=safe_ratio(pages_with_critical_issues, total_pages),
-        snapshot_at=snapshot_at or datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
     )
     db.add(snapshot)
     await db.flush()

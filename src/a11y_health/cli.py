@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.enums import Brand, ScanRunStatus
 
 ProgressCallback = Callable[[str], None]
 
@@ -170,7 +170,9 @@ def main() -> None:
     bulk_parser = subparsers.add_parser("bulk", help="Bulk import from app directory with date subdirectories")
     bulk_parser.add_argument("directory", type=Path, help="App directory containing date subdirectories")
     bulk_parser.add_argument("--org-unit-id", type=int, required=True, help="Org unit ID for auto-created apps")
-    bulk_parser.add_argument("--brand", required=True, help="Brand for auto-created apps")
+    bulk_parser.add_argument(
+        "--brand", required=True, choices=[b.value for b in Brand], help="Brand for auto-created apps"
+    )
     bulk_parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
 
     args = parser.parse_args()

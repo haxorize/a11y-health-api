@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pytest
 from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services import app as app_service
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.score import compute_app_score, rollup_brand_scores, rollup_org_unit_scores
+from a11y_health.services.score import build_snapshot, compute_app_score, rollup_brand_scores, rollup_org_unit_scores
 from tests.factories import (
     latest_brand_snapshot,
     latest_ou_snapshot,
@@ -41,6 +42,49 @@ async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[l
 
     result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
     return list(result.scalars().all()), snapshot
+
+
+_SNAPSHOT_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+
+
+def _snapshot(
+    *,
+    app_id: int | None = None,
+    scan_run_id: int | None = None,
+    org_unit_id: int | None = None,
+    brand_id: int | None = None,
+) -> ScoreSnapshot:
+    return build_snapshot(
+        score=0.8,
+        total_violations=5,
+        total_pages=10,
+        pages_with_violations=2,
+        pages_with_critical_violations=1,
+        snapshot_at=_SNAPSHOT_AT,
+        app_id=app_id,
+        scan_run_id=scan_run_id,
+        org_unit_id=org_unit_id,
+        brand_id=brand_id,
+    )
+
+
+class TestBuildSnapshotOwnership:
+    def test_rejects_no_owner(self) -> None:
+        with pytest.raises(ValueError):
+            _snapshot()
+
+    def test_rejects_multiple_owners(self) -> None:
+        with pytest.raises(ValueError):
+            _snapshot(app_id=1, brand_id=2)
+
+    def test_rejects_scan_run_without_app(self) -> None:
+        with pytest.raises(ValueError):
+            _snapshot(org_unit_id=1, scan_run_id=99)
+
+    def test_accepts_app_without_scan_run(self) -> None:
+        snapshot = _snapshot(app_id=1)
+        assert snapshot.app_id == 1
+        assert snapshot.scan_run_id is None
 
 
 class TestPageHealthCategorization:

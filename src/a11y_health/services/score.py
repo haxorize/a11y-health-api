@@ -158,11 +158,13 @@ def build_snapshot(
     app_id: int | None = None,
     scan_run_id: int | None = None,
     org_unit_id: int | None = None,
+    brand_id: int | None = None,
 ) -> ScoreSnapshot:
     return ScoreSnapshot(
         app_id=app_id,
         scan_run_id=scan_run_id,
         org_unit_id=org_unit_id,
+        brand_id=brand_id,
         score=score,
         total_violations=total_violations,
         total_pages=total_pages,
@@ -195,30 +197,52 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
     return app_snapshots + ou_snapshots
 
 
+async def _aggregate_and_save(
+    session: AsyncSession, children: list[ScoreSnapshot], snapshot_at: datetime, **owner_id: int
+) -> None:
+    count = len(children)
+    snapshot = build_snapshot(
+        score=sum(c.score for c in children) / count,
+        total_violations=sum(c.total_violations for c in children),
+        total_pages=sum(c.total_pages for c in children),
+        pages_with_violations=sum(c.pages_with_violations for c in children),
+        pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
+        snapshot_at=snapshot_at,
+        **owner_id,
+    )
+    session.add(snapshot)
+    await session.flush()
+
+
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapshot_at: datetime) -> None:
     children = await _latest_child_snapshots(session, org_unit_id)
     if not children:
         return
 
-    count = len(children)
-    total_violations = sum(c.total_violations for c in children)
-    total_pages = sum(c.total_pages for c in children)
-    pages_with_violations = sum(c.pages_with_violations for c in children)
-    pages_with_critical_violations = sum(c.pages_with_critical_violations for c in children)
-
-    snapshot = build_snapshot(
-        score=sum(c.score for c in children) / count,
-        total_violations=total_violations,
-        total_pages=total_pages,
-        pages_with_violations=pages_with_violations,
-        pages_with_critical_violations=pages_with_critical_violations,
-        snapshot_at=snapshot_at,
-        org_unit_id=org_unit_id,
-    )
-    session.add(snapshot)
-    await session.flush()
+    await _aggregate_and_save(session, children, snapshot_at, org_unit_id=org_unit_id)
 
     org_unit = await session.get(OrgUnit, org_unit_id)
     assert org_unit is not None
     if org_unit.parent_id is not None:
         await rollup_org_unit_scores(session, org_unit.parent_id, snapshot_at)
+
+
+async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
+    row_num = (
+        func.row_number().over(partition_by=ScoreSnapshot.app_id, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
+    )
+    subq = (
+        select(ScoreSnapshot.id, row_num).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
+    ).subquery()
+    result = await session.execute(
+        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
+    )
+    return list(result.scalars().all())
+
+
+async def rollup_brand_scores(session: AsyncSession, brand_id: int, snapshot_at: datetime) -> None:
+    children = await _latest_brand_app_snapshots(session, brand_id)
+    if not children:
+        return
+
+    await _aggregate_and_save(session, children, snapshot_at, brand_id=brand_id)

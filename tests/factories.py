@@ -207,6 +207,13 @@ async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapsho
     return result.scalar_one()
 
 
+async def latest_brand_snapshot(db: AsyncSession, brand_id: int) -> ScoreSnapshot:
+    result = await db.execute(
+        select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand_id).order_by(ScoreSnapshot.id.desc()).limit(1)
+    )
+    return result.scalar_one()
+
+
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
     return {
         "id": rule_id,

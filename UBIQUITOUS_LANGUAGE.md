@@ -7,7 +7,7 @@
 | **Org Unit** | A node in the organizational hierarchy (company, division, team, etc.) with an optional parent. | Organization, team, department, group, dimension |
 | **App** | A web application whose accessibility is tracked, owned by an **Org Unit**. | Property, site, project, product |
 | **Slug** | A unique, URL-friendly identifier for an **App** that matches the directory name in the test results repo. | Key, code, handle |
-| **Brand** | A static commercial brand (Humana, CenterWell, Go365, CarePlus, Reliance) assigned to an **App**. | Label, product line |
+| **Brand** | A commercial brand (Humana, CenterWell, Go365, CarePlus, Reliance) that owns one or more **Apps**, stored as a first-class entity with its own table. | Label, product line |
 
 ## Scanning & Ingestion
 
@@ -38,19 +38,21 @@
 | --- | --- | --- |
 | **Page Health** | A derived category for a **Page Result** based on its worst violation **Impact**. Uses distinct names to separate the health judgment from the raw impact level: Critical (has critical violations), Serious (worst is serious), Fair (worst is moderate), Good (worst is minor or no violations). | Page grade, page status, page score |
 | **Score** | A weighted percentage computed from **Page Health** categories, where each page contributes by its health weight: Critical = 0, Serious = 0.4, Fair = 0.8, Good = 1.0. Formula: `(0×critical + 0.4×serious + 0.8×fair + 1.0×good) / total_pages`. | Rating, grade, index |
-| **Score Snapshot** | A denormalized record of a **Score** and associated metrics (total issues, per-page averages, etc.) at a point in time for an **App** or **Org Unit**. | Score record, metric snapshot, data point |
-| **Rollup** | The upward-cascading recomputation of **Org Unit** scores as the arithmetic mean of their direct children's latest **Score Snapshots**, triggered when an **App** score changes. | Aggregation, roll-up, propagation |
+| **Score Snapshot** | A denormalized record of a **Score** and associated metrics (total violations, per-page averages, etc.) at a point in time for an **App**, **Org Unit**, or **Brand**. | Score record, metric snapshot, data point |
+| **Rollup** | The recomputation of aggregate scores as the arithmetic mean of children's latest **Score Snapshots**. Two forms: **Org Unit Rollup** (hierarchical, cascades up the tree) and **Brand Rollup** (flat, aggregates all **Apps** for a **Brand**). Both triggered when an **App** score changes. | Aggregation, roll-up, propagation |
+| **Brand Rollup** | A flat aggregation of the latest **Score Snapshots** across all **Apps** belonging to a **Brand**, regardless of **Org Unit** placement. Does not cascade. | Brand aggregation, brand scoring |
 
 ## Relationships
 
 - An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**
 - An **Org Unit** owns zero or more **Apps**
-- An **App** has exactly one **Brand** and one **Slug**
+- A **Brand** has one or more **Apps**
+- An **App** has exactly one **Brand** and one **Slug** (immutable after creation)
 - An **App** has zero or more **Scan Runs**
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**
 - A **Page Result** has zero or more **Rule Findings** and exactly one **Page Health**
 - A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), and one or more **Classifications**
-- A **Score Snapshot** belongs to either an **App** (linked to a **Scan Run**) or an **Org Unit** (recomputed via **Rollup**)
+- A **Score Snapshot** belongs to an **App** (linked to a **Scan Run**), an **Org Unit** (recomputed via **Rollup**), or a **Brand** (recomputed via **Brand Rollup**)
 
 ## Example dialogue
 
@@ -68,7 +70,11 @@
 >
 > **Builder:** "And the **Rollup** happens automatically after that?"
 >
-> **Specifier:** "Yes. Once the app's **Score Snapshot** is saved, each ancestor **Org Unit** recomputes its own **Score Snapshot** as the mean of its children's latest snapshots, cascading up to the root."
+> **Specifier:** "Yes. Once the app's **Score Snapshot** is saved, two rollups fire. The **Org Unit Rollup** cascades up the hierarchy — each ancestor **Org Unit** recomputes its **Score Snapshot** as the mean of its children's latest snapshots. The **Brand Rollup** aggregates the latest snapshots across all **Apps** for that **Brand**, regardless of where they sit in the **Org Unit** tree."
+>
+> **Builder:** "So **Brand Rollup** is flat — no cascading?"
+>
+> **Specifier:** "Exactly. A **Brand** doesn't have a hierarchy. It's a single aggregation across all **Apps** that share that **Brand**. Moving an **App** between **Org Units** changes the **Org Unit Rollup** but not the **Brand Rollup**."
 >
 > **Builder:** "What about **Bulk Import** — does that follow the same flow?"
 >
@@ -80,4 +86,5 @@
 - **"Score"** can refer to both the computed percentage (the **Score** value) and the full **Score Snapshot** record. Use **Score** for the percentage and **Score Snapshot** for the persisted record with all metrics.
 - **"Page"** was used to mean both a URL being tested and the **Page Result** record. Use **Page Result** when referring to the stored data. "Page" is acceptable in compound metrics like "pages with issues" where the meaning is clear.
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.
+- **"Rollup"** now covers two distinct patterns: hierarchical cascading (**Org Unit Rollup**) and flat aggregation (**Brand Rollup**). When unqualified, "rollup" means the general concept. Use **Org Unit Rollup** or **Brand Rollup** when the distinction matters.
 - **"Status"** is overloaded — **Scan Run Status** (Pending/Completed) vs. the health check endpoint's `"healthy"` status. Context usually disambiguates, but prefer **Scan Run Status** when referring to the lifecycle.

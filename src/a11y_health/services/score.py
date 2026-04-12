@@ -7,16 +7,15 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.app import App
+from a11y_health.models.brand import Brand
 from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.services import app as app_service
-from a11y_health.services import brand as brand_service
-from a11y_health.services import org_unit as org_unit_service
 
 _IMPACT_TO_PAGE_HEALTH: dict[Impact, PageHealth] = {
     Impact.CRITICAL: PageHealth.CRITICAL,
@@ -79,21 +78,24 @@ async def _list_scores(
 async def list_app_scores(
     session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    await app_service.get_app(session, app_id)
+    if await session.get(App, app_id) is None:
+        raise NotFoundError("App", app_id)
     return await _list_scores(session, ScoreSnapshot.app_id, app_id, offset=offset, limit=limit)
 
 
 async def list_brand_scores(
     session: AsyncSession, brand_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    await brand_service.get_brand(session, brand_id)
+    if await session.get(Brand, brand_id) is None:
+        raise NotFoundError("Brand", brand_id)
     return await _list_scores(session, ScoreSnapshot.brand_id, brand_id, offset=offset, limit=limit)
 
 
 async def list_org_unit_scores(
     session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    await org_unit_service.get_org_unit(session, org_unit_id)
+    if await session.get(OrgUnit, org_unit_id) is None:
+        raise NotFoundError("Org unit", org_unit_id)
     return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, offset=offset, limit=limit)
 
 

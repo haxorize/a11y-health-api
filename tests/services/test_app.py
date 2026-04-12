@@ -1,7 +1,9 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
+from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import app as app_service
 from tests.factories import make_app, make_brand, make_org_unit
@@ -123,6 +125,41 @@ async def test_delete_app(db_session: AsyncSession) -> None:
     await app_service.delete_app(db_session, created.id)
     with pytest.raises(NotFoundError):
         await app_service.get_app(db_session, created.id)
+
+
+async def test_update_app_org_unit(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    org_unit_a = await make_org_unit(db_session, name="Org A")
+    org_unit_b = await make_org_unit(db_session, name="Org B")
+    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit_a.id)
+    updated = await app_service.update_app(db_session, app.id, AppUpdate(org_unit_id=org_unit_b.id))
+    assert updated.org_unit_id == org_unit_b.id
+
+
+async def test_update_app_same_org_unit_no_rollup(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    org_unit = await make_org_unit(db_session)
+    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
+    await app_service.update_app(db_session, app.id, AppUpdate(org_unit_id=org_unit.id))
+    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_update_app_name_only_no_rollup(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    org_unit = await make_org_unit(db_session)
+    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
+    await app_service.update_app(db_session, app.id, AppUpdate(name="Renamed"))
+    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_update_app_org_unit_not_found(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    org_unit = await make_org_unit(db_session)
+    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
+    with pytest.raises(NotFoundError, match="Org unit"):
+        await app_service.update_app(db_session, app.id, AppUpdate(org_unit_id=999999))
 
 
 async def test_delete_app_not_found(db_session: AsyncSession) -> None:

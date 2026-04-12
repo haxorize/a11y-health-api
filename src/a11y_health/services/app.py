@@ -55,11 +55,25 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
 
 
 async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App:
+    from a11y_health.services import scoring_orchestration
+
     app = await get_app(session, app_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    fields = data.model_dump(exclude_unset=True)
+    old_org_unit_id = app.org_unit_id
+    new_org_unit_id = fields.get("org_unit_id")
+    reassigning = new_org_unit_id is not None and new_org_unit_id != old_org_unit_id
+
+    if new_org_unit_id is not None:
+        await get_org_unit(session, new_org_unit_id)
+
+    for field, value in fields.items():
         setattr(app, field, value)
     await session.flush()
     await session.refresh(app)
+
+    if reassigning:
+        await scoring_orchestration.on_app_reassigned(session, old_org_unit_id, new_org_unit_id)
+
     return app
 
 

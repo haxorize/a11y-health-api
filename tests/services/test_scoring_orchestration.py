@@ -11,6 +11,7 @@ from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.scoring_orchestration import (
     on_app_deleted,
+    on_app_reassigned,
     on_org_unit_reparented,
     on_scan_run_completed,
     on_scan_run_deleted,
@@ -356,3 +357,104 @@ class TestOnAppDeleted:
         await db_session.delete(app)
         await db_session.flush()
         await on_app_deleted(db_session, org_unit.id, brand.id)
+
+
+class TestOnAppReassigned:
+    async def test_recalculates_both_org_units(self, db_session: AsyncSession) -> None:
+        org_a = await make_org_unit(db_session, name="Org A")
+        org_b = await make_org_unit(db_session, name="Org B")
+
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_a.id)
+        await make_score_snapshot(
+            db_session,
+            app_id=app_a.id,
+            score=0.4,
+            total_pages=2,
+            total_violations=3,
+            pages_with_violations=1,
+            pages_with_critical_violations=0,
+        )
+
+        app_stay = await make_app(db_session, name="App Stay", slug="app-stay", org_unit_id=org_a.id)
+        await make_score_snapshot(
+            db_session,
+            app_id=app_stay.id,
+            score=1.0,
+            total_pages=1,
+            total_violations=0,
+            pages_with_violations=0,
+            pages_with_critical_violations=0,
+        )
+
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_b.id)
+        await make_score_snapshot(
+            db_session,
+            app_id=app_b.id,
+            score=1.0,
+            total_pages=1,
+            total_violations=0,
+            pages_with_violations=0,
+            pages_with_critical_violations=0,
+        )
+
+        app_a.org_unit_id = org_b.id
+        await db_session.flush()
+        await on_app_reassigned(db_session, org_a.id, org_b.id)
+
+        old_snap = await latest_ou_snapshot(db_session, org_a.id)
+        assert old_snap.score == approx(1.0)
+
+        new_snap = await latest_ou_snapshot(db_session, org_b.id)
+        assert new_snap.score == approx((1.0 + 0.4) / 2)
+
+    async def test_propagates_parent_chains(self, db_session: AsyncSession) -> None:
+        root_a = await make_org_unit(db_session, name="Root A")
+        leaf_a = await make_org_unit(db_session, name="Leaf A", parent_id=root_a.id)
+        root_b = await make_org_unit(db_session, name="Root B")
+        leaf_b = await make_org_unit(db_session, name="Leaf B", parent_id=root_b.id)
+
+        app = await make_app(db_session, name="App", slug="app-move", org_unit_id=leaf_a.id)
+        await make_score_snapshot(
+            db_session,
+            app_id=app.id,
+            score=0.6,
+            total_pages=3,
+            total_violations=2,
+            pages_with_violations=1,
+            pages_with_critical_violations=0,
+        )
+
+        app.org_unit_id = leaf_b.id
+        await db_session.flush()
+        await on_app_reassigned(db_session, leaf_a.id, leaf_b.id)
+
+        leaf_b_snap = await latest_ou_snapshot(db_session, leaf_b.id)
+        assert leaf_b_snap.score == approx(0.6)
+        root_b_snap = await latest_ou_snapshot(db_session, root_b.id)
+        assert root_b_snap.score == approx(0.6)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == leaf_a.id))
+        assert result.scalar_one_or_none() is None
+
+    async def test_does_not_touch_brand(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_a = await make_org_unit(db_session, name="Org A")
+        org_b = await make_org_unit(db_session, name="Org B")
+
+        app = await make_app(db_session, name="App", slug="app-brand-noop", org_unit_id=org_a.id, brand_id=brand.id)
+        await make_score_snapshot(
+            db_session,
+            app_id=app.id,
+            score=0.6,
+            total_pages=3,
+            total_violations=2,
+            pages_with_violations=1,
+            pages_with_critical_violations=0,
+        )
+
+        app.org_unit_id = org_b.id
+        await db_session.flush()
+        await on_app_reassigned(db_session, org_a.id, org_b.id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
+        assert result.scalar_one_or_none() is None

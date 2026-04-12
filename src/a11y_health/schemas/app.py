@@ -14,6 +14,7 @@ class AppCreate(BaseModel):
 
 class AppUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
+    org_unit_id: int | None = None
 
 
 class AppRead(BaseModel):

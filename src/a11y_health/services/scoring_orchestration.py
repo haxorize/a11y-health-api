@@ -45,6 +45,12 @@ async def _recalculate_rollups(session: AsyncSession, org_unit_id: int, brand_id
     await score_service.rollup_brand_scores(session, brand_id, now)
 
 
+async def on_app_reassigned(session: AsyncSession, old_org_unit_id: int, new_org_unit_id: int) -> None:
+    now = datetime.now(UTC)
+    await score_service.rollup_org_unit_scores(session, old_org_unit_id, now)
+    await score_service.rollup_org_unit_scores(session, new_org_unit_id, now)
+
+
 async def on_org_unit_reparented(
     session: AsyncSession,
     org_unit_id: int,

@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
+from sqlalchemy.types import Text
 
 from a11y_health.core.exceptions import InvalidAxePayloadError, NotFoundError
-from a11y_health.models.enums import Impact
+from a11y_health.models.enums import FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -33,10 +35,11 @@ async def list_findings(
     session: AsyncSession,
     scan_run_id: int,
     *,
-    impact: Impact | None = None,
-    category: str | None = None,
-    wcag_criterion: str | None = None,
-    classification: Classification | None = None,
+    finding_type: list[FindingType] | None = None,
+    impact: list[Impact] | None = None,
+    category: list[str] | None = None,
+    wcag_criterion: list[str] | None = None,
+    classification: list[Classification] | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> list[RuleFinding]:
@@ -48,15 +51,17 @@ async def list_findings(
         .where(PageResult.scan_run_id == scan_run_id)
     )
 
-    if impact is not None:
-        stmt = stmt.where(RuleFinding.impact == impact)
-    if category is not None:
-        stmt = stmt.where(RuleFinding.category == category)
-    if wcag_criterion is not None:
-        stmt = stmt.where(RuleFinding.wcag_criteria.contains([wcag_criterion]))
-    if classification is not None:
-        target = _parse_classification(classification)
-        stmt = stmt.where(RuleFinding.classifications.contains([target]))
+    if finding_type:
+        stmt = stmt.where(RuleFinding.type.in_(finding_type))
+    if impact:
+        stmt = stmt.where(RuleFinding.impact.in_(impact))
+    if category:
+        stmt = stmt.where(RuleFinding.category.in_(category))
+    if wcag_criterion:
+        stmt = stmt.where(RuleFinding.wcag_criteria.has_any(array(wcag_criterion, type_=Text)))
+    if classification:
+        targets = [_parse_classification(c) for c in classification]
+        stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
 
     stmt = stmt.order_by(RuleFinding.id).offset(offset).limit(limit)
     result = await session.execute(stmt)

@@ -53,7 +53,7 @@
 - An **App** has zero or more **Scan Runs**
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**
 - A **Page Result** has zero or more **Rule Findings** and exactly one **Page Health**
-- A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), and one or more **Classifications**
+- A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), one or more **Classifications**, and zero or more **WCAG Criteria**
 - A **Score Snapshot** belongs to an **App** (linked to a **Scan Run**), an **Org Unit** (recomputed via **Rollup**), or a **Brand** (recomputed via **Brand Rollup**)
 
 ## Example dialogue

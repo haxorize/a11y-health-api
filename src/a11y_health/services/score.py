@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -41,7 +42,17 @@ def safe_ratio(numerator: float, denominator: int) -> float:
     return numerator / denominator if denominator > 0 else 0.0
 
 
-def _worst_page_health(impacts: list[Impact]) -> PageHealth:
+@dataclass(frozen=True)
+class AppScoreResult:
+    page_healths: dict[int, PageHealth]
+    score: float
+    total_violations: int
+    total_pages: int
+    pages_with_violations: int
+    pages_with_critical_violations: int
+
+
+def compute_page_health(impacts: list[Impact]) -> PageHealth:
     if not impacts:
         return PageHealth.GOOD
     worst = PageHealth.GOOD
@@ -54,6 +65,37 @@ def _worst_page_health(impacts: list[Impact]) -> PageHealth:
             if worst == PageHealth.CRITICAL:
                 break
     return worst
+
+
+def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, list[Impact]]) -> AppScoreResult:
+    total_pages = len(page_ids)
+    total_violations = 0
+    pages_with_violations = 0
+    pages_with_critical_violations = 0
+    weighted_sum = 0.0
+    page_healths: dict[int, PageHealth] = {}
+
+    for page_id in page_ids:
+        impacts = violations_by_page.get(page_id, [])
+        health = compute_page_health(impacts)
+        page_healths[page_id] = health
+        weighted_sum += _PAGE_HEALTH_WEIGHT[health]
+
+        violation_count = len(impacts)
+        total_violations += violation_count
+        if violation_count > 0:
+            pages_with_violations += 1
+        if health == PageHealth.CRITICAL:
+            pages_with_critical_violations += 1
+
+    return AppScoreResult(
+        page_healths=page_healths,
+        score=safe_ratio(weighted_sum, total_pages),
+        total_violations=total_violations,
+        total_pages=total_pages,
+        pages_with_violations=pages_with_violations,
+        pages_with_critical_violations=pages_with_critical_violations,
+    )
 
 
 async def _list_scores(
@@ -99,6 +141,7 @@ async def list_org_unit_scores(
 
 
 async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:
+    # Fetch
     result = await session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
     pages = list(result.scalars().all())
     page_ids = [p.id for p in pages]
@@ -114,35 +157,19 @@ async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSn
         for page_result_id, impact in findings_result.all():
             violations_by_page[page_result_id].append(impact)
 
-    total_pages = len(pages)
-    total_violations = 0
-    pages_with_violations = 0
-    pages_with_critical_violations = 0
-    weighted_sum = 0.0
-    page_health_by_id: dict[int, PageHealth] = {}
+    # Compute
+    score_result = compute_app_score_result(page_ids, violations_by_page)
 
+    # Persist
     for page in pages:
-        impacts = violations_by_page.get(page.id, [])
-        health = _worst_page_health(impacts)
-        page_health_by_id[page.id] = health
-        weighted_sum += _PAGE_HEALTH_WEIGHT[health]
-
-        violation_count = len(impacts)
-        total_violations += violation_count
-        if violation_count > 0:
-            pages_with_violations += 1
-        if health == PageHealth.CRITICAL:
-            pages_with_critical_violations += 1
-
-    for page in pages:
-        page.page_health = page_health_by_id[page.id]
+        page.page_health = score_result.page_healths[page.id]
 
     snapshot = build_snapshot(
-        score=safe_ratio(weighted_sum, total_pages),
-        total_violations=total_violations,
-        total_pages=total_pages,
-        pages_with_violations=pages_with_violations,
-        pages_with_critical_violations=pages_with_critical_violations,
+        score=score_result.score,
+        total_violations=score_result.total_violations,
+        total_pages=score_result.total_pages,
+        pages_with_violations=score_result.pages_with_violations,
+        pages_with_critical_violations=score_result.pages_with_critical_violations,
         snapshot_at=scan_run.scanned_at,
         app_id=scan_run.app_id,
         scan_run_id=scan_run.id,

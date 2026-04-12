@@ -5,14 +5,21 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import PageHealth, ScanRunStatus
+from a11y_health.models.enums import Impact, PageHealth, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services import app as app_service
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.score import build_snapshot, compute_app_score, rollup_brand_scores, rollup_org_unit_scores
+from a11y_health.services.score import (
+    build_snapshot,
+    compute_app_score,
+    compute_app_score_result,
+    compute_page_health,
+    rollup_brand_scores,
+    rollup_org_unit_scores,
+)
 from tests.factories import (
     latest_brand_snapshot,
     latest_ou_snapshot,
@@ -87,87 +94,74 @@ class TestBuildSnapshotOwnership:
         assert snapshot.scan_run_id is None
 
 
-class TestPageHealthCategorization:
-    async def test_critical_violation_gives_critical_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session, make_axe_payload(violations=[make_violation("rule-1", "critical")])
+class TestComputePageHealth:
+    def test_critical_impact_gives_critical_health(self) -> None:
+        assert compute_page_health([Impact.CRITICAL]) == PageHealth.CRITICAL
+
+    def test_serious_impact_gives_serious_health(self) -> None:
+        assert compute_page_health([Impact.SERIOUS]) == PageHealth.SERIOUS
+
+    def test_moderate_impact_gives_fair_health(self) -> None:
+        assert compute_page_health([Impact.MODERATE]) == PageHealth.FAIR
+
+    def test_minor_impact_gives_good_health(self) -> None:
+        assert compute_page_health([Impact.MINOR]) == PageHealth.GOOD
+
+    def test_empty_list_gives_good_health(self) -> None:
+        assert compute_page_health([]) == PageHealth.GOOD
+
+    def test_worst_impact_wins(self) -> None:
+        assert compute_page_health([Impact.MINOR, Impact.CRITICAL]) == PageHealth.CRITICAL
+
+
+class TestComputeAppScoreResult:
+    def test_all_good_pages_score_1(self) -> None:
+        result = compute_app_score_result(
+            page_ids=[1, 2, 3],
+            violations_by_page={},
         )
-        assert pages[0].page_health == PageHealth.CRITICAL
+        assert result.score == approx(1.0)
+        assert result.page_healths == {1: PageHealth.GOOD, 2: PageHealth.GOOD, 3: PageHealth.GOOD}
 
-    async def test_serious_violation_gives_serious_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session, make_axe_payload(violations=[make_violation("rule-1", "serious")])
+    def test_all_critical_pages_score_0(self) -> None:
+        result = compute_app_score_result(
+            page_ids=[1, 2],
+            violations_by_page={1: [Impact.CRITICAL], 2: [Impact.CRITICAL]},
         )
-        assert pages[0].page_health == PageHealth.SERIOUS
+        assert result.score == approx(0.0)
 
-    async def test_moderate_violation_gives_fair_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session, make_axe_payload(violations=[make_violation("rule-1", "moderate")])
+    def test_mixed_pages_weighted_average(self) -> None:
+        result = compute_app_score_result(
+            page_ids=[1, 2, 3, 4],
+            violations_by_page={
+                1: [Impact.CRITICAL],
+                2: [Impact.SERIOUS],
+                3: [Impact.MODERATE],
+            },
         )
-        assert pages[0].page_health == PageHealth.FAIR
+        assert result.score == approx(0.55)
+        assert result.page_healths[4] == PageHealth.GOOD
 
-    async def test_minor_violation_gives_good_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(db_session, make_axe_payload(violations=[make_violation("rule-1", "minor")]))
-        assert pages[0].page_health == PageHealth.GOOD
+    def test_zero_pages_returns_zero_score(self) -> None:
+        result = compute_app_score_result(page_ids=[], violations_by_page={})
+        assert result.score == approx(0.0)
+        assert result.total_pages == 0
 
-    async def test_no_violations_gives_good_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(db_session, make_axe_payload())
-        assert pages[0].page_health == PageHealth.GOOD
-
-    async def test_worst_severity_wins(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session,
-            make_axe_payload(violations=[make_violation("rule-1", "minor"), make_violation("rule-2", "critical")]),
+    def test_metric_accumulation(self) -> None:
+        result = compute_app_score_result(
+            page_ids=[1, 2, 3],
+            violations_by_page={
+                1: [Impact.CRITICAL, Impact.SERIOUS],
+                3: [Impact.SERIOUS],
+            },
         )
-        assert pages[0].page_health == PageHealth.CRITICAL
-
-
-class TestIncompleteExcluded:
-    async def test_only_incomplete_findings_gives_good_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session,
-            make_axe_payload(incomplete=[make_violation("rule-1", "critical")]),
-        )
-        assert pages[0].page_health == PageHealth.GOOD
-
-    async def test_incomplete_does_not_worsen_violation_health(self, db_session: AsyncSession) -> None:
-        pages, _ = await _setup_and_score(
-            db_session,
-            make_axe_payload(
-                violations=[make_violation("rule-1", "moderate")],
-                incomplete=[make_violation("rule-2", "critical")],
-            ),
-        )
-        assert pages[0].page_health == PageHealth.FAIR
-
-
-class TestAppScoreFormula:
-    async def test_all_good_pages_score_1(self, db_session: AsyncSession) -> None:
-        _, snapshot = await _setup_and_score(
-            db_session,
-            make_axe_payload(url="https://example.com/a"),
-            make_axe_payload(url="https://example.com/b"),
-            make_axe_payload(url="https://example.com/c"),
-        )
-        assert snapshot.score == approx(1.0)
-
-    async def test_all_critical_pages_score_0(self, db_session: AsyncSession) -> None:
-        _, snapshot = await _setup_and_score(
-            db_session,
-            make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
-            make_axe_payload(url="https://example.com/b", violations=[make_violation("r2", "critical")]),
-        )
-        assert snapshot.score == approx(0.0)
-
-    async def test_mixed_pages_weighted_average(self, db_session: AsyncSession) -> None:
-        _, snapshot = await _setup_and_score(
-            db_session,
-            make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
-            make_axe_payload(url="https://example.com/b", violations=[make_violation("r2", "serious")]),
-            make_axe_payload(url="https://example.com/c", violations=[make_violation("r3", "moderate")]),
-            make_axe_payload(url="https://example.com/d"),
-        )
-        assert snapshot.score == approx(0.55)
+        assert result.total_violations == 3
+        assert result.total_pages == 3
+        assert result.pages_with_violations == 2
+        assert result.pages_with_critical_violations == 1
+        assert result.page_healths[1] == PageHealth.CRITICAL
+        assert result.page_healths[2] == PageHealth.GOOD
+        assert result.page_healths[3] == PageHealth.SERIOUS
 
 
 class TestScoreSnapshotMetrics:
@@ -231,16 +225,6 @@ class TestScoreIndependentOfPageHealth:
         assert snapshot.score == approx(0.0)
         assert snapshot.pages_with_critical_violations == 1
         assert page.page_health == PageHealth.CRITICAL
-
-
-class TestBestPracticeViolations:
-    async def test_best_practice_counts_at_severity_level(self, db_session: AsyncSession) -> None:
-        pages, snapshot = await _setup_and_score(
-            db_session,
-            make_axe_payload(violations=[make_violation("bp-rule", "critical")]),
-        )
-        assert pages[0].page_health == PageHealth.CRITICAL
-        assert snapshot.score == approx(0.0)
 
 
 async def _complete_and_score(

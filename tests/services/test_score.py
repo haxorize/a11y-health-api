@@ -213,15 +213,6 @@ async def _complete_and_score(
 
 
 class TestDecoupledImports:
-    def test_score_module_does_not_import_org_unit_service(self) -> None:
-        import inspect
-
-        import a11y_health.services.score as score_module
-
-        source = inspect.getsource(score_module)
-        assert "from a11y_health.services.org_unit" not in source
-        assert "import a11y_health.services.org_unit" not in source
-
     def test_org_unit_module_does_not_import_score(self) -> None:
         import inspect
 

@@ -58,4 +58,5 @@ async def update_scan_run_status(db: DbSession, scan_run_id: int, data: ScanRunS
         snapshot = await score_service.compute_app_score(db, scan_run)
         app = await app_service.get_app(db, scan_run.app_id)
         await score_service.rollup_org_unit_scores(db, app.org_unit_id, snapshot.snapshot_at)
+        await score_service.rollup_brand_scores(db, app.brand_id, snapshot.snapshot_at)
     return ScanRunRead.model_validate(scan_run)

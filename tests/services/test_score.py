@@ -11,11 +11,13 @@ from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services import app as app_service
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.score import compute_app_score, rollup_org_unit_scores
+from a11y_health.services.score import compute_app_score, rollup_brand_scores, rollup_org_unit_scores
 from tests.factories import (
+    latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
     make_axe_payload,
+    make_brand,
     make_org_unit,
     make_scan_run,
     make_scan_run_with_parents,
@@ -347,3 +349,128 @@ class TestOrgUnitRollup:
         )
 
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)
+
+
+async def _complete_score_and_rollup_brand(
+    db_session: AsyncSession,
+    app_id: int,
+    brand_id: int,
+    payloads: list[dict],
+    scanned_at: datetime | None = None,
+) -> ScoreSnapshot:
+    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
+    snapshot = await _ingest_and_score(db_session, sr.id, payloads)
+    await rollup_brand_scores(db_session, brand_id, snapshot.snapshot_at)
+    return snapshot
+
+
+class TestBrandRollup:
+    async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        app_snapshot = await _complete_score_and_rollup_brand(
+            db_session, app.id, brand.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(app_snapshot.score)
+        assert brand_snap.total_violations == app_snapshot.total_violations
+        assert brand_snap.total_pages == app_snapshot.total_pages
+        assert brand_snap.pages_with_violations == app_snapshot.pages_with_violations
+        assert brand_snap.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
+        assert brand_snap.avg_violations_per_page == approx(app_snapshot.avg_violations_per_page)
+        assert brand_snap.pct_pages_with_violations == approx(app_snapshot.pct_pages_with_violations)
+        assert brand_snap.pct_pages_with_critical_violations == approx(app_snapshot.pct_pages_with_critical_violations)
+
+    async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CenterWell")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_a.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_b.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(0.7)
+        assert brand_snap.total_violations == 1
+        assert brand_snap.total_pages == 2
+        assert brand_snap.pages_with_violations == 1
+        assert brand_snap.pages_with_critical_violations == 0
+        assert brand_snap.avg_violations_per_page == approx(0.5)
+        assert brand_snap.pct_pages_with_violations == approx(0.5)
+        assert brand_snap.pct_pages_with_critical_violations == approx(0.0)
+
+    async def test_apps_across_different_org_units(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Go365")
+        ou_a = await make_org_unit(db_session, name="Division A")
+        ou_b = await make_org_unit(db_session, name="Division B")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=ou_a.id, brand_id=brand.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=ou_b.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_a.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_b.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(0.5)
+        assert brand_snap.total_violations == 1
+        assert brand_snap.total_pages == 2
+        assert brand_snap.pages_with_critical_violations == 1
+
+    async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(1.0)
+
+    async def test_no_apps_with_scores_skips_snapshot(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CarePlus")
+        org_unit = await make_org_unit(db_session, name="Org")
+        await make_app(db_session, name="App", slug="app-no-scores", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await rollup_brand_scores(db_session, brand.id, datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC))
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
+        assert result.scalar_one_or_none() is None

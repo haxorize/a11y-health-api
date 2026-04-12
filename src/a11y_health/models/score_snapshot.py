@@ -14,6 +14,7 @@ class ScoreSnapshot(TimestampMixin, Base):
         UniqueConstraint("scan_run_id", name=UQ_SCORE_SNAPSHOT_SCAN_RUN_ID),
         Index("ix_score_snapshot_app_id", "app_id"),
         Index("ix_score_snapshot_org_unit_id", "org_unit_id"),
+        Index("ix_score_snapshot_brand_id", "brand_id"),
     )
 
     app_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="RESTRICT"), nullable=True)
@@ -23,6 +24,7 @@ class ScoreSnapshot(TimestampMixin, Base):
     org_unit_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=True
     )
+    brand_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("brand.id", ondelete="RESTRICT"), nullable=True)
     score: Mapped[float] = mapped_column(Float, nullable=False)
     total_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     pages_with_violations: Mapped[int] = mapped_column(Integer, nullable=False)

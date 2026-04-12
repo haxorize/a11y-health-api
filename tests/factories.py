@@ -202,18 +202,19 @@ async def make_node_finding(
     return nf
 
 
-async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
+async def _latest_snapshot(db: AsyncSession, filter_col: Any, filter_val: int) -> ScoreSnapshot:
     result = await db.execute(
-        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id).order_by(ScoreSnapshot.id.desc()).limit(1)
+        select(ScoreSnapshot).where(filter_col == filter_val).order_by(ScoreSnapshot.id.desc()).limit(1)
     )
     return result.scalar_one()
+
+
+async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
+    return await _latest_snapshot(db, ScoreSnapshot.org_unit_id, org_unit_id)
 
 
 async def latest_brand_snapshot(db: AsyncSession, brand_id: int) -> ScoreSnapshot:
-    result = await db.execute(
-        select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand_id).order_by(ScoreSnapshot.id.desc()).limit(1)
-    )
-    return result.scalar_one()
+    return await _latest_snapshot(db, ScoreSnapshot.brand_id, brand_id)
 
 
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:

@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import FindingType
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -31,7 +31,7 @@ async def _persist_findings(
             page_result_id=page_result_id,
             rule_id=rule.id,
             type=finding_type,
-            impact=Impact(rule.impact),
+            impact=rule.impact,
             description=rule.description,
             help=rule.help,
             help_url=rule.help_url,
@@ -51,7 +51,7 @@ async def _persist_findings(
             nf = NodeFinding(
                 html=node.html,
                 target=node.target,
-                impact=Impact(node.impact),
+                impact=node.impact,
                 failure_summary=node.failure_summary,
                 checks=checks,
             )

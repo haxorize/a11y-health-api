@@ -32,13 +32,6 @@ async def test_list_org_units(db_session: AsyncSession) -> None:
     assert len(result) == 2
 
 
-async def test_list_org_units_pagination(db_session: AsyncSession) -> None:
-    for i in range(5):
-        await make_org_unit(db_session, name=f"Org {i}")
-    result = await org_unit_service.list_org_units(db_session, offset=1, limit=2)
-    assert len(result) == 2
-
-
 async def test_get_org_unit(db_session: AsyncSession) -> None:
     created = await make_org_unit(db_session, name="Humana")
     fetched = await org_unit_service.get_org_unit(db_session, created.id)

@@ -18,12 +18,8 @@ async def create_org_unit(db: DbSession, data: OrgUnitCreate) -> OrgUnitRead:
 
 
 @router.get("")
-async def list_org_units(
-    db: DbSession,
-    offset: int = 0,
-    limit: int = Query(default=20, le=100),
-) -> list[OrgUnitRead]:
-    org_units = await org_unit_service.list_org_units(db, offset=offset, limit=limit)
+async def list_org_units(db: DbSession) -> list[OrgUnitRead]:
+    org_units = await org_unit_service.list_org_units(db)
     return [OrgUnitRead.model_validate(ou) for ou in org_units]
 
 

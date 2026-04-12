@@ -7,7 +7,7 @@ from a11y_health.models.enums import Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
-from a11y_health.services._tag_parsing import parse_wcag_tag
+from a11y_health.services._tag_parsing import Classification, parse_wcag_tag
 from a11y_health.services.scan_run import get_scan_run
 
 _RESOURCE = "Finding"
@@ -27,7 +27,7 @@ async def list_findings(
     impact: Impact | None = None,
     category: str | None = None,
     wcag_criterion: str | None = None,
-    classification: str | None = None,
+    classification: Classification | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> list[RuleFinding]:

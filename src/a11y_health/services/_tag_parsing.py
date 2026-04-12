@@ -16,8 +16,6 @@ Classification = Literal[
     "best-practice",
 ]
 
-VALID_CLASSIFICATIONS: frozenset[Classification] = frozenset(Classification.__args__)
-
 
 def parse_wcag_tag(tag: str) -> dict[str, str] | None:
     if tag == "best-practice":

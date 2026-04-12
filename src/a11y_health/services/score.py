@@ -7,7 +7,6 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
@@ -17,6 +16,7 @@ from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import app as app_service
 from a11y_health.services import brand as brand_service
+from a11y_health.services import org_unit as org_unit_service
 
 _IMPACT_TO_PAGE_HEALTH: dict[Impact, PageHealth] = {
     Impact.CRITICAL: PageHealth.CRITICAL,
@@ -93,10 +93,7 @@ async def list_brand_scores(
 async def list_org_unit_scores(
     session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    # Inline instead of org_unit_service.get_org_unit() to avoid circular import
-    org_unit = await session.get(OrgUnit, org_unit_id)
-    if org_unit is None:
-        raise NotFoundError("Org unit", org_unit_id)
+    await org_unit_service.get_org_unit(session, org_unit_id)
     return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, offset=offset, limit=limit)
 
 

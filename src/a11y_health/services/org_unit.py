@@ -22,8 +22,8 @@ async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit
     return org_unit
 
 
-async def list_org_units(session: AsyncSession, *, offset: int = 0, limit: int = 20) -> Sequence[OrgUnit]:
-    result = await session.execute(select(OrgUnit).order_by(OrgUnit.id).offset(offset).limit(limit))
+async def list_org_units(session: AsyncSession) -> Sequence[OrgUnit]:
+    result = await session.execute(select(OrgUnit).order_by(OrgUnit.id))
     return result.scalars().all()
 
 

@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
@@ -203,10 +202,8 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
         )
         return list(result.scalars().all())
 
-    app_snapshots, ou_snapshots = await asyncio.gather(
-        _query(App, ScoreSnapshot.app_id == App.id, App.org_unit_id),
-        _query(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id),
-    )
+    app_snapshots = await _query(App, ScoreSnapshot.app_id == App.id, App.org_unit_id)
+    ou_snapshots = await _query(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id)
     return app_snapshots + ou_snapshots
 
 

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -9,6 +11,13 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.services._tag_parsing import Classification, parse_wcag_tag
 from a11y_health.services.scan_run import get_scan_run
+
+
+@dataclass
+class FindingWithNodes:
+    finding: RuleFinding
+    node_findings: list[NodeFinding]
+
 
 _RESOURCE = "Finding"
 
@@ -58,7 +67,7 @@ async def get_finding(
     session: AsyncSession,
     scan_run_id: int,
     finding_id: int,
-) -> tuple[RuleFinding, list[NodeFinding]]:
+) -> FindingWithNodes:
     await get_scan_run(session, scan_run_id)
 
     stmt = (
@@ -80,4 +89,4 @@ async def get_finding(
     nodes_result = await session.execute(nodes_stmt)
     node_findings = list(nodes_result.scalars().all())
 
-    return finding, node_findings
+    return FindingWithNodes(finding=finding, node_findings=node_findings)

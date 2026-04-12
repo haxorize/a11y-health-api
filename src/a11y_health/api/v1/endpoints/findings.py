@@ -39,7 +39,9 @@ async def get_finding(
     scan_run_id: int,
     finding_id: int,
 ) -> RuleFindingDetail:
-    finding, node_findings = await rule_finding_service.get_finding(db, scan_run_id, finding_id)
-    detail = RuleFindingDetail.model_validate(finding)
-    detail.node_findings = [NodeFindingRead.model_validate(nf) for nf in node_findings]
-    return detail
+    result = await rule_finding_service.get_finding(db, scan_run_id, finding_id)
+    finding_data = RuleFindingRead.model_validate(result.finding)
+    return RuleFindingDetail(
+        **finding_data.model_dump(),
+        node_findings=[NodeFindingRead.model_validate(nf) for nf in result.node_findings],
+    )

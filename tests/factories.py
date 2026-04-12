@@ -1,3 +1,4 @@
+import itertools
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,14 +25,12 @@ async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: 
     return org_unit
 
 
-_brand_seq = 0
+_brand_seq = itertools.count(1)
 
 
 async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
-    global _brand_seq
     if name is None:
-        _brand_seq += 1
-        name = f"Test Brand {_brand_seq}"
+        name = f"Test Brand {next(_brand_seq)}"
     brand = Brand(name=name)
     db.add(brand)
     await db.flush()

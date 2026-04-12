@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Sequence
 
 from sqlalchemy import select
@@ -40,7 +39,8 @@ async def get_app(session: AsyncSession, app_id: int) -> App:
 
 
 async def create_app(session: AsyncSession, data: AppCreate) -> App:
-    await asyncio.gather(get_brand(session, data.brand_id), get_org_unit(session, data.org_unit_id))
+    await get_brand(session, data.brand_id)
+    await get_org_unit(session, data.org_unit_id)
     app = App(**data.model_dump())
     session.add(app)
     try:

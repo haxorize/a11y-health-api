@@ -14,6 +14,12 @@ async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> Non
     await score_service.rollup_brand_scores(session, app.brand_id, snapshot.snapshot_at)
 
 
+async def on_app_deleted(session: AsyncSession, org_unit_id: int, brand_id: int) -> None:
+    now = datetime.now(UTC)
+    await score_service.rollup_org_unit_scores(session, org_unit_id, now)
+    await score_service.rollup_brand_scores(session, brand_id, now)
+
+
 async def on_org_unit_reparented(
     session: AsyncSession,
     org_unit_id: int,

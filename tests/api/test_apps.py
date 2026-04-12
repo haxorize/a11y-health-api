@@ -169,23 +169,15 @@ async def test_delete_app_not_found(db_client: AsyncClient) -> None:
     assert response.status_code == 404
 
 
-async def test_delete_app_with_scan_runs(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_delete_app_cascades_dependents(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
     app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
     await make_scan_run(db_session, app_id=app.id)
-
-    response = await db_client.delete(f"/api/v1/apps/{app.id}")
-    assert response.status_code == 409
-    assert "dependent" in response.json()["detail"].lower()
-
-
-async def test_delete_app_with_score_snapshots(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    brand = await make_brand(db_session)
-    app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
     await make_score_snapshot(db_session, app_id=app.id)
 
     response = await db_client.delete(f"/api/v1/apps/{app.id}")
-    assert response.status_code == 409
-    assert "dependent" in response.json()["detail"].lower()
+    assert response.status_code == 204
+
+    get_response = await db_client.get(f"/api/v1/apps/{app.id}")
+    assert get_response.status_code == 404

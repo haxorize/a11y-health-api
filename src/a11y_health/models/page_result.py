@@ -12,7 +12,7 @@ class PageResult(TimestampMixin, Base):
     __tablename__ = "page_result"
     __table_args__ = (Index("ix_page_result_scan_run_id", "scan_run_id"),)
 
-    scan_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scan_run.id", ondelete="RESTRICT"), nullable=False)
+    scan_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scan_run.id", ondelete="CASCADE"), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     page_health: Mapped[PageHealth | None] = mapped_column(
         Enum(PageHealth, name="page_health", values_callable=enum_values),

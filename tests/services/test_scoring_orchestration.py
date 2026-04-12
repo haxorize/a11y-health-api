@@ -7,7 +7,7 @@ from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.scoring_orchestration import on_org_unit_reparented, on_scan_run_completed
+from a11y_health.services.scoring_orchestration import on_app_deleted, on_org_unit_reparented, on_scan_run_completed
 from tests.factories import (
     latest_brand_snapshot,
     latest_ou_snapshot,
@@ -194,3 +194,68 @@ class TestOnOrgUnitReparented:
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
         assert result.scalar_one_or_none() is None
+
+
+class TestOnAppDeleted:
+    async def test_recalculates_org_unit_rollups(self, db_session: AsyncSession) -> None:
+        root = await make_org_unit(db_session, name="Root")
+        leaf = await make_org_unit(db_session, name="Leaf", parent_id=root.id)
+        brand = await make_brand(db_session, name="Humana")
+
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=leaf.id, brand_id=brand.id)
+        sr_a = await make_scan_run(db_session, app_id=app_a.id)
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=leaf.id, brand_id=brand.id)
+        sr_b = await make_scan_run(db_session, app_id=app_b.id)
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        leaf_before = await latest_ou_snapshot(db_session, leaf.id)
+        assert leaf_before.score == approx(0.7)
+
+        await db_session.delete(app_a)
+        await db_session.flush()
+        await on_app_deleted(db_session, leaf.id, brand.id)
+
+        leaf_after = await latest_ou_snapshot(db_session, leaf.id)
+        assert leaf_after.score == approx(1.0)
+        root_after = await latest_ou_snapshot(db_session, root.id)
+        assert root_after.score == approx(1.0)
+
+    async def test_recalculates_brand_rollups(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CenterWell")
+        org_unit = await make_org_unit(db_session, name="Org")
+
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+        sr_a = await make_scan_run(db_session, app_id=app_a.id)
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
+        sr_b = await make_scan_run(db_session, app_id=app_b.id)
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        brand_before = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_before.score == approx(0.7)
+
+        await db_session.delete(app_a)
+        await db_session.flush()
+        await on_app_deleted(db_session, org_unit.id, brand.id)
+
+        brand_after = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_after.score == approx(1.0)
+
+    async def test_last_app_deleted_does_not_error(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Go365")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-solo", org_unit_id=org_unit.id, brand_id=brand.id)
+        sr = await make_scan_run(db_session, app_id=app.id)
+        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr.id, [payload])
+
+        await db_session.delete(app)
+        await db_session.flush()
+        await on_app_deleted(db_session, org_unit.id, brand.id)

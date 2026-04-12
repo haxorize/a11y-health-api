@@ -24,9 +24,9 @@ class ScoreSnapshot(TimestampMixin, Base):
         Index("ix_score_snapshot_brand_id", "brand_id"),
     )
 
-    app_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="RESTRICT"), nullable=True)
+    app_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="CASCADE"), nullable=True)
     scan_run_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("scan_run.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey("scan_run.id", ondelete="CASCADE"), nullable=True
     )
     org_unit_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=True

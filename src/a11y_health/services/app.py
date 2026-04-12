@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import DuplicateSlugError, HasDependentsError, NotFoundError
+from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services.brand import get_brand
@@ -64,9 +64,11 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
 
 
 async def delete_app(session: AsyncSession, app_id: int) -> None:
+    from a11y_health.services import scoring_orchestration
+
     app = await get_app(session, app_id)
-    try:
-        await session.delete(app)
-        await session.flush()
-    except IntegrityError as exc:
-        raise HasDependentsError(_RESOURCE, app_id) from exc
+    org_unit_id = app.org_unit_id
+    brand_id = app.brand_id
+    await session.delete(app)
+    await session.flush()
+    await scoring_orchestration.on_app_deleted(session, org_unit_id, brand_id)

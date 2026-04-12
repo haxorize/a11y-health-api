@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -96,7 +96,7 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
     finding = result.scalars().first()
     assert finding is not None
 
-    assert finding.category == "text-alternatives"
+    assert finding.category == Category.TEXT_ALTERNATIVES
     assert finding.wcag_criteria == ["1.1.1"]
 
     stmt = select(RuleFinding).where(
@@ -107,7 +107,7 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
     finding = result.scalars().first()
     assert finding is not None
 
-    assert finding.category == "color"
+    assert finding.category == Category.COLOR
     assert finding.wcag_criteria == ["1.4.3"]
 
 

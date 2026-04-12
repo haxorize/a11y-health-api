@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 from tests.factories import (
     make_node_finding,
     make_page_result,
@@ -117,8 +117,8 @@ async def test_filter_by_impact_multi(db_client: AsyncClient, db_session: AsyncS
 async def test_filter_by_category(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, category="color", rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, category="keyboard", rule_id="tabindex")
+    await make_rule_finding(db_session, page_result_id=page.id, category=Category.COLOR, rule_id="color-contrast")
+    await make_rule_finding(db_session, page_result_id=page.id, category=Category.KEYBOARD, rule_id="tabindex")
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"category": "keyboard"})
 
@@ -131,9 +131,9 @@ async def test_filter_by_category(db_client: AsyncClient, db_session: AsyncSessi
 async def test_filter_by_category_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, category="color", rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, category="keyboard", rule_id="tabindex")
-    await make_rule_finding(db_session, page_result_id=page.id, category="forms", rule_id="label")
+    await make_rule_finding(db_session, page_result_id=page.id, category=Category.COLOR, rule_id="color-contrast")
+    await make_rule_finding(db_session, page_result_id=page.id, category=Category.KEYBOARD, rule_id="tabindex")
+    await make_rule_finding(db_session, page_result_id=page.id, category=Category.FORMS, rule_id="label")
 
     response = await db_client.get(
         f"/api/v1/scan-runs/{scan_run.id}/findings",
@@ -145,6 +145,14 @@ async def test_filter_by_category_multi(db_client: AsyncClient, db_session: Asyn
     assert len(data) == 2
     rule_ids = {f["rule_id"] for f in data}
     assert rule_ids == {"color-contrast", "label"}
+
+
+async def test_filter_by_category_invalid_returns_422(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"category": "bogus"})
+
+    assert response.status_code == 422
 
 
 async def test_filter_by_wcag_criteria(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -267,13 +275,13 @@ async def test_filters_combine_with_and(db_client: AsyncClient, db_session: Asyn
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category="color", rule_id="color-contrast"
+        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.COLOR, rule_id="color-contrast"
     )
     await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category="keyboard", rule_id="tabindex"
+        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.KEYBOARD, rule_id="tabindex"
     )
     await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.MINOR, category="color", rule_id="meta-viewport"
+        db_session, page_result_id=page.id, impact=Impact.MINOR, category=Category.COLOR, rule_id="meta-viewport"
     )
 
     response = await db_client.get(

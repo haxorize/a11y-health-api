@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas.rule_finding import NodeFindingRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 from a11y_health.services._tag_parsing import Classification
@@ -15,7 +15,7 @@ async def list_findings(
     scan_run_id: int,
     type: list[FindingType] | None = Query(default=None),  # noqa: B008
     impact: list[Impact] | None = Query(default=None),  # noqa: B008
-    category: list[str] | None = Query(default=None),  # noqa: B008
+    category: list[Category] | None = Query(default=None),  # noqa: B008
     wcag_criterion: list[str] | None = Query(default=None),  # noqa: B008
     classification: list[Classification] | None = Query(default=None),  # noqa: B008
     offset: int = 0,

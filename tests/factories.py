@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
-from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
+from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
@@ -156,7 +156,7 @@ async def make_rule_finding(
     rule_id: str = "color-contrast",
     finding_type: FindingType = FindingType.VIOLATION,
     impact: Impact = Impact.SERIOUS,
-    category: str | None = "color",
+    category: Category = Category.COLOR,
     wcag_criteria: list[str] | None = None,
     classifications: list[dict[str, str]] | None = None,
     tags: list[str] | None = None,
@@ -224,7 +224,7 @@ def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
         "description": f"{rule_id} desc",
         "help": f"{rule_id} help",
         "helpUrl": f"https://example.com/{rule_id}",
-        "tags": ["best-practice"],
+        "tags": ["best-practice", "cat.color"],
         "nodes": [
             {
                 "html": "<div></div>",

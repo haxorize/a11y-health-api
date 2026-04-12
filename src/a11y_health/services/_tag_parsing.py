@@ -1,6 +1,9 @@
 import re
 from typing import Literal
 
+from a11y_health.core.exceptions import InvalidAxePayloadError
+from a11y_health.models.enums import Category
+
 _WCAG_VERSION_LEVEL = re.compile(r"^wcag2(1|2)?a{1,2}$")
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CAT_TAG = re.compile(r"^cat\.(.+)$")
@@ -46,9 +49,16 @@ def extract_wcag_criteria(tags: list[str]) -> list[str]:
     return results
 
 
-def extract_category(tags: list[str]) -> str | None:
+_CATEGORY_LOOKUP = {c.value: c for c in Category}
+
+
+def extract_category(tags: list[str]) -> Category:
     for tag in tags:
         m = _CAT_TAG.match(tag)
         if m:
-            return m.group(1)
-    return None
+            value = m.group(1)
+            cat = _CATEGORY_LOOKUP.get(value)
+            if cat is None:
+                raise InvalidAxePayloadError(f"Unknown category: {value}")
+            return cat
+    raise InvalidAxePayloadError("No category tag found")

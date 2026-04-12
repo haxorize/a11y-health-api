@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 
 __all__ = ["NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
 
@@ -18,7 +18,7 @@ class RuleFindingRead(BaseModel):
     description: str
     help: str
     help_url: str
-    category: str | None
+    category: Category
     wcag_criteria: list[str]
     classifications: list[dict[str, str]]
     tags: list[str]

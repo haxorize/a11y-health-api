@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base, enum_values
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 
 
 class RuleFinding(Base):
@@ -29,7 +29,10 @@ class RuleFinding(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     help: Mapped[str] = mapped_column(Text, nullable=False)
     help_url: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[Category] = mapped_column(
+        Enum(Category, name="category", values_callable=enum_values),
+        nullable=False,
+    )
     wcag_criteria: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     classifications: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False)

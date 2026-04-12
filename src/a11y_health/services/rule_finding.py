@@ -7,7 +7,7 @@ from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text
 
 from a11y_health.core.exceptions import InvalidAxePayloadError, NotFoundError
-from a11y_health.models.enums import FindingType, Impact
+from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -37,7 +37,7 @@ async def list_findings(
     *,
     finding_type: list[FindingType] | None = None,
     impact: list[Impact] | None = None,
-    category: list[str] | None = None,
+    category: list[Category] | None = None,
     wcag_criterion: list[str] | None = None,
     classification: list[Classification] | None = None,
     offset: int = 0,

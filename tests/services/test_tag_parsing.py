@@ -1,5 +1,7 @@
 import pytest
 
+from a11y_health.core.exceptions import InvalidAxePayloadError
+from a11y_health.models.enums import Category
 from a11y_health.services._tag_parsing import (
     extract_category,
     extract_classifications,
@@ -67,20 +69,26 @@ def test_wcag_criteria_empty_list_when_no_matches() -> None:
 
 
 def test_category_simple() -> None:
-    assert extract_category(["cat.color"]) == "color"
+    assert extract_category(["cat.color"]) == Category.COLOR
 
 
 def test_category_hyphenated() -> None:
-    assert extract_category(["cat.text-alternatives"]) == "text-alternatives"
+    assert extract_category(["cat.text-alternatives"]) == Category.TEXT_ALTERNATIVES
 
 
 def test_category_returns_first_match() -> None:
-    assert extract_category(["cat.color", "cat.forms"]) == "color"
+    assert extract_category(["cat.color", "cat.forms"]) == Category.COLOR
 
 
 def test_category_skips_non_category_tags() -> None:
-    assert extract_category(["wcag2a", "cat.structure"]) == "structure"
+    assert extract_category(["wcag2a", "cat.structure"]) == Category.STRUCTURE
 
 
-def test_category_no_match_returns_none() -> None:
-    assert extract_category(["wcag2a", "best-practice"]) is None
+def test_category_no_match_raises() -> None:
+    with pytest.raises(InvalidAxePayloadError, match="No category tag found"):
+        extract_category(["wcag2a", "best-practice"])
+
+
+def test_category_unknown_raises() -> None:
+    with pytest.raises(InvalidAxePayloadError, match="Unknown category: bogus"):
+        extract_category(["cat.bogus"])

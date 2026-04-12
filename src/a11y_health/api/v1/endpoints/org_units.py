@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
@@ -7,6 +5,7 @@ from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpda
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import score as score_service
+from a11y_health.services import scoring_orchestration
 
 router = APIRouter(prefix="/org-units", tags=["org-units"])
 
@@ -59,11 +58,7 @@ async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) 
         old_parent_id = (await org_unit_service.get_org_unit(db, org_unit_id)).parent_id
     updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
     if "parent_id" in data.model_fields_set and updated.parent_id != old_parent_id:
-        now = datetime.now(UTC)
-        if old_parent_id is not None:
-            await score_service.rollup_org_unit_scores(db, old_parent_id, now)
-        if updated.parent_id is not None:
-            await score_service.rollup_org_unit_scores(db, updated.parent_id, now)
+        await scoring_orchestration.on_org_unit_reparented(db, org_unit_id, old_parent_id, updated.parent_id)
     return OrgUnitRead.model_validate(updated)
 
 

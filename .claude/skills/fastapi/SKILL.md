@@ -68,6 +68,7 @@ src/a11y_health/
 - Return ORM model instances (endpoint serializes via schema)
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
+- Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too (e.g., `Classification` from `_tag_parsing.py`)
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
@@ -84,17 +85,25 @@ src/a11y_health/
   await session.refresh(app)
   ```
 
-## Endpoint orchestration
+## Orchestration
 
-When a mutation triggers cross-service side effects (e.g., score computation + rollup after scan run completion), that orchestration lives in the endpoint — not in individual services. This keeps services focused on their own resource while the endpoint coordinates:
+When a mutation triggers cross-service side effects (e.g., score computation + rollup after scan run completion), that orchestration lives in a dedicated orchestration service module — not in endpoints or individual resource services. Resource services call orchestration functions after their own mutation completes:
+
 ```python
-scan_run = await scan_run_service.update_scan_run_status(db, scan_run_id, data)
+# services/scoring_orchestration.py — coordinates score + rollup side effects
+async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
+    snapshot = await score_service.compute_app_score(session, scan_run)
+    app = await app_service.get_app(session, scan_run.app_id)
+    await score_service.rollup_org_unit_scores(session, app.org_unit_id, snapshot.snapshot_at)
+    await score_service.rollup_brand_scores(session, app.brand_id, snapshot.snapshot_at)
+
+# services/scan_run.py — calls orchestration after status change
+scan_run = await _do_status_update(session, scan_run, data)
 if data.status == ScanRunStatus.COMPLETED:
-    snapshot = await score_service.compute_app_score(db, scan_run)
-    app = await app_service.get_app(db, scan_run.app_id)
-    await score_service.rollup_org_unit_scores(db, app.org_unit_id, snapshot.snapshot_at)
-    await score_service.rollup_brand_scores(db, app.brand_id, snapshot.snapshot_at)
+    await scoring_orchestration.on_scan_run_completed(session, scan_run)
 ```
+
+This keeps endpoints thin (they only call their resource service) and keeps resource services focused on their own domain while the orchestration module coordinates cross-cutting effects.
 
 ## Database sessions
 

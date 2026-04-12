@@ -67,17 +67,55 @@ class TestAxeNodeFields:
         assert payload.findings.violations[0].nodes[0].failure_summary == "Fix this"
 
 
-class TestAxeNodeChecksExcluded:
-    def test_checks_fields_ignored_by_schema(self) -> None:
+class TestAxeNodeChecks:
+    def test_checks_parsed_from_payload(self) -> None:
         violation = make_violation("color-contrast", "serious")
-        assert "any" in violation["nodes"][0]
+        violation["nodes"][0]["any"] = [{"id": "check-1", "data": None}]
+        violation["nodes"][0]["all"] = [{"id": "check-2", "data": None}]
+        violation["nodes"][0]["none"] = [{"id": "check-3", "data": None}]
         raw = make_axe_payload(violations=[violation])
         payload = AxePayload.model_validate(raw)
         node = payload.findings.violations[0].nodes[0]
-        assert not hasattr(node, "checks")
-        assert not hasattr(node, "any")
-        assert not hasattr(node, "all")
-        assert not hasattr(node, "none")
+        assert node.any == [{"id": "check-1", "data": None}]
+        assert node.all == [{"id": "check-2", "data": None}]
+        assert node.none == [{"id": "check-3", "data": None}]
+
+    def test_checks_default_to_empty_lists(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        del violation["nodes"][0]["any"]
+        del violation["nodes"][0]["all"]
+        del violation["nodes"][0]["none"]
+        raw = make_axe_payload(violations=[violation])
+        payload = AxePayload.model_validate(raw)
+        node = payload.findings.violations[0].nodes[0]
+        assert node.any == []
+        assert node.all == []
+        assert node.none == []
+
+    def test_checks_reject_non_list(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["nodes"][0]["any"] = "not-a-list"
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError):
+            AxePayload.model_validate(raw)
+
+
+class TestAxeFindingsPassesInapplicable:
+    def test_passes_and_inapplicable_parsed(self) -> None:
+        raw = make_axe_payload()
+        raw["findings"]["passes"] = [{"id": "rule-1"}, {"id": "rule-2"}]
+        raw["findings"]["inapplicable"] = [{"id": "rule-3"}]
+        payload = AxePayload.model_validate(raw)
+        assert len(payload.findings.passes) == 2
+        assert len(payload.findings.inapplicable) == 1
+
+    def test_passes_and_inapplicable_default_to_empty(self) -> None:
+        raw = make_axe_payload()
+        del raw["findings"]["passes"]
+        del raw["findings"]["inapplicable"]
+        payload = AxePayload.model_validate(raw)
+        assert payload.findings.passes == []
+        assert payload.findings.inapplicable == []
 
 
 class TestAxePayloadValid:

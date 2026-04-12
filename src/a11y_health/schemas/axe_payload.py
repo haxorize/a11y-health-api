@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from a11y_health.models.enums import Impact
@@ -10,6 +12,9 @@ class AxeNode(BaseModel):
     target: list[str]
     impact: Impact
     failure_summary: str | None = Field(default=None, alias="failureSummary")
+    any: list[dict[str, Any]] = Field(default_factory=list)
+    all: list[dict[str, Any]] = Field(default_factory=list)
+    none: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AxeRule(BaseModel):
@@ -27,6 +32,8 @@ class AxeRule(BaseModel):
 class AxeFindings(BaseModel):
     violations: list[AxeRule]
     incomplete: list[AxeRule]
+    passes: list[Any] = Field(default_factory=list)
+    inapplicable: list[Any] = Field(default_factory=list)
 
 
 class AxeTestSubject(BaseModel):

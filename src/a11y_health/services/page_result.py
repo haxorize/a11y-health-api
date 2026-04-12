@@ -21,12 +21,11 @@ async def _persist_findings(
     page_result_id: int,
     rules: list[AxeRule],
     finding_type: FindingType,
-    raw_rules: list[dict[str, Any]],
 ) -> None:
     rule_findings: list[RuleFinding] = []
     node_findings: list[tuple[RuleFinding, NodeFinding]] = []
 
-    for rule, raw_rule in zip(rules, raw_rules, strict=True):
+    for rule in rules:
         rf = RuleFinding(
             page_result_id=page_result_id,
             rule_id=rule.id,
@@ -42,18 +41,13 @@ async def _persist_findings(
         )
         rule_findings.append(rf)
 
-        for node, raw_node in zip(rule.nodes, raw_rule.get("nodes", []), strict=True):
-            checks = {
-                "any": raw_node.get("any", []),
-                "all": raw_node.get("all", []),
-                "none": raw_node.get("none", []),
-            }
+        for node in rule.nodes:
             nf = NodeFinding(
                 html=node.html,
                 target=node.target,
                 impact=node.impact,
                 failure_summary=node.failure_summary,
-                checks=checks,
+                checks={"any": node.any, "all": node.all, "none": node.none},
             )
             node_findings.append((rf, nf))
 
@@ -74,22 +68,19 @@ async def create_page_result(
     scan_run = await get_scan_run(session, scan_run_id)
     assert_scan_run_pending(scan_run)
 
-    raw_findings = raw_payload.get("findings", {})
-
     page_result = PageResult(
         scan_run_id=scan_run_id,
         url=payload.test_subject.file_name,
         raw_json=raw_payload,
-        passes_count=len(raw_findings.get("passes", [])),
-        inapplicable_count=len(raw_findings.get("inapplicable", [])),
+        passes_count=len(payload.findings.passes),
+        inapplicable_count=len(payload.findings.inapplicable),
     )
     session.add(page_result)
     await session.flush()
 
     for finding_type, section in _AXE_SECTION_FINDING_TYPE:
         typed_rules = getattr(payload.findings, section)
-        raw_rules = raw_findings.get(section, [])
-        await _persist_findings(session, page_result.id, typed_rules, finding_type, raw_rules)
+        await _persist_findings(session, page_result.id, typed_rules, finding_type)
 
     await session.refresh(page_result)
     return page_result

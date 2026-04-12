@@ -37,12 +37,13 @@ def extract_classifications(tags: list[str]) -> list[dict[str, str]]:
     return results
 
 
-def extract_wcag_criterion(tags: list[str]) -> str | None:
+def extract_wcag_criteria(tags: list[str]) -> list[str]:
+    results: list[str] = []
     for tag in tags:
         m = _WCAG_CRITERION.match(tag)
         if m:
-            return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-    return None
+            results.append(f"{m.group(1)}.{m.group(2)}.{m.group(3)}")
+    return results
 
 
 def extract_category(tags: list[str]) -> str | None:

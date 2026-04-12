@@ -157,7 +157,7 @@ async def make_rule_finding(
     finding_type: FindingType = FindingType.VIOLATION,
     impact: Impact = Impact.SERIOUS,
     category: str | None = "color",
-    wcag_criterion: str | None = "1.4.3",
+    wcag_criteria: list[str] | None = None,
     classifications: list[dict[str, str]] | None = None,
     tags: list[str] | None = None,
 ) -> RuleFinding:
@@ -170,7 +170,7 @@ async def make_rule_finding(
         help=f"{rule_id} help",
         help_url=f"https://example.com/{rule_id}",
         category=category,
-        wcag_criterion=wcag_criterion,
+        wcag_criteria=wcag_criteria or ["1.4.3"],
         classifications=classifications or [{"standard": "wcag", "version": "2.0", "level": "AA"}],
         tags=tags or ["wcag2aa", "cat.color"],
     )

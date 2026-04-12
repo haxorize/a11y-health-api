@@ -29,7 +29,7 @@
 | **Impact** | The severity of a **Rule Finding**: critical, serious, moderate, or minor. | Severity, priority, level |
 | **Classification** | A standard that a **Rule Finding** belongs to — either a WCAG version/level pair (e.g., WCAG 2.1 AA) or best-practice. | Standard, conformance, tag |
 | **Category** | The functional grouping of a **Rule Finding** (e.g., text-alternatives, keyboard, color) derived from the `cat.*` axe tag. | Group, type, area |
-| **WCAG Criterion** | The specific WCAG success criterion a **Rule Finding** maps to (e.g., 1.1.1, 2.4.4). | Rule, guideline, requirement |
+| **WCAG Criteria** | The WCAG success criteria a **Rule Finding** maps to — zero or more per finding (e.g., [1.1.1], [1.4.3, 1.4.6]). Stored as a JSONB array. | Rule, guideline, requirement |
 | **Incomplete** | A **Rule Finding** that axe could not determine automatically, flagged for manual review and excluded from scoring. | Needs review, manual check, undetermined |
 | **Pass** | An axe rule that all tested nodes satisfied. Preserved in the **Raw JSON** but not used in scoring or stored as **Rule Findings**. | Passed rule, success |
 | **Inapplicable** | An axe rule that did not apply to any nodes on the page. Preserved in the **Raw JSON** but not used in scoring or stored as **Rule Findings**. | Not applicable, skipped, N/A |

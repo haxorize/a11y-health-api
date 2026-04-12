@@ -1,6 +1,10 @@
 import pytest
 
-from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criterion
+from a11y_health.services._tag_parsing import (
+    extract_category,
+    extract_classifications,
+    extract_wcag_criteria,
+)
 
 
 @pytest.mark.parametrize(
@@ -46,20 +50,20 @@ def test_classifications_empty_tags() -> None:
         ("wcag1413", "1.4.13"),
     ],
 )
-def test_wcag_criterion_parsed(tag: str, expected: str) -> None:
-    assert extract_wcag_criterion([tag]) == expected
+def test_wcag_criteria_single_tag(tag: str, expected: str) -> None:
+    assert extract_wcag_criteria([tag]) == [expected]
 
 
-def test_wcag_criterion_returns_first_match() -> None:
-    assert extract_wcag_criterion(["wcag111", "wcag143"]) == "1.1.1"
+def test_wcag_criteria_returns_all_matches() -> None:
+    assert extract_wcag_criteria(["wcag111", "wcag143"]) == ["1.1.1", "1.4.3"]
 
 
-def test_wcag_criterion_skips_non_criterion_tags() -> None:
-    assert extract_wcag_criterion(["wcag2a", "cat.color", "wcag143"]) == "1.4.3"
+def test_wcag_criteria_skips_non_criterion_tags() -> None:
+    assert extract_wcag_criteria(["wcag2a", "cat.color", "wcag143"]) == ["1.4.3"]
 
 
-def test_wcag_criterion_no_match_returns_none() -> None:
-    assert extract_wcag_criterion(["wcag2a", "best-practice"]) is None
+def test_wcag_criteria_empty_list_when_no_matches() -> None:
+    assert extract_wcag_criteria(["wcag2a", "best-practice", "cat.color"]) == []
 
 
 def test_category_simple() -> None:

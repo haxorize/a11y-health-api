@@ -97,7 +97,7 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
     assert finding is not None
 
     assert finding.category == "text-alternatives"
-    assert finding.wcag_criterion == "1.1.1"
+    assert finding.wcag_criteria == ["1.1.1"]
 
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
@@ -108,7 +108,7 @@ async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, p
     assert finding is not None
 
     assert finding.category == "color"
-    assert finding.wcag_criterion == "1.4.3"
+    assert finding.wcag_criteria == ["1.4.3"]
 
 
 async def test_incompletes_stored_as_incomplete_type(db_session: AsyncSession, page_result: PageResult) -> None:

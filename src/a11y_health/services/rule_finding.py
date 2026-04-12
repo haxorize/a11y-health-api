@@ -53,7 +53,7 @@ async def list_findings(
     if category is not None:
         stmt = stmt.where(RuleFinding.category == category)
     if wcag_criterion is not None:
-        stmt = stmt.where(RuleFinding.wcag_criterion == wcag_criterion)
+        stmt = stmt.where(RuleFinding.wcag_criteria.contains([wcag_criterion]))
     if classification is not None:
         target = _parse_classification(classification)
         stmt = stmt.where(RuleFinding.classifications.contains([target]))

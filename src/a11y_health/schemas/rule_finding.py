@@ -19,7 +19,7 @@ class RuleFindingRead(BaseModel):
     help: str
     help_url: str
     category: str | None
-    wcag_criterion: str | None
+    wcag_criteria: list[str]
     classifications: list[dict[str, str]]
     tags: list[str]
 

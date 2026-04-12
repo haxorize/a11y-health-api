@@ -24,7 +24,7 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["rule_id"] == "color-contrast"
     assert finding["impact"] == "serious"
     assert finding["category"] == "color"
-    assert finding["wcag_criterion"] == "1.4.3"
+    assert finding["wcag_criteria"] == ["1.4.3"]
     assert finding["classifications"] == [{"standard": "wcag", "version": "2.0", "level": "AA"}]
 
 
@@ -74,8 +74,8 @@ async def test_filter_by_category(db_client: AsyncClient, db_session: AsyncSessi
 async def test_filter_by_wcag_criterion(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criterion="1.4.3", rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criterion="2.4.4", rule_id="link-name")
+    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3"], rule_id="color-contrast")
+    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["2.4.4"], rule_id="link-name")
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"wcag_criterion": "2.4.4"})
 

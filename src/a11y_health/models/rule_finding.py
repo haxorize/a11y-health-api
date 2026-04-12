@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -8,7 +8,10 @@ from a11y_health.models.enums import FindingType, Impact
 
 class RuleFinding(Base):
     __tablename__ = "rule_finding"
-    __table_args__ = (Index("ix_rule_finding_page_result_id", "page_result_id"),)
+    __table_args__ = (
+        Index("ix_rule_finding_page_result_id", "page_result_id"),
+        Index("ix_rule_finding_wcag_criteria", "wcag_criteria", postgresql_using="gin"),
+    )
 
     page_result_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("page_result.id", ondelete="CASCADE"), nullable=False
@@ -26,6 +29,6 @@ class RuleFinding(Base):
     help: Mapped[str] = mapped_column(Text, nullable=False)
     help_url: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str | None] = mapped_column(Text, nullable=True)
-    wcag_criterion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wcag_criteria: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     classifications: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False)

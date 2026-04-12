@@ -7,7 +7,7 @@ from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.schemas.axe_payload import AxePayload, AxeRule
-from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criterion
+from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criteria
 from a11y_health.services.scan_run import assert_scan_run_pending, get_scan_run
 
 _AXE_SECTION_FINDING_TYPE: list[tuple[FindingType, str]] = [
@@ -35,7 +35,7 @@ async def _persist_findings(
             help=rule.help,
             help_url=rule.help_url,
             category=extract_category(rule.tags),
-            wcag_criterion=extract_wcag_criterion(rule.tags),
+            wcag_criteria=extract_wcag_criteria(rule.tags),
             classifications=extract_classifications(rule.tags),
             tags=rule.tags,
         )

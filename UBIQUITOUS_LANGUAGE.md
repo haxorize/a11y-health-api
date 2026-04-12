@@ -31,6 +31,8 @@
 | **Category** | The functional grouping of a **Rule Finding** (e.g., text-alternatives, keyboard, color) derived from the `cat.*` axe tag. | Group, type, area |
 | **WCAG Criterion** | The specific WCAG success criterion a **Rule Finding** maps to (e.g., 1.1.1, 2.4.4). | Rule, guideline, requirement |
 | **Incomplete** | A **Rule Finding** that axe could not determine automatically, flagged for manual review and excluded from scoring. | Needs review, manual check, undetermined |
+| **Pass** | An axe rule that all tested nodes satisfied. Preserved in the **Raw JSON** but not used in scoring or stored as **Rule Findings**. | Passed rule, success |
+| **Inapplicable** | An axe rule that did not apply to any nodes on the page. Preserved in the **Raw JSON** but not used in scoring or stored as **Rule Findings**. | Not applicable, skipped, N/A |
 
 ## Scoring & Metrics
 
@@ -39,14 +41,14 @@
 | **Page Health** | A derived category for a **Page Result** based on its worst violation **Impact**. Uses distinct names to separate the health judgment from the raw impact level: Critical (has critical violations), Serious (worst is serious), Fair (worst is moderate), Good (worst is minor or no violations). | Page grade, page status, page score |
 | **Score** | A weighted percentage computed from **Page Health** categories, where each page contributes by its health weight: Critical = 0, Serious = 0.4, Fair = 0.8, Good = 1.0. Formula: `(0×critical + 0.4×serious + 0.8×fair + 1.0×good) / total_pages`. | Rating, grade, index |
 | **Score Snapshot** | A denormalized record of a **Score** and associated metrics (total violations, per-page averages, etc.) at a point in time for an **App**, **Org Unit**, or **Brand**. | Score record, metric snapshot, data point |
-| **Rollup** | The recomputation of aggregate scores as the arithmetic mean of children's latest **Score Snapshots**. Two forms: **Org Unit Rollup** (hierarchical, cascades up the tree) and **Brand Rollup** (flat, aggregates all **Apps** for a **Brand**). Both triggered when an **App** score changes. | Aggregation, roll-up, propagation |
+| **Rollup** | The recomputation of aggregate scores as the arithmetic mean of children's latest **Score Snapshots**. Two forms: **Org Unit Rollup** (hierarchical, cascades up the tree) and **Brand Rollup** (flat, aggregates all **Apps** for a **Brand**). Triggered by any event that changes an **App**'s latest **Score Snapshot**: **Scan Run** completion, **Scan Run** deletion, **App** deletion, **App** reassignment to a different **Org Unit**, or **Org Unit** reparenting. | Aggregation, roll-up, propagation |
 | **Brand Rollup** | A flat aggregation of the latest **Score Snapshots** across all **Apps** belonging to a **Brand**, regardless of **Org Unit** placement. Does not cascade. | Brand aggregation, brand scoring |
 
 ## Relationships
 
 - An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**
 - An **Org Unit** owns zero or more **Apps**
-- A **Brand** has one or more **Apps**
+- A **Brand** has zero or more **Apps**
 - An **App** has exactly one **Brand** and one **Slug** (immutable after creation)
 - An **App** has zero or more **Scan Runs**
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**

@@ -2,8 +2,6 @@ import pytest
 
 from a11y_health.services._tag_parsing import extract_category, extract_classifications, extract_wcag_criterion
 
-# --- extract_classifications ---
-
 
 @pytest.mark.parametrize(
     ("tag", "expected"),
@@ -40,9 +38,6 @@ def test_classifications_empty_tags() -> None:
     assert extract_classifications([]) == []
 
 
-# --- extract_wcag_criterion ---
-
-
 @pytest.mark.parametrize(
     ("tag", "expected"),
     [
@@ -65,9 +60,6 @@ def test_wcag_criterion_skips_non_criterion_tags() -> None:
 
 def test_wcag_criterion_no_match_returns_none() -> None:
     assert extract_wcag_criterion(["wcag2a", "best-practice"]) is None
-
-
-# --- extract_category ---
 
 
 def test_category_simple() -> None:

@@ -10,7 +10,6 @@ from tests.factories import make_app_with_org_unit, make_org_unit, make_score_sn
 async def test_list_app_scores_ordered_chronologically(db_client: AsyncClient, db_session: AsyncSession) -> None:
     app = await make_app_with_org_unit(db_session)
 
-    # Insert out of order to verify sorting
     await make_score_snapshot(db_session, app_id=app.id, score=0.6, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC))
     await make_score_snapshot(db_session, app_id=app.id, score=0.9, snapshot_at=datetime(2026, 4, 1, tzinfo=UTC))
     await make_score_snapshot(db_session, app_id=app.id, score=0.75, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))

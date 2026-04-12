@@ -1,14 +1,6 @@
 import enum
 
 
-class Brand(enum.Enum):
-    HUMANA = "Humana"
-    CENTERWELL = "CenterWell"
-    GO365 = "Go365"
-    CAREPLUS = "CarePlus"
-    RELIANCE = "Reliance"
-
-
 class FindingType(enum.Enum):
     VIOLATION = "violation"
     INCOMPLETE = "incomplete"

@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
-from a11y_health.models.enums import Brand
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import app as app_service
@@ -19,11 +18,11 @@ async def create_app(db: DbSession, data: AppCreate) -> AppRead:
 @router.get("")
 async def list_apps(
     db: DbSession,
-    brand: Brand | None = None,
+    brand_id: int | None = None,
     offset: int = 0,
     limit: int = Query(default=20, le=100),
 ) -> list[AppRead]:
-    apps = await app_service.list_apps(db, brand=brand, offset=offset, limit=limit)
+    apps = await app_service.list_apps(db, brand_id=brand_id, offset=offset, limit=limit)
     return [AppRead.model_validate(a) for a in apps]
 
 

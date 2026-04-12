@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from a11y_health.models.enums import Brand, ScanRunStatus
+from a11y_health.models.enums import ScanRunStatus
 
 ProgressCallback = Callable[[str], None]
 
@@ -118,7 +118,7 @@ async def bulk_import(
     *,
     directory: Path,
     org_unit_id: int,
-    brand: str,
+    brand_id: int,
     api_prefix: str = "/api/v1",
     on_progress: ProgressCallback | None = None,
 ) -> BulkImportResult:
@@ -129,7 +129,7 @@ async def bulk_import(
     if resp.status_code == 404:
         resp = await client.post(
             f"{api_prefix}/apps",
-            json={"name": slug, "slug": slug, "brand": brand, "org_unit_id": org_unit_id},
+            json={"name": slug, "slug": slug, "brand_id": brand_id, "org_unit_id": org_unit_id},
         )
         resp.raise_for_status()
         app_id = resp.json()["id"]
@@ -170,9 +170,7 @@ def main() -> None:
     bulk_parser = subparsers.add_parser("bulk", help="Bulk import from app directory with date subdirectories")
     bulk_parser.add_argument("directory", type=Path, help="App directory containing date subdirectories")
     bulk_parser.add_argument("--org-unit-id", type=int, required=True, help="Org unit ID for auto-created apps")
-    bulk_parser.add_argument(
-        "--brand", required=True, choices=[b.value for b in Brand], help="Brand for auto-created apps"
-    )
+    bulk_parser.add_argument("--brand-id", type=int, required=True, help="Brand ID for auto-created apps")
     bulk_parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
 
     args = parser.parse_args()
@@ -197,7 +195,7 @@ def main() -> None:
                     client,
                     directory=args.directory,
                     org_unit_id=args.org_unit_id,
-                    brand=args.brand,
+                    brand_id=args.brand_id,
                     on_progress=print,
                 )
 

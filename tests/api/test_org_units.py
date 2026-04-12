@@ -1,8 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import Brand
-from tests.factories import make_app, make_org_unit, make_score_snapshot
+from tests.factories import make_app, make_brand, make_org_unit, make_score_snapshot
 
 
 async def test_create_org_unit(db_client: AsyncClient) -> None:
@@ -142,7 +141,8 @@ async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session
 
 async def test_delete_org_unit_with_apps(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session, name="Humana")
-    await make_app(db_session, name="MyHumana", slug="myhumana", brand=Brand.HUMANA, org_unit_id=org_unit.id)
+    brand = await make_brand(db_session)
+    await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
 
     response = await db_client.delete(f"/api/v1/org-units/{org_unit.id}")
     assert response.status_code == 409

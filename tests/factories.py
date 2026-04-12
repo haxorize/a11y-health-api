@@ -1,3 +1,4 @@
+import itertools
 from datetime import UTC, datetime
 from typing import Any
 
@@ -5,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
-from a11y_health.models.enums import Brand, FindingType, Impact, ScanRunStatus
+from a11y_health.models.brand import Brand
+from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
@@ -23,15 +25,30 @@ async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: 
     return org_unit
 
 
+_brand_seq = itertools.count(1)
+
+
+async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
+    if name is None:
+        name = f"Test Brand {next(_brand_seq)}"
+    brand = Brand(name=name)
+    db.add(brand)
+    await db.flush()
+    return brand
+
+
 async def make_app(
     db: AsyncSession,
     *,
     name: str = "Test App",
     slug: str = "test-app",
-    brand: Brand = Brand.HUMANA,
+    brand_id: int | None = None,
     org_unit_id: int,
 ) -> App:
-    app = App(name=name, slug=slug, brand=brand, org_unit_id=org_unit_id)
+    if brand_id is None:
+        brand = await make_brand(db)
+        brand_id = brand.id
+    app = App(name=name, slug=slug, brand_id=brand_id, org_unit_id=org_unit_id)
     db.add(app)
     await db.flush()
     return app
@@ -60,10 +77,13 @@ async def make_app_with_org_unit(
     org_name: str = "Test Org",
     app_name: str = "Test App",
     slug: str = "test-app",
-    brand: Brand = Brand.HUMANA,
+    brand_id: int | None = None,
 ) -> App:
     org_unit = await make_org_unit(db, name=org_name)
-    return await make_app(db, name=app_name, slug=slug, brand=brand, org_unit_id=org_unit.id)
+    if brand_id is None:
+        brand = await make_brand(db)
+        brand_id = brand.id
+    return await make_app(db, name=app_name, slug=slug, brand_id=brand_id, org_unit_id=org_unit.id)
 
 
 async def make_scan_run_with_parents(
@@ -72,11 +92,11 @@ async def make_scan_run_with_parents(
     org_name: str = "Test Org",
     app_name: str = "Test App",
     slug: str = "test-app",
-    brand: Brand = Brand.HUMANA,
+    brand_id: int | None = None,
     status: ScanRunStatus = ScanRunStatus.PENDING,
     scanned_at: datetime | None = None,
 ) -> ScanRun:
-    app = await make_app_with_org_unit(db, org_name=org_name, app_name=app_name, slug=slug, brand=brand)
+    app = await make_app_with_org_unit(db, org_name=org_name, app_name=app_name, slug=slug, brand_id=brand_id)
     return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)
 
 

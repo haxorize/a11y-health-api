@@ -88,7 +88,7 @@ from sqlalchemy.orm import deferred
 raw_json: Mapped[dict[str, Any]] = deferred(mapped_column(JSONB, nullable=False))
 ```
 
-Omit deferred columns from Pydantic Read schemas — they are not loaded by default queries.
+Omit deferred columns from list-level Read schemas — they are not loaded by default queries. Detail schemas that always `undefer()` the column in their query path may include it.
 
 ## Alembic migrations
 

@@ -18,11 +18,12 @@ async def create_app(db: DbSession, data: AppCreate) -> AppRead:
 @router.get("")
 async def list_apps(
     db: DbSession,
-    brand_id: int | None = None,
+    brand_id: list[int] | None = Query(default=None),  # noqa: B008
+    org_unit_id: list[int] | None = Query(default=None),  # noqa: B008
     offset: int = 0,
-    limit: int = Query(default=20, le=100),
+    limit: int = Query(default=20, le=100),  # noqa: B008
 ) -> list[AppRead]:
-    apps = await app_service.list_apps(db, brand_id=brand_id, offset=offset, limit=limit)
+    apps = await app_service.list_apps(db, brand_id=brand_id, org_unit_id=org_unit_id, offset=offset, limit=limit)
     return [AppRead.model_validate(a) for a in apps]
 
 

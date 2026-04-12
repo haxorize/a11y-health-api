@@ -115,6 +115,35 @@ async def test_get_descendants_not_found(db_session: AsyncSession) -> None:
         await org_unit_service.get_descendants(db_session, 999999)
 
 
+async def test_get_descendant_ids_leaf_returns_self(db_session: AsyncSession) -> None:
+    leaf = await make_org_unit(db_session, name="Leaf")
+    result = await org_unit_service.get_descendant_ids(db_session, [leaf.id])
+    assert result == {leaf.id}
+
+
+async def test_get_descendant_ids_deep_hierarchy(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+    great_grandchild = await make_org_unit(db_session, name="Clinic", parent_id=grandchild.id)
+    result = await org_unit_service.get_descendant_ids(db_session, [root.id])
+    assert result == {root.id, child.id, grandchild.id, great_grandchild.id}
+
+
+async def test_get_descendant_ids_multiple_inputs_with_overlap(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
+    leaf_a = await make_org_unit(db_session, name="Primary Care", parent_id=branch_a.id)
+    result = await org_unit_service.get_descendant_ids(db_session, [branch_a.id, branch_b.id])
+    assert result == {branch_a.id, branch_b.id, leaf_a.id}
+
+
+async def test_get_descendant_ids_empty_input(db_session: AsyncSession) -> None:
+    result = await org_unit_service.get_descendant_ids(db_session, [])
+    assert result == set()
+
+
 async def test_update_rejects_self_as_parent(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session, name="Humana")
     with pytest.raises(CircularReferenceError):

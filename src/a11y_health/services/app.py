@@ -7,16 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.schemas.app import AppCreate, AppUpdate
+from a11y_health.services.org_unit import get_descendant_ids
 
 _RESOURCE = "App"
 
 
 async def list_apps(
-    session: AsyncSession, *, brand_id: int | None = None, offset: int = 0, limit: int = 20
+    session: AsyncSession,
+    *,
+    brand_id: list[int] | None = None,
+    org_unit_id: list[int] | None = None,
+    offset: int = 0,
+    limit: int = 20,
 ) -> Sequence[App]:
     stmt = select(App)
-    if brand_id is not None:
-        stmt = stmt.where(App.brand_id == brand_id)
+    if brand_id:
+        stmt = stmt.where(App.brand_id.in_(brand_id))
+    if org_unit_id:
+        expanded = await get_descendant_ids(session, org_unit_id)
+        stmt = stmt.where(App.org_unit_id.in_(expanded))
     result = await session.execute(stmt.order_by(App.id).offset(offset).limit(limit))
     return result.scalars().all()
 

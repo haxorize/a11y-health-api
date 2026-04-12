@@ -16,6 +16,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import app as app_service
+from a11y_health.services import brand as brand_service
 
 _IMPACT_TO_PAGE_HEALTH: dict[Impact, PageHealth] = {
     Impact.CRITICAL: PageHealth.CRITICAL,
@@ -80,6 +81,13 @@ async def list_app_scores(
 ) -> Sequence[ScoreSnapshot]:
     await app_service.get_app(session, app_id)
     return await _list_scores(session, ScoreSnapshot.app_id, app_id, offset=offset, limit=limit)
+
+
+async def list_brand_scores(
+    session: AsyncSession, brand_id: int, *, offset: int = 0, limit: int = 20
+) -> Sequence[ScoreSnapshot]:
+    await brand_service.get_brand(session, brand_id)
+    return await _list_scores(session, ScoreSnapshot.brand_id, brand_id, offset=offset, limit=limit)
 
 
 async def list_org_unit_scores(

@@ -23,6 +23,7 @@ class ScoreSnapshotRead(ScoreMetrics):
     app_id: int | None
     scan_run_id: int | None
     org_unit_id: int | None
+    brand_id: int | None
     snapshot_at: datetime
     created_at: datetime
     updated_at: datetime

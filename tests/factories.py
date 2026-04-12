@@ -106,6 +106,7 @@ async def make_score_snapshot(
     app_id: int | None = None,
     scan_run_id: int | None = None,
     org_unit_id: int | None = None,
+    brand_id: int | None = None,
     score: float = 0.8,
     total_violations: int = 5,
     pages_with_violations: int = 2,
@@ -123,6 +124,7 @@ async def make_score_snapshot(
         app_id=app_id,
         scan_run_id=scan_run_id,
         org_unit_id=org_unit_id,
+        brand_id=brand_id,
     )
     db.add(snapshot)
     await db.flush()

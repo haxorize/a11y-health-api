@@ -11,6 +11,7 @@ from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
+from a11y_health.services import scoring_orchestration
 from a11y_health.services.app import get_app
 
 _RESOURCE = "Scan run"
@@ -52,6 +53,8 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
     scan_run.status = data.status
     await session.flush()
     await session.refresh(scan_run)
+    if data.status == ScanRunStatus.COMPLETED:
+        await scoring_orchestration.on_scan_run_completed(session, scan_run)
     return scan_run
 
 

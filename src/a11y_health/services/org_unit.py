@@ -8,6 +8,7 @@ from sqlalchemy.orm import aliased
 from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError, NotFoundError
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
+from a11y_health.services import scoring_orchestration
 
 _RESOURCE = "Org unit"
 
@@ -36,6 +37,7 @@ async def get_org_unit(session: AsyncSession, org_unit_id: int) -> OrgUnit:
 
 async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnit:
     org_unit = await get_org_unit(session, org_unit_id)
+    old_parent_id = org_unit.parent_id
     updates = data.model_dump(exclude_unset=True)
     if "parent_id" in updates:
         new_parent_id = updates["parent_id"]
@@ -50,6 +52,8 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
         setattr(org_unit, field, value)
     await session.flush()
     await session.refresh(org_unit)
+    if "parent_id" in updates and org_unit.parent_id != old_parent_id:
+        await scoring_orchestration.on_org_unit_reparented(session, org_unit_id, old_parent_id, org_unit.parent_id)
     return org_unit
 
 

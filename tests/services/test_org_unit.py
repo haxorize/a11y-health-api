@@ -1,10 +1,11 @@
 import pytest
+from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
-from tests.factories import make_org_unit
+from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
 
 
 async def test_create_org_unit(db_session: AsyncSession) -> None:
@@ -138,10 +139,32 @@ async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:
     assert [a.id for a in ancestors] == [branch_b.id, root.id]
 
 
-async def test_reparent_does_not_trigger_rollup(db_session: AsyncSession) -> None:
+async def test_reparent_triggers_rollup(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
 
+    app = await make_app(db_session, name="App", slug="app-reparent", org_unit_id=branch_a.id)
+    await make_score_snapshot(
+        db_session,
+        app_id=app.id,
+        score=0.6,
+        total_pages=3,
+        total_violations=2,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
+    )
+    await make_score_snapshot(
+        db_session,
+        org_unit_id=branch_a.id,
+        score=0.6,
+        total_pages=3,
+        total_violations=2,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
+    )
+
     await org_unit_service.update_org_unit(db_session, branch_a.id, OrgUnitUpdate(parent_id=branch_b.id))
-    assert branch_a.parent_id == branch_b.id
+
+    snapshot = await latest_ou_snapshot(db_session, branch_b.id)
+    assert snapshot.score == approx(0.6)

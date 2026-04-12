@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
+from pytest import approx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import (
@@ -9,9 +11,20 @@ from a11y_health.core.exceptions import (
     ScanRunCompletedError,
 )
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
-from tests.factories import make_app_with_org_unit, make_scan_run, make_scan_run_with_parents
+from a11y_health.services.page_result import create_page_result
+from tests.factories import (
+    make_app,
+    make_app_with_org_unit,
+    make_axe_payload,
+    make_org_unit,
+    make_scan_run,
+    make_scan_run_with_parents,
+    make_violation,
+)
 
 
 async def test_create_scan_run(db_session: AsyncSession) -> None:
@@ -100,6 +113,24 @@ async def test_update_status_completed_to_completed_rejected(db_session: AsyncSe
         await scan_run_service.update_scan_run_status(
             db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
         )
+
+
+async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Org")
+    app = await make_app(db_session, name="App", slug="app-score", org_unit_id=org_unit.id)
+    scan_run = await make_scan_run(db_session, app_id=app.id)
+
+    payload = make_axe_payload(violations=[make_violation("r1", "serious")])
+    await create_page_result(db_session, scan_run.id, AxePayload.model_validate(payload), payload)
+
+    await scan_run_service.update_scan_run_status(
+        db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
+    )
+
+    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
+    snapshot = result.scalar_one()
+    assert snapshot.score == approx(0.4)
+    assert snapshot.total_pages == 1
 
 
 async def test_completed_run_rejects_page_addition(db_session: AsyncSession) -> None:

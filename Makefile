@@ -33,7 +33,7 @@ upload:
 	uv run a11y-upload upload $(app_id) $(dir)
 
 bulk-import:
-	uv run a11y-upload bulk $(dir) --org-unit-id $(org_unit_id) --brand $(brand)
+	uv run a11y-upload bulk $(dir) --org-unit-id $(org_unit_id) --brand-id $(brand_id)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

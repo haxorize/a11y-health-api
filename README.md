@@ -56,8 +56,8 @@ uv run a11y-upload upload 42 ./scans/2026-03-30 --base-url http://localhost:8000
 Bulk import from an app directory containing date subdirectories (auto-creates the app if it doesn't exist):
 
 ```sh
-uv run a11y-upload bulk <directory> --org-unit-id <id> --brand <brand>
-uv run a11y-upload bulk ./scans/humana.com --org-unit-id 1 --brand Humana
+uv run a11y-upload bulk <directory> --org-unit-id <id> --brand-id <id>
+uv run a11y-upload bulk ./scans/humana.com --org-unit-id 1 --brand-id 1
 ```
 
 ## Migrations
@@ -96,7 +96,8 @@ src/a11y_health/
 │       ├── endpoints/   # Route handlers
 │       └── router.py    # API router
 ├── core/
-│   └── database.py      # Database setup
+│   ├── database.py      # Database setup
+│   └── exceptions.py    # Domain exceptions
 ├── models/              # SQLAlchemy models
 ├── schemas/             # Pydantic schemas
 ├── services/            # Business logic

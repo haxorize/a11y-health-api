@@ -18,6 +18,8 @@ tests/
     test_<resource>.py      # one file per endpoint module
   services/
     test_<resource>.py      # direct service-layer tests
+  schemas/
+    test_<schema>.py        # Pydantic schema validation tests
   cli/
     test_<command>.py       # CLI tool tests (e.g., test_upload.py, test_bulk_import.py)
 ```
@@ -95,6 +97,26 @@ def make_axe_payload(*, url: str = "https://example.com", violations: Any = None
 ```
 
 These don't touch the DB and don't need `async` or `flush()`.
+
+For factories that create many instances of the same resource, use a module-level `itertools.count()` sequence to generate unique defaults automatically:
+```python
+_brand_seq = itertools.count(1)
+
+async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
+    if name is None:
+        name = f"Test Brand {next(_brand_seq)}"
+    ...
+```
+
+For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`:
+```python
+async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
+    result = await db.execute(
+        select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id)
+        .order_by(ScoreSnapshot.id.desc()).limit(1)
+    )
+    return result.scalar_one()
+```
 
 ## What to test at which layer
 

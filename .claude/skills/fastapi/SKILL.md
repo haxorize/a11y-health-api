@@ -67,7 +67,7 @@ src/a11y_health/
 - Accept `AsyncSession` as first parameter
 - Return ORM model instances (endpoint serializes via schema)
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
-- One service module per resource; group related operations
+- One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too (e.g., `Classification` from `_tag_parsing.py`)
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
@@ -83,6 +83,18 @@ src/a11y_health/
       raise
   await session.refresh(app)
   ```
+
+## Endpoint orchestration
+
+When a mutation triggers cross-service side effects (e.g., score computation + rollup after scan run completion), that orchestration lives in the endpoint — not in individual services. This keeps services focused on their own resource while the endpoint coordinates:
+```python
+scan_run = await scan_run_service.update_scan_run_status(db, scan_run_id, data)
+if data.status == ScanRunStatus.COMPLETED:
+    snapshot = await score_service.compute_app_score(db, scan_run)
+    app = await app_service.get_app(db, scan_run.app_id)
+    await score_service.rollup_org_unit_scores(db, app.org_unit_id, snapshot.snapshot_at)
+    await score_service.rollup_brand_scores(db, app.brand_id, snapshot.snapshot_at)
+```
 
 ## Database sessions
 

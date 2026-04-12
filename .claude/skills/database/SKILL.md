@@ -9,7 +9,7 @@ description: Database conventions for this project (PostgreSQL schema design + S
 
 - **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` for PKs; `UUID` only when opacity or federation is needed
 - **Strings**: `TEXT` always; enforce length with `CHECK (LENGTH(col) <= n)`, never `VARCHAR(n)` or `CHAR(n)`
-- **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times
+- **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times. In SQLAlchemy ORM, use `DateTime(timezone=True)` — it maps to `TIMESTAMPTZ` in PostgreSQL
 - **Money/precision**: `NUMERIC(p,s)` for financial or precision-critical values; `FLOAT` is fine for informational ratios and scores
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
 - **JSON**: `JSONB` with GIN index; only for optional/semi-structured attributes

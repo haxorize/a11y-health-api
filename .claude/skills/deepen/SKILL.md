@@ -9,7 +9,17 @@ Surface architectural friction and propose module-deepening refactors.
 
 ## Workflow
 
-### 1. Explore organically
+### 1. Check refactoring history
+
+Before exploring, check for prior architectural work:
+
+- Run `gh issue list --state all --search "deepen OR refactor OR extract OR absorb"` to find existing refactor issues
+- Run `git log --oneline -30` to scan recent commits for structural changes (extract, move, rename, refactor)
+- Read any open refactor issues fully — understand the intent, not just the title
+
+If an area was recently refactored, the bar for proposing another change is much higher. Ask: "Is this friction from an incomplete refactor, or from the refactor itself being wrong?" If incomplete, the right action is to update the existing issue, not file a new one.
+
+### 2. Explore organically
 
 Use the Agent tool with subagent_type=Explore to navigate the codebase. Do NOT follow rigid heuristics — explore and note where you experience friction:
 
@@ -22,20 +32,23 @@ Use the Agent tool with subagent_type=Explore to navigate the codebase. Do NOT f
 
 The friction you encounter IS the signal.
 
-### 2. Consolidate and present candidates
+### 3. Consolidate and present candidates
 
-Group related findings into coherent candidates — don't present overlapping or sub-issues separately. Present a numbered list of deepening opportunities. For each candidate, show:
+Group related findings into coherent candidates — don't present overlapping or sub-issues separately. **Cross-reference against existing issues found in step 1.** If a candidate overlaps with an existing issue, say so explicitly — propose updating that issue rather than filing a new one.
+
+Present a numbered list of deepening opportunities. For each candidate, show:
 
 - **Cluster**: Which modules/concepts are involved
 - **Why they're coupled**: Shared types, call patterns, co-ownership of a concept
+- **Prior work**: Any existing issues or recent refactors in this area (from step 1)
 - **Current test coverage**: What exists, what's missing, what's fragile
 - **Deepening direction**: What a deeper module would hide and what it would expose
 
 Do NOT propose interfaces yet. Ask: "Which of these would you like to explore?"
 
-### 3. User picks a candidate
+### 4. User picks a candidate
 
-### 4. Frame the problem space
+### 5. Frame the problem space
 
 Write a user-facing explanation of the chosen candidate:
 
@@ -45,7 +58,7 @@ Write a user-facing explanation of the chosen candidate:
 
 If framing reveals this isn't a deepening candidate (e.g., modules are thin for good reason, or the friction is a bug/test gap rather than an architecture problem), say so and offer alternatives — a bug fix issue, test coverage issue, or skipping it entirely.
 
-### 5. Propose a design
+### 6. Propose a design
 
 Present one recommended interface design:
 
@@ -59,11 +72,14 @@ Be opinionated — the user wants a strong recommendation, not a menu.
 
 Offer to run `/grill-me` on the design if the user wants to stress-test it.
 
-### 6. Create issue(s)
+### 7. Create or update issue(s)
 
-Once the user approves, create the appropriate issue(s) using `gh issue create` (title and body only — no labels or assignees). This might be a single refactor RFC, multiple issues (e.g., merged candidates), or a simpler bug/test ticket if the candidate turned out not to need deepening.
+Once the user approves, either **update an existing issue** or **create a new one** using `gh` (title and body only — no labels or assignees).
 
-Do NOT ask the user to review before creating — just create it and share the URL. Use the template below for refactor RFCs; adapt the format for simpler issues.
+- If step 1 found an existing issue that covers this candidate, update it with a comment or revised body rather than filing a duplicate.
+- If the candidate is net-new, create an issue. Do NOT ask the user to review before creating — just create it and share the URL.
+
+Use the template below for refactor RFCs; adapt the format for simpler issues.
 
 ## Issue template
 

@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.schemas.app import AppCreate, AppUpdate
-from a11y_health.services.brand import get_brand
-from a11y_health.services.org_unit import get_org_unit
 
 _RESOURCE = "App"
 
@@ -39,6 +37,9 @@ async def get_app(session: AsyncSession, app_id: int) -> App:
 
 
 async def create_app(session: AsyncSession, data: AppCreate) -> App:
+    from a11y_health.services.brand import get_brand
+    from a11y_health.services.org_unit import get_org_unit
+
     await get_brand(session, data.brand_id)
     await get_org_unit(session, data.org_unit_id)
     app = App(**data.model_dump())
@@ -64,6 +65,8 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
     reassigning = new_org_unit_id is not None and new_org_unit_id != old_org_unit_id
 
     if new_org_unit_id is not None:
+        from a11y_health.services.org_unit import get_org_unit
+
         await get_org_unit(session, new_org_unit_id)
 
     for field, value in fields.items():

@@ -7,9 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.app import App
-from a11y_health.models.brand import Brand
 from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
@@ -119,29 +117,31 @@ async def _list_scores(
 async def list_app_scores(
     session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    if await session.get(App, app_id) is None:
-        raise NotFoundError("App", app_id)
+    from a11y_health.services.app import get_app
+
+    await get_app(session, app_id)
     return await _list_scores(session, ScoreSnapshot.app_id, app_id, offset=offset, limit=limit)
 
 
 async def list_brand_scores(
     session: AsyncSession, brand_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    if await session.get(Brand, brand_id) is None:
-        raise NotFoundError("Brand", brand_id)
+    from a11y_health.services.brand import get_brand
+
+    await get_brand(session, brand_id)
     return await _list_scores(session, ScoreSnapshot.brand_id, brand_id, offset=offset, limit=limit)
 
 
 async def list_org_unit_scores(
     session: AsyncSession, org_unit_id: int, *, offset: int = 0, limit: int = 20
 ) -> Sequence[ScoreSnapshot]:
-    if await session.get(OrgUnit, org_unit_id) is None:
-        raise NotFoundError("Org unit", org_unit_id)
+    from a11y_health.services.org_unit import get_org_unit
+
+    await get_org_unit(session, org_unit_id)
     return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, offset=offset, limit=limit)
 
 
 async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSnapshot:
-    # Fetch
     result = await session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
     pages = list(result.scalars().all())
     page_ids = [p.id for p in pages]
@@ -157,10 +157,8 @@ async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSn
         for page_result_id, impact in findings_result.all():
             violations_by_page[page_result_id].append(impact)
 
-    # Compute
     score_result = compute_app_score_result(page_ids, violations_by_page)
 
-    # Persist
     for page in pages:
         page.page_health = score_result.page_healths[page.id]
 
@@ -216,21 +214,34 @@ def build_snapshot(
     )
 
 
-async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    async def _query(join_target: Any, join_cond: Any, filter_col: Any) -> list[ScoreSnapshot]:
-        row_num = (
-            func.row_number().over(partition_by=join_cond.left, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
-        )
-        subq = (
-            select(ScoreSnapshot.id, row_num).join(join_target, join_cond).where(filter_col == org_unit_id)
-        ).subquery()
-        result = await session.execute(
-            select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
-        )
-        return list(result.scalars().all())
+async def _latest_snapshots_by_partition(
+    session: AsyncSession,
+    partition_col: Any,
+    join_target: Any,
+    join_cond: Any,
+    filter_col: Any,
+    filter_val: int,
+) -> list[ScoreSnapshot]:
+    row_num = func.row_number().over(partition_by=partition_col, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
+    subq = (select(ScoreSnapshot.id, row_num).join(join_target, join_cond).where(filter_col == filter_val)).subquery()
+    result = await session.execute(
+        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
+    )
+    return list(result.scalars().all())
 
-    app_snapshots = await _query(App, ScoreSnapshot.app_id == App.id, App.org_unit_id)
-    ou_snapshots = await _query(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id, OrgUnit.parent_id)
+
+async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
+    app_snapshots = await _latest_snapshots_by_partition(
+        session, ScoreSnapshot.app_id, App, ScoreSnapshot.app_id == App.id, App.org_unit_id, org_unit_id
+    )
+    ou_snapshots = await _latest_snapshots_by_partition(
+        session,
+        ScoreSnapshot.org_unit_id,
+        OrgUnit,
+        ScoreSnapshot.org_unit_id == OrgUnit.id,
+        OrgUnit.parent_id,
+        org_unit_id,
+    )
     return app_snapshots + ou_snapshots
 
 
@@ -252,29 +263,23 @@ async def _aggregate_and_save(
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapshot_at: datetime) -> None:
+    from a11y_health.services.org_unit import get_org_unit
+
     children = await _latest_child_snapshots(session, org_unit_id)
     if not children:
         return
 
     await _aggregate_and_save(session, children, snapshot_at, org_unit_id=org_unit_id)
 
-    org_unit = await session.get(OrgUnit, org_unit_id)
-    assert org_unit is not None
+    org_unit = await get_org_unit(session, org_unit_id)
     if org_unit.parent_id is not None:
         await rollup_org_unit_scores(session, org_unit.parent_id, snapshot_at)
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    row_num = (
-        func.row_number().over(partition_by=ScoreSnapshot.app_id, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
+    return await _latest_snapshots_by_partition(
+        session, ScoreSnapshot.app_id, App, ScoreSnapshot.app_id == App.id, App.brand_id, brand_id
     )
-    subq = (
-        select(ScoreSnapshot.id, row_num).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
-    ).subquery()
-    result = await session.execute(
-        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
-    )
-    return list(result.scalars().all())
 
 
 async def rollup_brand_scores(session: AsyncSession, brand_id: int, snapshot_at: datetime) -> None:

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from a11y_health.config import settings
@@ -20,6 +21,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP TYPE IF EXISTS brand"))
         await conn.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()

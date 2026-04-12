@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Sequence
 
 from sqlalchemy import select
@@ -6,19 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, HasDependentsError, NotFoundError
 from a11y_health.models.app import UQ_APP_SLUG, App
-from a11y_health.models.enums import Brand
 from a11y_health.schemas.app import AppCreate, AppUpdate
+from a11y_health.services.brand import get_brand
 from a11y_health.services.org_unit import get_org_unit
 
 _RESOURCE = "App"
 
 
 async def list_apps(
-    session: AsyncSession, *, brand: Brand | None = None, offset: int = 0, limit: int = 20
+    session: AsyncSession, *, brand_id: int | None = None, offset: int = 0, limit: int = 20
 ) -> Sequence[App]:
     stmt = select(App)
-    if brand is not None:
-        stmt = stmt.where(App.brand == brand)
+    if brand_id is not None:
+        stmt = stmt.where(App.brand_id == brand_id)
     result = await session.execute(stmt.order_by(App.id).offset(offset).limit(limit))
     return result.scalars().all()
 
@@ -39,7 +40,7 @@ async def get_app(session: AsyncSession, app_id: int) -> App:
 
 
 async def create_app(session: AsyncSession, data: AppCreate) -> App:
-    await get_org_unit(session, data.org_unit_id)
+    await asyncio.gather(get_brand(session, data.brand_id), get_org_unit(session, data.org_unit_id))
     app = App(**data.model_dump())
     session.add(app)
     try:

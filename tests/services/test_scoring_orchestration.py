@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +9,12 @@ from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.scoring_orchestration import on_app_deleted, on_org_unit_reparented, on_scan_run_completed
+from a11y_health.services.scoring_orchestration import (
+    on_app_deleted,
+    on_org_unit_reparented,
+    on_scan_run_completed,
+    on_scan_run_deleted,
+)
 from tests.factories import (
     latest_brand_snapshot,
     latest_ou_snapshot,
@@ -80,6 +87,96 @@ class TestOnScanRunCompleted:
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
         assert brand_snap.score == approx(0.7)
         assert brand_snap.total_pages == 2
+
+
+class TestOnScanRunDeleted:
+    async def test_recomputes_app_score_from_remaining_run(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-recomp", org_unit_id=org_unit.id)
+
+        sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        await db_session.delete(sr_b)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, org_unit.id, app.brand_id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
+        app_snapshots = result.scalars().all()
+        assert len(app_snapshots) == 1
+        assert app_snapshots[0].scan_run_id == sr_a.id
+        assert app_snapshots[0].score == approx(0.4)
+
+    async def test_recalculates_org_unit_rollups(self, db_session: AsyncSession) -> None:
+        root = await make_org_unit(db_session, name="Root")
+        leaf = await make_org_unit(db_session, name="Leaf", parent_id=root.id)
+        app = await make_app(db_session, name="App", slug="app-del-sr", org_unit_id=leaf.id)
+
+        sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        leaf_before = await latest_ou_snapshot(db_session, leaf.id)
+        assert leaf_before.score == approx(1.0)
+
+        await db_session.delete(sr_b)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, leaf.id, app.brand_id)
+
+        leaf_after = await latest_ou_snapshot(db_session, leaf.id)
+        assert leaf_after.score == approx(0.4)
+        root_after = await latest_ou_snapshot(db_session, root.id)
+        assert root_after.score == approx(0.4)
+
+    async def test_recalculates_brand_rollups(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CenterWell")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(
+            db_session, name="App", slug="app-del-sr-brand", org_unit_id=org_unit.id, brand_id=brand.id
+        )
+
+        sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        brand_before = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_before.score == approx(1.0)
+
+        await db_session.delete(sr_b)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+
+        brand_after = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_after.score == approx(0.4)
+
+    async def test_last_scan_run_deleted(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Go365")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-last-sr", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        sr = await make_scan_run(db_session, app_id=app.id)
+        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr.id, [payload])
+
+        await db_session.delete(sr)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
+        assert result.scalar_one_or_none() is None
 
 
 class TestOnOrgUnitReparented:

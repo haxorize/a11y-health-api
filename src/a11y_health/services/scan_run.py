@@ -110,6 +110,14 @@ async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> Score
     return snapshot
 
 
+async def delete_scan_run(session: AsyncSession, scan_run_id: int) -> None:
+    scan_run = await get_scan_run(session, scan_run_id)
+    app = await get_app(session, scan_run.app_id)
+    await session.delete(scan_run)
+    await session.flush()
+    await scoring_orchestration.on_scan_run_deleted(session, app.id, app.org_unit_id, app.brand_id)
+
+
 def assert_scan_run_pending(scan_run: ScanRun) -> None:
     if scan_run.status == ScanRunStatus.COMPLETED:
         raise ScanRunCompletedError(scan_run.id)

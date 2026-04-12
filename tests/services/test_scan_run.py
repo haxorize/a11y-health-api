@@ -133,6 +133,20 @@ async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -
     assert snapshot.total_pages == 1
 
 
+async def test_delete_scan_run(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    await scan_run_service.delete_scan_run(db_session, scan_run.id)
+
+    with pytest.raises(NotFoundError):
+        await scan_run_service.get_scan_run(db_session, scan_run.id)
+
+
+async def test_delete_scan_run_not_found(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError, match="Scan run"):
+        await scan_run_service.delete_scan_run(db_session, 999999)
+
+
 async def test_completed_run_rejects_page_addition(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session, status=ScanRunStatus.COMPLETED)
 

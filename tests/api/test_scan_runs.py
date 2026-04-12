@@ -72,6 +72,21 @@ async def test_update_scan_run_status(db_client: AsyncClient, db_session: AsyncS
     assert response.json()["status"] == ScanRunStatus.COMPLETED.value
 
 
+async def test_delete_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")
+    assert response.status_code == 204
+
+    get_response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}")
+    assert get_response.status_code == 404
+
+
+async def test_delete_scan_run_not_found(db_client: AsyncClient) -> None:
+    response = await db_client.delete("/api/v1/scan-runs/999999")
+    assert response.status_code == 404
+
+
 async def test_update_scan_run_invalid_transition(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session, status=ScanRunStatus.COMPLETED)
 

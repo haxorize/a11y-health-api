@@ -117,3 +117,23 @@ async def test_reject_rule_missing_id(db_client: AsyncClient, db_session: AsyncS
         json=make_axe_payload(violations=[{"impact": "serious", "description": "d", "help": "h", "helpUrl": "u"}]),
     )
     assert response.status_code == 422
+
+
+async def test_reject_rule_missing_category_tag_via_api(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    violation = {
+        "id": "color-contrast",
+        "impact": "serious",
+        "description": "d",
+        "help": "h",
+        "helpUrl": "u",
+        "tags": ["wcag2aa"],
+        "nodes": [{"html": "<div></div>", "target": ["div"], "impact": "serious"}],
+    }
+
+    response = await db_client.post(
+        f"/api/v1/scan-runs/{scan_run.id}/pages",
+        json=make_axe_payload(violations=[violation]),
+    )
+    assert response.status_code == 422
+    assert "violations" in response.json()["detail"].lower()

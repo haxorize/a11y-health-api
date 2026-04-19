@@ -2,9 +2,9 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.schemas._tag_parsing import Classification
 from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
-from a11y_health.services._tag_parsing import Classification
 
 router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
 

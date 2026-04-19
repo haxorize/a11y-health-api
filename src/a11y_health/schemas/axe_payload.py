@@ -1,8 +1,9 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from a11y_health.models.enums import Impact
+from a11y_health.models.enums import Category, Impact
+from a11y_health.schemas._tag_parsing import extract_category, extract_classifications, extract_wcag_criteria
 
 
 class AxeNode(BaseModel):
@@ -27,6 +28,23 @@ class AxeRule(BaseModel):
     help_url: str = Field(alias="helpUrl")
     tags: list[str]
     nodes: list[AxeNode]
+    category: Category
+    wcag_criteria: list[str]
+    classifications: list[dict[str, str]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def classify_tags(cls, data: Any) -> Any:
+        # Unknown WCAG-shaped tags are silently dropped; the axe tag vocabulary is open.
+        if isinstance(data, dict):
+            tags = data.get("tags", [])
+            return {
+                **data,
+                "category": extract_category(tags),
+                "wcag_criteria": extract_wcag_criteria(tags),
+                "classifications": extract_classifications(tags),
+            }
+        return data
 
 
 class AxeFindings(BaseModel):

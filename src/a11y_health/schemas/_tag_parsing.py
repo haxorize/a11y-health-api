@@ -1,7 +1,6 @@
 import re
 from typing import Literal
 
-from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.enums import Category
 
 _WCAG_VERSION_LEVEL = re.compile(r"^wcag2(1|2)?a{1,2}$")
@@ -18,6 +17,21 @@ Classification = Literal[
     "wcag22aa",
     "best-practice",
 ]
+
+
+_CLASSIFICATION_TO_TAG: dict[Classification, dict[str, str]] = {
+    "wcag2a": {"standard": "wcag", "version": "2.0", "level": "A"},
+    "wcag2aa": {"standard": "wcag", "version": "2.0", "level": "AA"},
+    "wcag21a": {"standard": "wcag", "version": "2.1", "level": "A"},
+    "wcag21aa": {"standard": "wcag", "version": "2.1", "level": "AA"},
+    "wcag22a": {"standard": "wcag", "version": "2.2", "level": "A"},
+    "wcag22aa": {"standard": "wcag", "version": "2.2", "level": "AA"},
+    "best-practice": {"standard": "best-practice"},
+}
+
+
+def classification_to_tag(c: Classification) -> dict[str, str]:
+    return _CLASSIFICATION_TO_TAG[c]
 
 
 def parse_wcag_tag(tag: str) -> dict[str, str] | None:
@@ -59,6 +73,6 @@ def extract_category(tags: list[str]) -> Category:
             value = m.group(1)
             cat = _CATEGORY_LOOKUP.get(value)
             if cat is None:
-                raise InvalidAxePayloadError(f"Unknown category: {value}")
+                raise ValueError(f"Unknown category: {value}")
             return cat
-    raise InvalidAxePayloadError("No category tag found")
+    raise ValueError("No category tag found")

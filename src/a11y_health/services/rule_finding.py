@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text
 
-from a11y_health.core.exceptions import InvalidAxePayloadError, NotFoundError
+from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
-from a11y_health.services._tag_parsing import Classification, parse_wcag_tag
+from a11y_health.schemas._tag_parsing import Classification, classification_to_tag
 from a11y_health.services.scan_run import get_scan_run
 
 
@@ -22,13 +22,6 @@ class FindingWithNodes:
 
 
 _RESOURCE = "Finding"
-
-
-def _parse_classification(value: str) -> dict[str, str]:
-    parsed = parse_wcag_tag(value)
-    if parsed is None:
-        raise InvalidAxePayloadError(f"Invalid classification: {value}")
-    return parsed
 
 
 async def list_findings(
@@ -60,7 +53,7 @@ async def list_findings(
     if wcag_criterion:
         stmt = stmt.where(RuleFinding.wcag_criteria.has_any(array(wcag_criterion, type_=Text)))
     if classification:
-        targets = [_parse_classification(c) for c in classification]
+        targets = [classification_to_tag(c) for c in classification]
         stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
 
     stmt = stmt.order_by(RuleFinding.id).offset(offset).limit(limit)

@@ -118,6 +118,41 @@ class TestAxeFindingsPassesInapplicable:
         assert payload.findings.inapplicable == []
 
 
+class TestAxeRuleSemanticValidation:
+    def test_reject_rule_missing_category_tag(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["tags"] = ["wcag2a", "best-practice"]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
+            AxePayload.model_validate(raw)
+        err = exc_info.value.errors()[0]
+        assert "findings" in err["loc"]
+        assert "violations" in err["loc"]
+        assert "No category tag found" in err["msg"]
+
+    def test_reject_rule_unknown_category_tag(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["tags"] = ["cat.bogus"]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
+            AxePayload.model_validate(raw)
+        err = exc_info.value.errors()[0]
+        assert "findings" in err["loc"]
+        assert "violations" in err["loc"]
+        assert "Unknown category: bogus" in err["msg"]
+
+    def test_classified_fields_attached_to_rule(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["tags"] = ["cat.color", "wcag2aa", "wcag143", "best-practice"]
+        raw = make_axe_payload(violations=[violation])
+        payload = AxePayload.model_validate(raw)
+        rule = payload.findings.violations[0]
+        assert rule.category.value == "color"
+        assert rule.wcag_criteria == ["1.4.3"]
+        assert {"standard": "wcag", "version": "2.0", "level": "AA"} in rule.classifications
+        assert {"standard": "best-practice"} in rule.classifications
+
+
 class TestAxePayloadValid:
     def test_valid_payload_parses(self) -> None:
         raw = make_axe_payload(

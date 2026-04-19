@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import text
 from starlette.requests import Request
 
@@ -15,7 +16,6 @@ from a11y_health.core.exceptions import (
     CircularReferenceError,
     DuplicateSlugError,
     HasDependentsError,
-    InvalidAxePayloadError,
     InvalidStatusTransitionError,
     NotFoundError,
     ScanRunCompletedError,
@@ -53,7 +53,6 @@ _EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
     HasDependentsError: 409,
     InvalidStatusTransitionError: 409,
     ScanRunCompletedError: 409,
-    InvalidAxePayloadError: 422,
 }
 
 
@@ -66,6 +65,13 @@ def _make_handler(status: int) -> Callable[..., Coroutine[Any, Any, JSONResponse
 
 for _exc_cls, _status_code in _EXCEPTION_STATUS_CODES.items():
     app.exception_handler(_exc_cls)(_make_handler(_status_code))
+
+
+@app.exception_handler(ValidationError)
+async def _validation_error_handler(_request: Request, exc: ValidationError) -> JSONResponse:
+    err = exc.errors()[0]
+    loc = " → ".join(str(part) for part in err["loc"])
+    return JSONResponse(status_code=422, content={"detail": f"{loc}: {err['msg']}"})
 
 
 app.include_router(api_router)

@@ -77,15 +77,15 @@ def _snapshot(
 
 class TestBuildSnapshotOwnership:
     def test_rejects_no_owner(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(AssertionError):
             _snapshot()
 
     def test_rejects_multiple_owners(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(AssertionError):
             _snapshot(app_id=1, brand_id=2)
 
     def test_rejects_scan_run_without_app(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(AssertionError):
             _snapshot(org_unit_id=1, scan_run_id=99)
 
     def test_accepts_app_without_scan_run(self) -> None:

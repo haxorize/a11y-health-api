@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.models.enums import Category, FindingType, Impact
-from a11y_health.schemas.rule_finding import NodeFindingRead, RuleFindingDetail, RuleFindingRead
+from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 from a11y_health.services._tag_parsing import Classification
 
@@ -45,5 +45,5 @@ async def get_finding(
     finding_data = RuleFindingRead.model_validate(result.finding)
     return RuleFindingDetail(
         **finding_data.model_dump(),
-        node_findings=[NodeFindingRead.model_validate(nf) for nf in result.node_findings],
+        node_findings=[NodeFindingDetail.model_validate(nf) for nf in result.node_findings],
     )

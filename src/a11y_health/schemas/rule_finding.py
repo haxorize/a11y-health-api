@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 from a11y_health.models.enums import Category, FindingType, Impact
 
-__all__ = ["NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
+__all__ = ["NodeFindingDetail", "NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
 
 
 class RuleFindingRead(BaseModel):
@@ -32,8 +32,11 @@ class NodeFindingRead(BaseModel):
     target: list[str]
     impact: Impact
     failure_summary: str | None
+
+
+class NodeFindingDetail(NodeFindingRead):
     checks: dict[str, Any]
 
 
 class RuleFindingDetail(RuleFindingRead):
-    node_findings: list[NodeFindingRead] = []
+    node_findings: list[NodeFindingDetail] = []

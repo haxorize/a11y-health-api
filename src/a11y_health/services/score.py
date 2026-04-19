@@ -193,9 +193,9 @@ def build_snapshot(
 ) -> ScoreSnapshot:
     owners = [id for id in (app_id, org_unit_id, brand_id) if id is not None]
     if len(owners) != 1:
-        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
+        raise AssertionError("Exactly one of app_id, org_unit_id, brand_id must be set")
     if scan_run_id is not None and app_id is None:
-        raise ValueError("scan_run_id requires app_id")
+        raise AssertionError("scan_run_id requires app_id")
 
     return ScoreSnapshot(
         app_id=app_id,

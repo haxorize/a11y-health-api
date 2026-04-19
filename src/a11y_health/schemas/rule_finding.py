@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from a11y_health.models.enums import Category, FindingType, Impact
 
@@ -39,4 +39,4 @@ class NodeFindingDetail(NodeFindingRead):
 
 
 class RuleFindingDetail(RuleFindingRead):
-    node_findings: list[NodeFindingDetail] = []
+    node_findings: list[NodeFindingDetail] = Field(default_factory=list)

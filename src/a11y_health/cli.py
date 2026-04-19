@@ -1,5 +1,3 @@
-"""CLI tool for uploading axe DevTools scan results."""
-
 import argparse
 import asyncio
 import json

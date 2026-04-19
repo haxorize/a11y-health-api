@@ -193,9 +193,9 @@ def build_snapshot(
 ) -> ScoreSnapshot:
     owners = [id for id in (app_id, org_unit_id, brand_id) if id is not None]
     if len(owners) != 1:
-        raise AssertionError("Exactly one of app_id, org_unit_id, brand_id must be set")
+        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
     if scan_run_id is not None and app_id is None:
-        raise AssertionError("scan_run_id requires app_id")
+        raise ValueError("scan_run_id requires app_id")
 
     return ScoreSnapshot(
         app_id=app_id,
@@ -246,7 +246,12 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
 
 
 async def _aggregate_and_save(
-    session: AsyncSession, children: list[ScoreSnapshot], snapshot_at: datetime, **owner_id: int
+    session: AsyncSession,
+    children: list[ScoreSnapshot],
+    snapshot_at: datetime,
+    *,
+    org_unit_id: int | None = None,
+    brand_id: int | None = None,
 ) -> None:
     count = len(children)
     snapshot = build_snapshot(
@@ -256,7 +261,8 @@ async def _aggregate_and_save(
         pages_with_violations=sum(c.pages_with_violations for c in children),
         pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
         snapshot_at=snapshot_at,
-        **owner_id,
+        org_unit_id=org_unit_id,
+        brand_id=brand_id,
     )
     session.add(snapshot)
     await session.flush()

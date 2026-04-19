@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | **Org Unit** | A node in the organizational hierarchy (company, division, team, etc.) with an optional parent. | Organization, team, department, group, dimension |
 | **App** | A web application whose accessibility is tracked, owned by an **Org Unit**. | Property, site, project, product |
-| **Slug** | A unique, URL-friendly identifier for an **App** that matches the directory name in the test results repo. | Key, code, handle |
+| **Slug** | A unique, URL-friendly identifier for an **App**, derived from the `name` field in the axe DevTools JSON at **Ingest** or **Import** time. | Key, code, handle |
 | **Brand** | A commercial brand (Humana, CenterWell, Go365, CarePlus, Reliance) that owns one or more **Apps**, stored as a first-class entity with its own table. | Label, product line |
 
 ## Scanning & Ingestion
@@ -17,7 +17,8 @@
 | **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending** (accepting **Page Results**) or **Completed** (finalized, triggers scoring). Only the forward transition Pending → Completed is valid. | State, phase, stage |
 | **Page Result** | The outcome of scanning a single URL within a **Scan Run**, including raw JSON, health category, and summary counts. | Page scan, page report, test result |
 | **Raw JSON** | The full axe DevTools JSON payload preserved as JSONB on a **Page Result** for reprocessing and debugging. | Payload, source data |
-| **Bulk Import** | A CLI operation that ingests multiple date-stamped scan directories for an **App**, auto-creating the **App** if it doesn't exist. Each subdirectory becomes a **Scan Run**. | Batch upload, mass import |
+| **Ingest** | A CLI operation that uploads a single scan directory as a **Scan Run** to an existing **App**, resolving the **App** by the JSON `name` field. | Upload, push |
+| **Import** | A CLI operation that onboards an **App** along with its historical scan directories, creating the **App** from the JSON `name` field if it doesn't exist. Each `YYYY-MM-DD/` subdirectory becomes a **Scan Run**. | Bulk Import, batch upload, mass import |
 
 ## Findings & Rules
 
@@ -78,9 +79,9 @@
 >
 > **Specifier:** "Exactly. A **Brand** doesn't have a hierarchy. It's a single aggregation across all **Apps** that share that **Brand**. Moving an **App** between **Org Units** changes the **Org Unit Rollup** but not the **Brand Rollup**."
 >
-> **Builder:** "What about **Bulk Import** — does that follow the same flow?"
+> **Builder:** "What about **Import** — does that follow the same flow?"
 >
-> **Specifier:** "Exactly the same. **Bulk Import** just automates it — it creates the **App** if needed, then uploads each date subdirectory as a separate **Scan Run** through the same Pending → Completed lifecycle."
+> **Specifier:** "Exactly the same. **Import** just automates it — it creates the **App** from the JSON `name` if needed, then uploads each date subdirectory as a separate **Scan Run** through the same Pending → Completed lifecycle."
 
 ## Flagged ambiguities
 

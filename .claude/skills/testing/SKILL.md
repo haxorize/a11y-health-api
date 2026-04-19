@@ -21,7 +21,7 @@ tests/
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
   cli/
-    test_<command>.py       # CLI tool tests (e.g., test_upload.py, test_bulk_import.py)
+    test_<command>.py       # CLI tool tests (e.g., test_ingest.py, test_import.py)
 ```
 
 ## Fixtures (from conftest.py)

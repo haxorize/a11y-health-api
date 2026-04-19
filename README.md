@@ -46,18 +46,18 @@ make clean
 
 ## CLI
 
-Upload a single directory of axe DevTools JSON files as a scan run:
+Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by the `name` field in the axe DevTools JSON:
 
 ```sh
-uv run a11y-upload upload <app_id> <directory>
-uv run a11y-upload upload 42 ./scans/2026-03-30 --base-url http://localhost:8000
+uv run a11y ingest <directory>
+uv run a11y ingest ./scans/humana.com/2026-03-30 --base-url http://localhost:8000
 ```
 
-Bulk import from an app directory containing date subdirectories (auto-creates the app if it doesn't exist):
+Onboard a new **App** from a directory of `YYYY-MM-DD/` subdirectories (auto-creates the app on first import). The `name` field in the JSON is used for both `name` and `slug`:
 
 ```sh
-uv run a11y-upload bulk <directory> --org-unit-id <id> --brand-id <id>
-uv run a11y-upload bulk ./scans/humana.com --org-unit-id 1 --brand-id 1
+uv run a11y import <directory> --org-unit-id <id> --brand-id <id>
+uv run a11y import ./scans/humana.com --org-unit-id 1 --brand-id 1
 ```
 
 ## Migrations

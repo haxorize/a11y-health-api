@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade upload bulk-import
+.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade ingest import
 
 install:
 	uv sync
@@ -29,11 +29,11 @@ migrate-create:
 migrate-downgrade:
 	uv run alembic downgrade -1
 
-upload:
-	uv run a11y-upload upload $(app_id) $(dir)
+ingest:
+	uv run a11y ingest $(dir)
 
-bulk-import:
-	uv run a11y-upload bulk $(dir) --org-unit-id $(org_unit_id) --brand-id $(brand_id)
+import:
+	uv run a11y import $(dir) --org-unit-id $(org_unit_id) --brand-id $(brand_id)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

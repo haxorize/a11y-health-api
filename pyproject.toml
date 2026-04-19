@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-a11y-upload = "a11y_health.cli:main"
+a11y = "a11y_health.cli:main"
 
 [build-system]
 requires = ["hatchling"]

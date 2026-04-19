@@ -11,7 +11,7 @@ description: Project conventions for this FastAPI API. Use when creating endpoin
 src/a11y_health/
   main.py          # FastAPI app, lifespan, middleware
   config.py        # pydantic-settings Settings singleton
-  cli.py           # CLI tools (e.g., upload_scan, bulk_import)
+  cli.py           # CLI tools (e.g., ingest, import_app)
   core/
     database.py    # engine, async_session, Base, get_db dependency
     exceptions.py  # domain exceptions raised by services, caught by endpoints

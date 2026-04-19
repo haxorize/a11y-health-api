@@ -240,6 +240,7 @@ def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
 
 def make_axe_payload(
     *,
+    name: str = "test-app",
     url: str = "https://example.com",
     violations: Any = None,
     incomplete: Any = None,
@@ -250,7 +251,7 @@ def make_axe_payload(
         "passes": [],
         "inapplicable": [],
     }
-    return {"testSubject": {"fileName": url}, "findings": findings}
+    return {"name": name, "testSubject": {"fileName": url}, "findings": findings}
 
 
 def parse_axe_payload(

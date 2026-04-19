@@ -93,6 +93,38 @@ async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClie
     assert "a11y import" in message
 
 
+async def test_ingest_missing_directory_raises(db_client: AsyncClient, tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+
+    with pytest.raises(ValueError, match="Directory does not exist"):
+        await ingest(db_client, directory=missing)
+
+
+async def test_ingest_empty_directory_raises(db_client: AsyncClient, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="No JSON files found"):
+        await ingest(db_client, directory=tmp_path)
+
+
+async def test_ingest_records_per_page_upload_failures(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    await make_app_with_org_unit(db_session, slug="foo.com")
+
+    good = make_axe_payload(name="foo.com", url="https://example.com/a")
+    good["endTime"] = "2026-03-30T11:55:52-0400"
+    (tmp_path / "a.json").write_text(json.dumps(good))
+
+    malformed = {"name": "foo.com", "endTime": "2026-03-30T11:55:52-0400"}
+    (tmp_path / "b.json").write_text(json.dumps(malformed))
+
+    result = await ingest(db_client, directory=tmp_path)
+
+    assert result.pages_uploaded == 1
+    assert len(result.errors) == 1
+    assert "b.json" in result.errors[0]
+    assert "422" in result.errors[0]
+
+
 async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:

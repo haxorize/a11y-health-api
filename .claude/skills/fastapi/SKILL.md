@@ -60,7 +60,7 @@ src/a11y_health/
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
 - Do not use `RootModel` for wrapping single values
-- Omit deferred columns from Read schemas (see sqlalchemy skill)
+- Omit deferred columns from Read schemas (see database skill)
 
 ## Services
 

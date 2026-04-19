@@ -11,8 +11,7 @@ Tests verify behavior through public interfaces, not implementation details. One
 
 See the `testing` skill for project-specific test conventions, fixtures, and patterns.
 See the `fastapi` skill for endpoint, schema, and service conventions.
-See the `sqlalchemy` skill for ORM model conventions.
-See the `postgres` skill for schema design, migration, and indexing conventions.
+See the `database` skill for ORM model, schema design, migration, and indexing conventions.
 
 ## Workflow
 

@@ -56,14 +56,15 @@ _EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
     InvalidAxePayloadError: 422,
 }
 
+
+def _make_handler(status: int) -> Callable[..., Coroutine[Any, Any, JSONResponse]]:
+    async def handler(_request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    return handler
+
+
 for _exc_cls, _status_code in _EXCEPTION_STATUS_CODES.items():
-
-    def _make_handler(status: int) -> Callable[..., Coroutine[Any, Any, JSONResponse]]:
-        async def handler(_request: Request, exc: Exception) -> JSONResponse:
-            return JSONResponse(status_code=status, content={"detail": str(exc)})
-
-        return handler
-
     app.exception_handler(_exc_cls)(_make_handler(_status_code))
 
 

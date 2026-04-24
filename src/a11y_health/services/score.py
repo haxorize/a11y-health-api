@@ -107,7 +107,7 @@ async def _list_scores(
     result = await session.execute(
         select(ScoreSnapshot)
         .where(filter_col == filter_val)
-        .order_by(ScoreSnapshot.snapshot_at)
+        .order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id)
         .offset(offset)
         .limit(limit)
     )
@@ -222,7 +222,11 @@ async def _latest_snapshots_by_partition(
     filter_col: Any,
     filter_val: int,
 ) -> list[ScoreSnapshot]:
-    row_num = func.row_number().over(partition_by=partition_col, order_by=ScoreSnapshot.snapshot_at.desc()).label("rn")
+    row_num = (
+        func.row_number()
+        .over(partition_by=partition_col, order_by=(ScoreSnapshot.snapshot_at.desc(), ScoreSnapshot.id.desc()))
+        .label("rn")
+    )
     subq = (select(ScoreSnapshot.id, row_num).join(join_target, join_cond).where(filter_col == filter_val)).subquery()
     result = await session.execute(
         select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)

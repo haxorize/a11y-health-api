@@ -29,6 +29,7 @@ from tests.factories import (
     make_org_unit,
     make_scan_run,
     make_scan_run_with_parents,
+    make_score_snapshot,
     make_violation,
     parse_axe_payload,
 )
@@ -380,6 +381,18 @@ class TestOrgUnitRollup:
         )
 
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)
+
+    async def test_higher_id_wins_when_snapshot_at_ties(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Tie Org")
+        app = await make_app(db_session, name="Tie App", slug="app-tie", org_unit_id=org_unit.id)
+        tied_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+
+        await make_score_snapshot(db_session, app_id=app.id, score=0.2, snapshot_at=tied_at)
+        await make_score_snapshot(db_session, app_id=app.id, score=0.8, snapshot_at=tied_at)
+
+        await rollup_org_unit_scores(db_session, org_unit.id, tied_at)
+
+        assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.8)
 
 
 async def _complete_score_and_rollup_brand(

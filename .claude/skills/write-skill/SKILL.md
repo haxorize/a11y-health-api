@@ -50,15 +50,26 @@ description: Brief description. Use when [specific triggers].
 
 - **SKILL.md**: ≤150 lines. If it grows past this, move detail into `references/`
 - **Reference files**: ≤200 lines each. Split by topic, not arbitrarily
-- **Description**: ≤1024 chars. First sentence: what it does. Second: "Use when [triggers]."
+- **Description**: ≤1024 chars. Describe the domain/scope and triggers — not the workflow steps.
 
 ## Description guidelines
 
 The description is the **only thing the agent sees** when deciding which skill to load. It must be specific enough to distinguish from other skills.
 
+**Describe scope and triggers, never the workflow.** If the description summarizes the process (e.g., "interview the user, explore the codebase, then submit"), the agent can follow the description as a shortcut and skip reading the skill body entirely.
+
 Good: `Project conventions for this FastAPI + async SQLAlchemy API. Use when creating endpoints, models, schemas, or services.`
 
-Bad: `Helps with API development.`
+Bad (too vague): `Helps with API development.`
+
+Bad (summarizes workflow): `Gather requirements, draft SKILL.md, then iterate with the user. Use when creating a skill.`
+
+## Writing style
+
+- **Imperative voice** for instructions ("Write one test"; not "You should write one test").
+- **Explain the why** alongside the what. An agent that understands the reason can generalize to edge cases; one following rote rules can't.
+- **Avoid stacked `ALWAYS` / `NEVER` / `MUST` in caps.** If you're reaching for them, that's a signal to reframe — explain the constraint and let the model apply judgment. Reserve hard prohibitions for genuine safety/correctness rules.
+- **One concrete example from this codebase** beats several generic or templated ones.
 
 ## When to add scripts
 

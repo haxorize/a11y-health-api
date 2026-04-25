@@ -27,7 +27,7 @@ Confirm the plan with the user before writing any code.
 
 ### 2. Tracer bullet
 
-Write ONE test for the first and most fundamental behavior. Run `uv run pytest` — confirm it **fails**. Write the minimal code to make it pass. Run `uv run pytest` — confirm it **passes**.
+Write ONE test for the first and most fundamental behavior. Run `uv run pytest` — confirm it **fails for the right reason** (behavior is missing, not a typo or import error). Write the minimal code to make it pass. Run `uv run pytest` — confirm it **passes**.
 
 This is the tracer bullet — it proves the path works end-to-end.
 
@@ -35,7 +35,7 @@ This is the tracer bullet — it proves the path works end-to-end.
 
 For each remaining behavior:
 
-1. **RED**: Write one test for the next behavior. Run `uv run pytest` — confirm it fails.
+1. **RED**: Write one test for the next behavior. Run `uv run pytest` — confirm it fails for the right reason (behavior is missing, not a typo or import error).
 2. **GREEN**: Write minimal code to pass. Run `uv run pytest` — confirm it passes.
 
 Rules:
@@ -82,6 +82,8 @@ uv run ty check
 ```
 
 Fix any issues, then re-run `uv run pytest` to confirm nothing broke.
+
+Tests and type checks verify code correctness, not feature correctness. If the change touches behavior you couldn't actually run end-to-end (e.g., a UI flow, an external integration, a real ingest), say so explicitly instead of claiming the task is done.
 
 ### 7. Update docs
 

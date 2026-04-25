@@ -7,11 +7,34 @@ description: Explore the codebase for architectural friction, surface shallow-mo
 
 Surface architectural friction and propose module-deepening refactors.
 
+## Vocabulary
+
+Use these terms exactly in every suggestion. Consistent language is the point — don't drift into "component," "service," or "boundary."
+
+- **Module** — anything with an interface and an implementation (function, class, package, slice).
+- **Interface** — everything a caller must know to use the module: types, invariants, error modes, ordering, config. Not just the type signature.
+- **Implementation** — the code inside.
+- **Depth** — leverage at the interface: a lot of behaviour behind a small interface. **Deep** = high leverage. **Shallow** = interface nearly as complex as the implementation.
+- **Seam** — where an interface lives; a place behaviour can be altered without editing in place. (Use this, not "boundary" — boundary clashes with DDD's bounded context.)
+- **Adapter** — a concrete thing satisfying an interface at a seam.
+- **Leverage** — what callers get from depth.
+- **Locality** — what maintainers get from depth: change, bugs, knowledge concentrated in one place.
+
+Two principles that sharpen every proposal:
+
+- **Deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep. "Concentrates complexity" is the signal you want.
+- **One adapter = hypothetical seam. Two adapters = real seam.** Don't introduce a port unless at least two adapters are justified (typically production + test). A single-adapter seam is just indirection.
+
 ## Workflow
 
-### 1. Check refactoring history
+### 1. Read project context, then check refactoring history
 
-Before exploring, check for prior architectural work:
+Read first, in parallel:
+
+- `UBIQUITOUS_LANGUAGE.md` — use domain vocabulary in candidate descriptions ("the Score rollup module," not "the AggregatorService")
+- `docs/adr/` — recorded decisions you should not re-litigate (proceed silently if absent)
+
+Then check for prior architectural work:
 
 - Run `gh issue list --state all --search "deepen OR refactor OR extract OR absorb"` to find existing refactor issues
 - Run `git log --oneline -30` to scan recent commits for structural changes (extract, move, rename, refactor)
@@ -35,6 +58,8 @@ The friction you encounter IS the signal.
 ### 3. Consolidate and present candidates
 
 Group related findings into coherent candidates — don't present overlapping or sub-issues separately. **Cross-reference against existing issues found in step 1.** If a candidate overlaps with an existing issue, say so explicitly — propose updating that issue rather than filing a new one.
+
+**ADR conflicts:** if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly (e.g., _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
 Present a numbered list of deepening opportunities. For each candidate, show:
 

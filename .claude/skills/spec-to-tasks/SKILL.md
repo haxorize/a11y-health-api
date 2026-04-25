@@ -27,6 +27,8 @@ Before slicing, identify high-level decisions that are unlikely to change throug
 
 Add or remove categories as appropriate for the feature.
 
+For any decision that meets the ADR gate (hard to reverse + surprising + result of a real trade-off), record it via the `adr` skill before slicing — the slices will then reference the ADR rather than re-litigate the choice.
+
 ### 3. Draft vertical slices
 
 Break the spec into **tracer bullet** slices. Each slice is a thin vertical cut through ALL integration layers end-to-end, NOT a horizontal slice of one layer.
@@ -59,7 +61,17 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5. Choose output format and create
+### 5. Self-review
+
+Before creating issues or writing the plan file, look at the slices with fresh eyes:
+
+- **Spec coverage** — every acceptance criterion in the parent spec is referenced by at least one slice's "Parent spec criteria". List any unmapped criteria and add a slice for them.
+- **Naming consistency** — route paths, data model names, and schema field names referenced across multiple slices match exactly. A model called `ScoreSnapshot` in slice 2 but `ScoreRollup` in slice 5 is a bug.
+- **No placeholders** — no "TBD", "TODO", or "figure out later" in slice titles, descriptions, or acceptance criteria. (Slice descriptions intentionally omit file names and code — that's not a placeholder, that's the tracer-bullet contract.)
+
+Fix issues inline. No need to re-quiz the user unless the fix changes slice boundaries.
+
+### 6. Choose output format and create
 
 Ask the user: **GitHub issues or local plan file?**
 

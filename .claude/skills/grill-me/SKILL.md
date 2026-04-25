@@ -8,3 +8,9 @@ Interview me relentlessly about every aspect of this plan until we reach a share
 Ask the questions one at a time.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
+
+## During the session
+
+- **Sharpen fuzzy language inline.** When the user uses a vague or overloaded term, propose the canonical name from `UBIQUITOUS_LANGUAGE.md`. "You said 'snapshot' — do you mean a `ScoreSnapshot` or the rollup output?"
+- **Cross-reference the glossary.** If the user's usage of a term conflicts with its definition in `UBIQUITOUS_LANGUAGE.md`, surface the mismatch immediately so the team language stays coherent.
+- **Stress-test with concrete scenarios.** When domain relationships come up, invent specific edge cases that probe the boundaries. "What happens if an App moves between Org Units mid-Scan Run?" forces precision that abstract questions don't.

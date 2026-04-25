@@ -237,7 +237,7 @@ async def _complete_and_score(
     sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
     snapshot = await _ingest_and_score(db_session, sr.id, payloads)
     app = await app_service.get_app(db_session, app_id)
-    await rollup_org_unit_scores(db_session, app.org_unit_id, snapshot.snapshot_at)
+    await rollup_org_unit_scores(db_session, app.org_unit_id)
     return snapshot
 
 
@@ -390,7 +390,7 @@ class TestOrgUnitRollup:
         await make_score_snapshot(db_session, app_id=app.id, score=0.2, snapshot_at=tied_at)
         await make_score_snapshot(db_session, app_id=app.id, score=0.8, snapshot_at=tied_at)
 
-        await rollup_org_unit_scores(db_session, org_unit.id, tied_at)
+        await rollup_org_unit_scores(db_session, org_unit.id)
 
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.8)
 
@@ -404,7 +404,7 @@ async def _complete_score_and_rollup_brand(
 ) -> ScoreSnapshot:
     sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
     snapshot = await _ingest_and_score(db_session, sr.id, payloads)
-    await rollup_brand_scores(db_session, brand_id, snapshot.snapshot_at)
+    await rollup_brand_scores(db_session, brand_id)
     return snapshot
 
 
@@ -514,7 +514,7 @@ class TestBrandRollup:
         org_unit = await make_org_unit(db_session, name="Org")
         await make_app(db_session, name="App", slug="app-no-scores", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        await rollup_brand_scores(db_session, brand.id, datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC))
+        await rollup_brand_scores(db_session, brand.id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
         assert result.scalar_one_or_none() is None

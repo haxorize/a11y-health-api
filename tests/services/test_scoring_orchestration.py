@@ -71,6 +71,22 @@ class TestOnScanRunCompleted:
         assert brand_snap.score == approx(0.4)
         assert brand_snap.total_pages == 1
 
+    async def test_backfill_rollup_uses_newest_child_observation_time(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-backfill", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+
+        sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+
+        ou_snap = await latest_ou_snapshot(db_session, org_unit.id)
+        assert ou_snap.snapshot_at == datetime(2026, 4, 1, tzinfo=UTC)
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.snapshot_at == datetime(2026, 4, 1, tzinfo=UTC)
+
     async def test_multi_app_brand(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="CenterWell")
         org_unit = await make_org_unit(db_session, name="Org")
@@ -162,6 +178,51 @@ class TestOnScanRunDeleted:
 
         brand_after = await latest_brand_snapshot(db_session, brand.id)
         assert brand_after.score == approx(0.4)
+
+    async def test_delete_older_scan_stamps_rollup_with_remaining_observation(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-del-older", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+        sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 6, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+
+        await db_session.delete(sr_old)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+
+        ou_snap = await latest_ou_snapshot(db_session, org_unit.id)
+        assert ou_snap.snapshot_at == datetime(2023, 6, 1, tzinfo=UTC)
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.snapshot_at == datetime(2023, 6, 1, tzinfo=UTC)
+
+    async def test_delete_prunes_forward_stale_rollups(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-prune", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+        sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 6, 1, tzinfo=UTC))
+        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+
+        await db_session.delete(sr_new)
+        await db_session.flush()
+        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+
+        cutoff = datetime(2023, 5, 1, tzinfo=UTC)
+        ou_snaps = (
+            (await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id)))
+            .scalars()
+            .all()
+        )
+        assert ou_snaps and all(s.snapshot_at <= cutoff for s in ou_snaps)
+        brand_snaps = (
+            (await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))).scalars().all()
+        )
+        assert brand_snaps and all(s.snapshot_at <= cutoff for s in brand_snaps)
 
     async def test_last_scan_run_deleted(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Go365")

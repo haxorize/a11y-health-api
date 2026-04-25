@@ -249,16 +249,31 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
     return app_snapshots + ou_snapshots
 
 
+def _owner_filter(*, org_unit_id: int | None = None, brand_id: int | None = None) -> Any:
+    if (org_unit_id is None) == (brand_id is None):
+        raise ValueError("Exactly one of org_unit_id, brand_id must be set")
+    if org_unit_id is not None:
+        return ScoreSnapshot.org_unit_id == org_unit_id
+    return ScoreSnapshot.brand_id == brand_id
+
+
 async def _aggregate_and_save(
     session: AsyncSession,
     children: list[ScoreSnapshot],
-    snapshot_at: datetime,
     *,
     org_unit_id: int | None = None,
     brand_id: int | None = None,
 ) -> None:
     # score is the unweighted arithmetic mean of children's scores per UBIQUITOUS_LANGUAGE.md;
     # the pct_* / avg_* fields are recomputed from summed totals, so the two lenses can diverge.
+    # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
+    snapshot_at = max(c.snapshot_at for c in children)
+    await session.execute(
+        delete(ScoreSnapshot).where(
+            _owner_filter(org_unit_id=org_unit_id, brand_id=brand_id),
+            ScoreSnapshot.snapshot_at > snapshot_at,
+        )
+    )
     count = len(children)
     snapshot = build_snapshot(
         score=sum(c.score for c in children) / count,
@@ -274,18 +289,18 @@ async def _aggregate_and_save(
     await session.flush()
 
 
-async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapshot_at: datetime) -> None:
+async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
     from a11y_health.services.org_unit import get_org_unit
 
     children = await _latest_child_snapshots(session, org_unit_id)
     if children:
-        await _aggregate_and_save(session, children, snapshot_at, org_unit_id=org_unit_id)
+        await _aggregate_and_save(session, children, org_unit_id=org_unit_id)
     else:
-        await session.execute(delete(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id))
+        await session.execute(delete(ScoreSnapshot).where(_owner_filter(org_unit_id=org_unit_id)))
 
     org_unit = await get_org_unit(session, org_unit_id)
     if org_unit.parent_id is not None:
-        await rollup_org_unit_scores(session, org_unit.parent_id, snapshot_at)
+        await rollup_org_unit_scores(session, org_unit.parent_id)
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
@@ -294,9 +309,9 @@ async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> l
     )
 
 
-async def rollup_brand_scores(session: AsyncSession, brand_id: int, snapshot_at: datetime) -> None:
+async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
     children = await _latest_brand_app_snapshots(session, brand_id)
     if children:
-        await _aggregate_and_save(session, children, snapshot_at, brand_id=brand_id)
+        await _aggregate_and_save(session, children, brand_id=brand_id)
     else:
-        await session.execute(delete(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand_id))
+        await session.execute(delete(ScoreSnapshot).where(_owner_filter(brand_id=brand_id)))

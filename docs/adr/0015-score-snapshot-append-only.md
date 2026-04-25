@@ -6,10 +6,21 @@ for an owner (App, Org Unit, Brand) is always "the latest row by `snapshot_at`,
 tiebreak on `id`" (see `c31ab92`). The rollup queries in `services/score.py`
 are built around this access pattern.
 
-The one exception is rebuild on cascade: when a scan run is deleted,
-`on_scan_run_deleted` deletes the orphaned snapshot and recomputes the App's
-latest from the next-newest run, then triggers the rollup. That's a delete +
-insert, not an in-place update.
+Two exceptions, both delete + insert (never in-place update):
+
+- **Rebuild on cascade**: when a scan run is deleted, `on_scan_run_deleted`
+  deletes the orphaned App snapshot and recomputes from the next-newest run,
+  then triggers the rollup.
+- **Forward-stale prune on rollup**: `_aggregate_and_save` derives
+  `snapshot_at = max(child.snapshot_at)` and deletes any snapshots for the
+  same owner whose `snapshot_at` is strictly past that max. When source data
+  shrinks (deletion, reassignment, reparenting), prior rollup rows stamped at
+  later observation times are orphaned claims — the data behind them is
+  gone — and would otherwise win `order by snapshot_at desc` queries against
+  a derived score that no source can reproduce.
+
+Trend history for normal forward progress is preserved: each new scan
+adds a rollup at a strictly newer `snapshot_at`, so the prune is a no-op.
 
 Considered and rejected:
 - **Upsert one row per (owner, owner_id)**: simpler storage, but loses score

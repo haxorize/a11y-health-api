@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade ingest import
+.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade ingest import openapi openapi-check
 
 install:
 	uv sync
@@ -34,6 +34,12 @@ ingest:
 
 import:
 	uv run a11y import $(dir) --org-unit-id $(org_unit_id) --brand-id $(brand_id)
+
+openapi:
+	uv run python scripts/export_openapi.py
+
+openapi-check: openapi
+	@git diff --exit-code openapi.json || (echo "" && echo "openapi.json is stale — run 'make openapi' and commit the result" && exit 1)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

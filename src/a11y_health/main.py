@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy import text
 from starlette.requests import Request
@@ -30,11 +31,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 
+def _operation_id(route: APIRoute) -> str:
+    # Drives generated SDK method names; keep stable.
+    return route.name
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     lifespan=lifespan,
+    generate_unique_id_function=_operation_id,
 )
 
 app.add_middleware(

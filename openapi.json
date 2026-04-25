@@ -1,0 +1,2400 @@
+{
+  "components": {
+    "schemas": {
+      "AppCreate": {
+        "properties": {
+          "brand_id": {
+            "title": "Brand Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "org_unit_id": {
+            "title": "Org Unit Id",
+            "type": "integer"
+          },
+          "slug": {
+            "maxLength": 255,
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "brand_id",
+          "org_unit_id"
+        ],
+        "title": "AppCreate",
+        "type": "object"
+      },
+      "AppRead": {
+        "properties": {
+          "brand_id": {
+            "title": "Brand Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "org_unit_id": {
+            "title": "Org Unit Id",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "brand_id",
+          "org_unit_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AppRead",
+        "type": "object"
+      },
+      "AppUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "org_unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Unit Id"
+          }
+        },
+        "title": "AppUpdate",
+        "type": "object"
+      },
+      "BrandRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "BrandRead",
+        "type": "object"
+      },
+      "Category": {
+        "enum": [
+          "aria",
+          "color",
+          "forms",
+          "keyboard",
+          "language",
+          "name-role-value",
+          "parsing",
+          "semantics",
+          "sensory-and-visual-cues",
+          "structure",
+          "tables",
+          "text-alternatives",
+          "time-and-media"
+        ],
+        "title": "Category",
+        "type": "string"
+      },
+      "FindingType": {
+        "enum": [
+          "violation",
+          "incomplete"
+        ],
+        "title": "FindingType",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "const": "healthy",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "Impact": {
+        "enum": [
+          "critical",
+          "serious",
+          "moderate",
+          "minor"
+        ],
+        "title": "Impact",
+        "type": "string"
+      },
+      "NodeFindingDetail": {
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "failure_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Summary"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/Impact"
+          },
+          "target": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "html",
+          "target",
+          "impact",
+          "failure_summary",
+          "checks"
+        ],
+        "title": "NodeFindingDetail",
+        "type": "object"
+      },
+      "OrgUnitCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrgUnitCreate",
+        "type": "object"
+      },
+      "OrgUnitRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "parent_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OrgUnitRead",
+        "type": "object"
+      },
+      "OrgUnitUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Omit to leave unchanged; send null to make a root node",
+            "title": "Parent Id"
+          }
+        },
+        "title": "OrgUnitUpdate",
+        "type": "object"
+      },
+      "PageHealth": {
+        "enum": [
+          "critical",
+          "serious",
+          "fair",
+          "good"
+        ],
+        "title": "PageHealth",
+        "type": "string"
+      },
+      "PageMetricsRead": {
+        "properties": {
+          "critical_violation_count": {
+            "title": "Critical Violation Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "page_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "violation_count": {
+            "title": "Violation Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "page_health",
+          "violation_count",
+          "critical_violation_count"
+        ],
+        "title": "PageMetricsRead",
+        "type": "object"
+      },
+      "PageResultRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "inapplicable_count": {
+            "title": "Inapplicable Count",
+            "type": "integer"
+          },
+          "page_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passes_count": {
+            "title": "Passes Count",
+            "type": "integer"
+          },
+          "scan_run_id": {
+            "title": "Scan Run Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scan_run_id",
+          "url",
+          "page_health",
+          "passes_count",
+          "inapplicable_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PageResultRead",
+        "type": "object"
+      },
+      "RuleFindingDetail": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "classifications": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Classifications",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "help_url": {
+            "title": "Help Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/Impact"
+          },
+          "node_findings": {
+            "items": {
+              "$ref": "#/components/schemas/NodeFindingDetail"
+            },
+            "title": "Node Findings",
+            "type": "array"
+          },
+          "page_result_id": {
+            "title": "Page Result Id",
+            "type": "integer"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FindingType"
+          },
+          "wcag_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wcag Criteria",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "page_result_id",
+          "rule_id",
+          "type",
+          "impact",
+          "description",
+          "help",
+          "help_url",
+          "category",
+          "wcag_criteria",
+          "classifications",
+          "tags"
+        ],
+        "title": "RuleFindingDetail",
+        "type": "object"
+      },
+      "RuleFindingRead": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "classifications": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Classifications",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "help_url": {
+            "title": "Help Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/Impact"
+          },
+          "page_result_id": {
+            "title": "Page Result Id",
+            "type": "integer"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FindingType"
+          },
+          "wcag_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wcag Criteria",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "page_result_id",
+          "rule_id",
+          "type",
+          "impact",
+          "description",
+          "help",
+          "help_url",
+          "category",
+          "wcag_criteria",
+          "classifications",
+          "tags"
+        ],
+        "title": "RuleFindingRead",
+        "type": "object"
+      },
+      "ScanRunCreate": {
+        "properties": {
+          "scanned_at": {
+            "format": "date-time",
+            "title": "Scanned At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanned_at"
+        ],
+        "title": "ScanRunCreate",
+        "type": "object"
+      },
+      "ScanRunRead": {
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "scanned_at": {
+            "format": "date-time",
+            "title": "Scanned At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanRunStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "app_id",
+          "status",
+          "scanned_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ScanRunRead",
+        "type": "object"
+      },
+      "ScanRunStatus": {
+        "enum": [
+          "pending",
+          "completed"
+        ],
+        "title": "ScanRunStatus",
+        "type": "string"
+      },
+      "ScanRunStatusUpdate": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ScanRunStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ScanRunStatusUpdate",
+        "type": "object"
+      },
+      "ScanRunSummaryRead": {
+        "properties": {
+          "avg_violations_per_page": {
+            "title": "Avg Violations Per Page",
+            "type": "number"
+          },
+          "pages_with_critical_violations": {
+            "title": "Pages With Critical Violations",
+            "type": "integer"
+          },
+          "pages_with_violations": {
+            "title": "Pages With Violations",
+            "type": "integer"
+          },
+          "pct_pages_with_critical_violations": {
+            "title": "Pct Pages With Critical Violations",
+            "type": "number"
+          },
+          "pct_pages_with_violations": {
+            "title": "Pct Pages With Violations",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          },
+          "total_violations": {
+            "title": "Total Violations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "score",
+          "total_violations",
+          "pages_with_violations",
+          "pages_with_critical_violations",
+          "total_pages",
+          "avg_violations_per_page",
+          "pct_pages_with_violations",
+          "pct_pages_with_critical_violations"
+        ],
+        "title": "ScanRunSummaryRead",
+        "type": "object"
+      },
+      "ScoreSnapshotRead": {
+        "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "avg_violations_per_page": {
+            "title": "Avg Violations Per Page",
+            "type": "number"
+          },
+          "brand_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "org_unit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Unit Id"
+          },
+          "pages_with_critical_violations": {
+            "title": "Pages With Critical Violations",
+            "type": "integer"
+          },
+          "pages_with_violations": {
+            "title": "Pages With Violations",
+            "type": "integer"
+          },
+          "pct_pages_with_critical_violations": {
+            "title": "Pct Pages With Critical Violations",
+            "type": "number"
+          },
+          "pct_pages_with_violations": {
+            "title": "Pct Pages With Violations",
+            "type": "number"
+          },
+          "scan_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Run Id"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "snapshot_at": {
+            "format": "date-time",
+            "title": "Snapshot At",
+            "type": "string"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          },
+          "total_violations": {
+            "title": "Total Violations",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "total_violations",
+          "pages_with_violations",
+          "pages_with_critical_violations",
+          "total_pages",
+          "avg_violations_per_page",
+          "pct_pages_with_violations",
+          "pct_pages_with_critical_violations",
+          "id",
+          "app_id",
+          "scan_run_id",
+          "org_unit_id",
+          "brand_id",
+          "snapshot_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ScoreSnapshotRead",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Accessibility Health API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/apps": {
+      "get": {
+        "operationId": "list_apps",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "brand_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "org_unit_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Org Unit Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AppRead"
+                  },
+                  "title": "Response List Apps",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Apps",
+        "tags": [
+          "apps"
+        ]
+      },
+      "post": {
+        "operationId": "create_app",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create App",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
+    "/api/v1/apps/slug/{slug}": {
+      "get": {
+        "operationId": "get_app_by_slug",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App By Slug",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}": {
+      "delete": {
+        "operationId": "delete_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete App",
+        "tags": [
+          "apps"
+        ]
+      },
+      "get": {
+        "operationId": "get_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get App",
+        "tags": [
+          "apps"
+        ]
+      },
+      "patch": {
+        "operationId": "update_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update App",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/scan-runs": {
+      "get": {
+        "operationId": "list_scan_runs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanRunRead"
+                  },
+                  "title": "Response List Scan Runs",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scan Runs",
+        "tags": [
+          "scan-runs"
+        ]
+      },
+      "post": {
+        "operationId": "create_scan_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scan Run",
+        "tags": [
+          "scan-runs"
+        ]
+      }
+    },
+    "/api/v1/apps/{app_id}/scores": {
+      "get": {
+        "operationId": "list_app_scores",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScoreSnapshotRead"
+                  },
+                  "title": "Response List App Scores",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List App Scores",
+        "tags": [
+          "apps"
+        ]
+      }
+    },
+    "/api/v1/brands": {
+      "get": {
+        "operationId": "list_brands",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BrandRead"
+                  },
+                  "title": "Response List Brands",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Brands",
+        "tags": [
+          "brands"
+        ]
+      }
+    },
+    "/api/v1/brands/{brand_id}": {
+      "get": {
+        "operationId": "get_brand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brand_id",
+            "required": true,
+            "schema": {
+              "title": "Brand Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Brand",
+        "tags": [
+          "brands"
+        ]
+      }
+    },
+    "/api/v1/brands/{brand_id}/scores": {
+      "get": {
+        "operationId": "list_brand_scores",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brand_id",
+            "required": true,
+            "schema": {
+              "title": "Brand Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScoreSnapshotRead"
+                  },
+                  "title": "Response List Brand Scores",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Brand Scores",
+        "tags": [
+          "brands"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/org-units": {
+      "get": {
+        "operationId": "list_org_units",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgUnitRead"
+                  },
+                  "title": "Response List Org Units",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Org Units",
+        "tags": [
+          "org-units"
+        ]
+      },
+      "post": {
+        "operationId": "create_org_unit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUnitCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgUnitRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Org Unit",
+        "tags": [
+          "org-units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{org_unit_id}": {
+      "delete": {
+        "operationId": "delete_org_unit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Org Unit",
+        "tags": [
+          "org-units"
+        ]
+      },
+      "get": {
+        "operationId": "get_org_unit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgUnitRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Org Unit",
+        "tags": [
+          "org-units"
+        ]
+      },
+      "patch": {
+        "operationId": "update_org_unit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUnitUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgUnitRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Org Unit",
+        "tags": [
+          "org-units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{org_unit_id}/ancestors": {
+      "get": {
+        "operationId": "get_ancestors",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgUnitRead"
+                  },
+                  "title": "Response Get Ancestors",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ancestors",
+        "tags": [
+          "org-units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{org_unit_id}/descendants": {
+      "get": {
+        "operationId": "get_descendants",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgUnitRead"
+                  },
+                  "title": "Response Get Descendants",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Descendants",
+        "tags": [
+          "org-units"
+        ]
+      }
+    },
+    "/api/v1/org-units/{org_unit_id}/scores": {
+      "get": {
+        "operationId": "list_org_unit_scores",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_unit_id",
+            "required": true,
+            "schema": {
+              "title": "Org Unit Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScoreSnapshotRead"
+                  },
+                  "title": "Response List Org Unit Scores",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Org Unit Scores",
+        "tags": [
+          "org-units"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}": {
+      "delete": {
+        "operationId": "delete_scan_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scan Run",
+        "tags": [
+          "scan-runs"
+        ]
+      },
+      "get": {
+        "operationId": "get_scan_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scan Run",
+        "tags": [
+          "scan-runs"
+        ]
+      },
+      "patch": {
+        "operationId": "update_scan_run_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRunStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Scan Run Status",
+        "tags": [
+          "scan-runs"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}/findings": {
+      "get": {
+        "operationId": "list_findings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/FindingType"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "impact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/Impact"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Impact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wcag_criterion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wcag Criterion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "classification",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "wcag2a",
+                      "wcag2aa",
+                      "wcag21a",
+                      "wcag21aa",
+                      "wcag22a",
+                      "wcag22aa",
+                      "best-practice"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Classification"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RuleFindingRead"
+                  },
+                  "title": "Response List Findings",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Findings",
+        "tags": [
+          "findings"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}/findings/{finding_id}": {
+      "get": {
+        "operationId": "get_finding",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleFindingDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Finding",
+        "tags": [
+          "findings"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}/pages": {
+      "get": {
+        "operationId": "list_scan_run_pages",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PageMetricsRead"
+                  },
+                  "title": "Response List Scan Run Pages",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scan Run Pages",
+        "tags": [
+          "scan-runs"
+        ]
+      },
+      "post": {
+        "operationId": "create_page_result",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Raw Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResultRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Page Result",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}/summary": {
+      "get": {
+        "operationId": "get_scan_run_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRunSummaryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scan Run Summary",
+        "tags": [
+          "scan-runs"
+        ]
+      }
+    }
+  }
+}

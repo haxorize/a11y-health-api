@@ -88,3 +88,5 @@ Tests and type checks verify code correctness, not feature correctness. If the c
 ### 7. Update docs
 
 Check whether the changes affect anything documented in `README.md`, `CLAUDE.md`, or `UBIQUITOUS_LANGUAGE.md` (e.g., new commands, changed structure, new conventions, new or renamed domain terms). Update if needed, skip if not.
+
+If this slice ships as its own PR, run `/review` before pushing.

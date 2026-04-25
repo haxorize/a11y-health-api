@@ -1,6 +1,6 @@
 ---
 name: deepen
-description: Explore the codebase for architectural friction, surface shallow-module candidates, and propose deepening refactors as GitHub issue RFCs. Use when reviewing architecture, finding coupling, identifying refactor opportunities, or wanting to improve testability.
+description: Module-deepening refactors for this codebase. Use when reviewing architecture, finding coupling, identifying refactor opportunities, or wanting to improve testability.
 ---
 
 # Deepen
@@ -44,7 +44,7 @@ If an area was recently refactored, the bar for proposing another change is much
 
 ### 2. Explore organically
 
-Use the Agent tool with subagent_type=Explore to navigate the codebase. Do NOT follow rigid heuristics — explore and note where you experience friction:
+Use the Agent tool with subagent_type=Explore to navigate the codebase. Don't follow rigid heuristics — explore and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small files?
 - Where are modules so shallow that the interface is nearly as complex as the implementation?
@@ -69,7 +69,7 @@ Present a numbered list of deepening opportunities. For each candidate, show:
 - **Current test coverage**: What exists, what's missing, what's fragile
 - **Deepening direction**: What a deeper module would hide and what it would expose
 
-Do NOT propose interfaces yet. Ask: "Which of these would you like to explore?"
+Don't propose interfaces yet — that comes after the user picks a candidate. Ask: "Which of these would you like to explore?"
 
 ### 4. User picks a candidate
 
@@ -102,7 +102,7 @@ Offer to run `/grill-me` on the design if the user wants to stress-test it.
 Once the user approves, either **update an existing issue** or **create a new one** using `gh` (title and body only — no labels or assignees).
 
 - If step 1 found an existing issue that covers this candidate, update it with a comment or revised body rather than filing a duplicate.
-- If the candidate is net-new, create an issue. Do NOT ask the user to review before creating — just create it and share the URL.
+- If the candidate is net-new, create an issue. Don't ask the user to review before creating — just create it and share the URL.
 
 Use the template below for refactor RFCs; adapt the format for simpler issues.
 

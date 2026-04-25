@@ -9,11 +9,6 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.schemas.axe_payload import AxePayload, AxeRule
 from a11y_health.services.scan_run import assert_scan_run_pending, get_scan_run
 
-_AXE_SECTION_FINDING_TYPE: list[tuple[FindingType, str]] = [
-    (FindingType.VIOLATION, "violations"),
-    (FindingType.INCOMPLETE, "incomplete"),
-]
-
 
 async def _persist_findings(
     session: AsyncSession,
@@ -77,9 +72,8 @@ async def create_page_result(
     session.add(page_result)
     await session.flush()
 
-    for finding_type, section in _AXE_SECTION_FINDING_TYPE:
-        typed_rules = getattr(payload.findings, section)
-        await _persist_findings(session, page_result.id, typed_rules, finding_type)
+    await _persist_findings(session, page_result.id, payload.findings.violations, FindingType.VIOLATION)
+    await _persist_findings(session, page_result.id, payload.findings.incomplete, FindingType.INCOMPLETE)
 
     await session.refresh(page_result)
     return page_result

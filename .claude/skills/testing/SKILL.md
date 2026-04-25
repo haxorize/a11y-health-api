@@ -12,6 +12,7 @@ Mirror the app structure:
 ```
 tests/
   conftest.py              # shared fixtures (client, db_session, db_client)
+  test_config.py           # top-level Settings/config tests
   fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
@@ -20,6 +21,8 @@ tests/
     test_<resource>.py      # direct service-layer tests
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
+  core/
+    test_database.py        # tests for core/database.py helpers (Base, get_db, etc.)
   cli/
     test_<command>.py       # CLI tool tests (e.g., test_ingest.py, test_import.py)
 ```
@@ -78,7 +81,7 @@ async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: 
 
 Call in tests: `org_unit = await make_org_unit(db_session, name="Humana")`
 
-Factories use `await db.flush()` (not `commit()`) — this matches the service layer pattern and works within the transactional rollback isolation of `db_session`. When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score.py`) rather than duplicating the formula inline.
+Factories use `await db.flush()` (not `commit()`) — this matches the service layer pattern and works within the transactional rollback isolation of `db_session`. When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score_snapshot.py`) rather than duplicating the formula inline.
 
 For resources with required parent FK chains, add `make_<resource>_with_parents` composite helpers that create the full ancestry in one call:
 

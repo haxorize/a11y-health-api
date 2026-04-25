@@ -69,7 +69,7 @@ src/a11y_health/
 - Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
 - One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
 - Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations
-- Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too (e.g., `Classification` from `_tag_parsing.py`)
+- Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
 - Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages. For derived resource labels, use f-string composition: `f"{_RESOURCE} summary"`
@@ -92,10 +92,10 @@ When a mutation triggers cross-service side effects (e.g., score computation + r
 ```python
 # services/scoring_orchestration.py — coordinates score + rollup side effects
 async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
-    snapshot = await score_service.compute_app_score(session, scan_run)
+    await score_snapshot_service.compute_app_score(session, scan_run)
     app = await app_service.get_app(session, scan_run.app_id)
-    await score_service.rollup_org_unit_scores(session, app.org_unit_id, snapshot.snapshot_at)
-    await score_service.rollup_brand_scores(session, app.brand_id, snapshot.snapshot_at)
+    await score_snapshot_service.rollup_org_unit_scores(session, app.org_unit_id)
+    await score_snapshot_service.rollup_brand_scores(session, app.brand_id)
 
 # services/scan_run.py — calls orchestration after status change
 scan_run = await _do_status_update(session, scan_run, data)

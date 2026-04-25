@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Nick Bourgeois", email = "nick@haxorize.com" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "asyncpg>=0.30.0",
     "alembic>=1.18.4",
@@ -40,7 +40,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ASYNC"]
@@ -59,4 +59,4 @@ asyncio_default_test_loop_scope = "session"
 asyncio_default_fixture_loop_scope = "session"
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.13"

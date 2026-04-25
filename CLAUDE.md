@@ -1,6 +1,6 @@
 # Accessibility Health API
 
-FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
+FastAPI + async SQLAlchemy + PostgreSQL. Python 3.13.
 
 ## Tooling
 

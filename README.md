@@ -4,7 +4,7 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 
 ## Requirements
 
-- Python 3.14+
+- Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ## Setup

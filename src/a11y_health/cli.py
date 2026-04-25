@@ -1,3 +1,12 @@
+"""Data import / ingest CLI.
+
+Pick by app state:
+- `a11y import <dir> --org-unit-id <id> --brand-id <id>` onboards a new app from a
+  directory of YYYY-MM-DD subdirectories. Creates the app if missing, reuses if not.
+- `a11y ingest <dir>` uploads a single scan to an existing app. Errors with a pointer
+  to `import` if the app isn't registered.
+"""
+
 import argparse
 import asyncio
 import json

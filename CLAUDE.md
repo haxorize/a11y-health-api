@@ -1,4 +1,4 @@
-# Accessibility Health API
+# a11y-health-api
 
 FastAPI + async SQLAlchemy + PostgreSQL. Python 3.13.
 
@@ -7,6 +7,11 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.13.
 - **Package manager**: uv (not pip/poetry)
 - **Linting/formatting**: ruff (not black/isort/flake8)
 - **Type checking**: ty (not mypy/pyright)
+- **Testing**: pytest
+
+## Prerequisites
+
+Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the full env config.
 
 ## Commands
 
@@ -16,8 +21,7 @@ uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
 uv run uvicorn a11y_health.main:app --reload  # dev server
-uv run a11y ingest <directory>                       # upload one scan to an existing app
-uv run a11y import <directory> --org-unit-id <id> --brand-id <id>  # onboard an app with history
+uv run a11y --help               # data import/ingest commands (see cli.py module docstring)
 ```
 
 ## Structure

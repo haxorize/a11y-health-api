@@ -107,7 +107,7 @@ class TestOnScanRunCompleted:
 
 
 class TestOnScanRunDeleted:
-    async def test_recomputes_app_score_from_remaining_run(self, db_session: AsyncSession) -> None:
+    async def test_app_snapshot_reflects_remaining_run(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-recomp", org_unit_id=org_unit.id)
 
@@ -121,7 +121,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, org_unit.id, app.brand_id)
+        await on_scan_run_deleted(db_session, org_unit.id, app.brand_id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
         app_snapshots = result.scalars().all()
@@ -147,7 +147,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, leaf.id, app.brand_id)
+        await on_scan_run_deleted(db_session, leaf.id, app.brand_id)
 
         leaf_after = await latest_ou_snapshot(db_session, leaf.id)
         assert leaf_after.score == approx(0.4)
@@ -174,7 +174,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
 
         brand_after = await latest_brand_snapshot(db_session, brand.id)
         assert brand_after.score == approx(0.4)
@@ -191,7 +191,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_old)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
 
         ou_snap = await latest_ou_snapshot(db_session, org_unit.id)
         assert ou_snap.snapshot_at == datetime(2023, 6, 1, tzinfo=UTC)
@@ -210,7 +210,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_new)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
 
         cutoff = datetime(2023, 5, 1, tzinfo=UTC)
         ou_snaps = (
@@ -235,7 +235,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
+        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
 
         app_result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
         assert app_result.scalar_one_or_none() is None

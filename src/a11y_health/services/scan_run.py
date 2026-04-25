@@ -115,7 +115,7 @@ async def delete_scan_run(session: AsyncSession, scan_run_id: int) -> None:
     app = await get_app(session, scan_run.app_id)
     await session.delete(scan_run)
     await session.flush()
-    await scoring_orchestration.on_scan_run_deleted(session, app.id, app.org_unit_id, app.brand_id)
+    await scoring_orchestration.on_scan_run_deleted(session, app.org_unit_id, app.brand_id)
 
 
 def assert_scan_run_pending(scan_run: ScanRun) -> None:

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
@@ -278,10 +278,10 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int, snapsh
     from a11y_health.services.org_unit import get_org_unit
 
     children = await _latest_child_snapshots(session, org_unit_id)
-    if not children:
-        return
-
-    await _aggregate_and_save(session, children, snapshot_at, org_unit_id=org_unit_id)
+    if children:
+        await _aggregate_and_save(session, children, snapshot_at, org_unit_id=org_unit_id)
+    else:
+        await session.execute(delete(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit_id))
 
     org_unit = await get_org_unit(session, org_unit_id)
     if org_unit.parent_id is not None:
@@ -296,7 +296,7 @@ async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> l
 
 async def rollup_brand_scores(session: AsyncSession, brand_id: int, snapshot_at: datetime) -> None:
     children = await _latest_brand_app_snapshots(session, brand_id)
-    if not children:
-        return
-
-    await _aggregate_and_save(session, children, snapshot_at, brand_id=brand_id)
+    if children:
+        await _aggregate_and_save(session, children, snapshot_at, brand_id=brand_id)
+    else:
+        await session.execute(delete(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand_id))

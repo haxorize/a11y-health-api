@@ -176,8 +176,12 @@ class TestOnScanRunDeleted:
         await db_session.flush()
         await on_scan_run_deleted(db_session, app.id, org_unit.id, brand.id)
 
-        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
-        assert result.scalar_one_or_none() is None
+        app_result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
+        assert app_result.scalar_one_or_none() is None
+        ou_result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
+        assert ou_result.scalar_one_or_none() is None
+        brand_result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
+        assert brand_result.scalar_one_or_none() is None
 
 
 class TestOnOrgUnitReparented:
@@ -346,7 +350,7 @@ class TestOnAppDeleted:
         brand_after = await latest_brand_snapshot(db_session, brand.id)
         assert brand_after.score == approx(1.0)
 
-    async def test_last_app_deleted_does_not_error(self, db_session: AsyncSession) -> None:
+    async def test_last_app_deleted_wipes_ou_snapshot(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Go365")
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-solo", org_unit_id=org_unit.id, brand_id=brand.id)
@@ -357,6 +361,60 @@ class TestOnAppDeleted:
         await db_session.delete(app)
         await db_session.flush()
         await on_app_deleted(db_session, org_unit.id, brand.id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
+        assert result.scalar_one_or_none() is None
+
+    async def test_last_app_deleted_wipes_brand_snapshot(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Go365")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-solo-brand", org_unit_id=org_unit.id, brand_id=brand.id)
+        sr = await make_scan_run(db_session, app_id=app.id)
+        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr.id, [payload])
+
+        await db_session.delete(app)
+        await db_session.flush()
+        await on_app_deleted(db_session, org_unit.id, brand.id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
+        assert result.scalar_one_or_none() is None
+
+    async def test_emptied_branch_wipes_but_root_reflects_sibling(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        root = await make_org_unit(db_session, name="Root")
+        branch_a = await make_org_unit(db_session, name="Branch A", parent_id=root.id)
+        branch_b = await make_org_unit(db_session, name="Branch B", parent_id=root.id)
+
+        app_a = await make_app(
+            db_session, name="App A", slug="app-a-cascade", org_unit_id=branch_a.id, brand_id=brand.id
+        )
+        sr_a = await make_scan_run(db_session, app_id=app_a.id)
+        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+
+        app_b = await make_app(
+            db_session, name="App B", slug="app-b-cascade", org_unit_id=branch_b.id, brand_id=brand.id
+        )
+        sr_b = await make_scan_run(db_session, app_id=app_b.id)
+        payload_b = make_axe_payload(url="https://example.com/b")
+        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+
+        branch_a_before = await latest_ou_snapshot(db_session, branch_a.id)
+        assert branch_a_before.score == approx(0.4)
+
+        await db_session.delete(app_a)
+        await db_session.flush()
+        await on_app_deleted(db_session, branch_a.id, brand.id)
+
+        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == branch_a.id))
+        assert result.scalar_one_or_none() is None
+
+        branch_b_after = await latest_ou_snapshot(db_session, branch_b.id)
+        assert branch_b_after.score == approx(1.0)
+
+        root_after = await latest_ou_snapshot(db_session, root.id)
+        assert root_after.score == approx(1.0)
 
 
 class TestOnAppReassigned:

@@ -12,7 +12,7 @@ from a11y_health.schemas.axe_payload import AxePayload
 from a11y_health.services import app as app_service
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
-from a11y_health.services.score import (
+from a11y_health.services.score_snapshot import (
     build_snapshot,
     compute_app_score,
     compute_app_score_result,
@@ -253,6 +253,18 @@ class TestScoreModuleImports:
         assert "from a11y_health.services import org_unit" not in source
 
 
+class TestScoreSnapshotModuleImports:
+    def test_score_snapshot_module_does_not_import_service_modules(self) -> None:
+        import inspect
+
+        import a11y_health.services.score_snapshot as score_snapshot_module
+
+        source = inspect.getsource(score_snapshot_module)
+        assert "from a11y_health.services import app" not in source
+        assert "from a11y_health.services import brand" not in source
+        assert "from a11y_health.services import org_unit" not in source
+
+
 class TestDecoupledImports:
     def test_org_unit_module_does_not_import_score(self) -> None:
         import inspect
@@ -262,6 +274,8 @@ class TestDecoupledImports:
         source = inspect.getsource(org_unit_module)
         assert "from a11y_health.services.score" not in source
         assert "import a11y_health.services.score" not in source
+        assert "from a11y_health.services.score_snapshot" not in source
+        assert "import a11y_health.services.score_snapshot" not in source
 
     def test_scan_run_module_does_not_import_score(self) -> None:
         import inspect
@@ -271,6 +285,8 @@ class TestDecoupledImports:
         source = inspect.getsource(scan_run_module)
         assert "from a11y_health.services.score" not in source
         assert "import a11y_health.services.score" not in source
+        assert "from a11y_health.services.score_snapshot" not in source
+        assert "import a11y_health.services.score_snapshot" not in source
 
 
 class TestOrgUnitRollup:

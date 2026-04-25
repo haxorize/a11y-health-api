@@ -15,7 +15,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload
-from a11y_health.services.score import build_snapshot
+from a11y_health.services.score_snapshot import build_snapshot
 
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:

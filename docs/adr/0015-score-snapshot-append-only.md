@@ -3,7 +3,7 @@
 Every scoring event — scan run completion, rollup recomputation — produces a
 new `score_snapshot` row. Existing rows are never updated. The "current score"
 for an owner (App, Org Unit, Brand) is always "the latest row by `snapshot_at`,
-tiebreak on `id`" (see `c31ab92`). The rollup queries in `services/score.py`
+tiebreak on `id`" (see `c31ab92`). The rollup queries in `services/score_snapshot.py`
 are built around this access pattern.
 
 Two exceptions, both delete + insert (never in-place update):

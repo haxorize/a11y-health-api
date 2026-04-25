@@ -1,0 +1,24 @@
+# WCAG criteria stored as a JSONB array on Rule Finding, not via a join table
+
+A Rule Finding maps to zero or more WCAG success criteria (e.g., `["1.1.1"]`,
+`["1.4.3", "1.4.6"]`). These are stored inline as a JSONB array column with a
+GIN index, queried with PG containment operators. There is no
+`wcag_criterion` table and no `rule_finding_wcag_criterion` join table.
+
+Considered and rejected:
+- **Relational join table** (`rule_finding_wcag_criterion`): the textbook
+  shape. Rejected because criteria are read with the finding 100% of the
+  time (every list and detail response includes them), and we never query
+  for "all findings on criterion X" via a join — we filter by containment
+  (`wcag_criteria @> '["1.4.3"]'`). The join table would add a JOIN to every
+  finding read for no read benefit.
+- **Single text column with the canonical criterion** (the original shape,
+  pre-#51): forced one-to-one mapping when the source data is one-to-many,
+  silently dropping criteria. Replaced by the JSONB array.
+- **Separate `wcag_criterion` reference table referenced by ID**: would
+  enforce that values come from a known list, but axe is the source of truth
+  and the list of criteria is stable enough that an enum/reference table is
+  overhead.
+
+The GIN index makes containment filters cheap, and storing criteria with the
+finding keeps reads single-row.

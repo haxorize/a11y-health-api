@@ -158,6 +158,15 @@ async def test_update_rejects_descendant_as_parent(db_session: AsyncSession) -> 
         await org_unit_service.update_org_unit(db_session, root.id, OrgUnitUpdate(parent_id=grandchild.id))
 
 
+async def test_update_can_clear_parent_to_root(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    updated = await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))
+    assert updated.parent_id is None
+    ancestors = await org_unit_service.get_ancestors(db_session, child.id)
+    assert ancestors == []
+
+
 async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)

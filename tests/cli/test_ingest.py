@@ -1,4 +1,6 @@
 import json
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -103,6 +105,26 @@ async def test_ingest_missing_directory_raises(db_client: AsyncClient, tmp_path:
 async def test_ingest_empty_directory_raises(db_client: AsyncClient, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="No JSON files found"):
         await ingest(db_client, directory=tmp_path)
+
+
+async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    await make_app_with_org_unit(db_session, slug="foo.com")
+
+    payload = make_axe_payload(name="foo.com", url="https://example.com/a")
+    payload.pop("endTime", None)
+    file = tmp_path / "a.json"
+    file.write_text(json.dumps(payload))
+
+    expected_ts = 1_700_000_000.0
+    os.utime(tmp_path, (expected_ts, expected_ts))
+
+    result = await ingest(db_client, directory=tmp_path)
+
+    resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
+    assert resp.status_code == 200
+    assert datetime.fromisoformat(resp.json()["scanned_at"]) == datetime.fromtimestamp(expected_ts, tz=UTC)
 
 
 async def test_ingest_records_per_page_upload_failures(

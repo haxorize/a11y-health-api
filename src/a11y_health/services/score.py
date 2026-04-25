@@ -235,18 +235,28 @@ async def _latest_snapshots_by_partition(
 
 
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    app_snapshots = await _latest_snapshots_by_partition(
-        session, ScoreSnapshot.app_id, App, ScoreSnapshot.app_id == App.id, App.org_unit_id, org_unit_id
+    app_child = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.org_unit_id == org_unit_id)
+    ou_child = (
+        select(ScoreSnapshot)
+        .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
+        .where(OrgUnit.parent_id == org_unit_id)
     )
-    ou_snapshots = await _latest_snapshots_by_partition(
-        session,
-        ScoreSnapshot.org_unit_id,
-        OrgUnit,
-        ScoreSnapshot.org_unit_id == OrgUnit.id,
-        OrgUnit.parent_id,
-        org_unit_id,
+    all_children = app_child.union_all(ou_child).subquery()
+
+    partition_col = func.coalesce(all_children.c.app_id, all_children.c.org_unit_id)
+    row_num = (
+        func.row_number()
+        .over(
+            partition_by=partition_col,
+            order_by=(all_children.c.snapshot_at.desc(), all_children.c.id.desc()),
+        )
+        .label("rn")
     )
-    return app_snapshots + ou_snapshots
+    ranked = select(all_children.c.id, row_num).subquery()
+    result = await session.execute(
+        select(ScoreSnapshot).join(ranked, ScoreSnapshot.id == ranked.c.id).where(ranked.c.rn == 1)
+    )
+    return list(result.scalars().all())
 
 
 def _owner_filter(*, org_unit_id: int | None = None, brand_id: int | None = None) -> Any:

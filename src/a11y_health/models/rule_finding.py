@@ -9,7 +9,7 @@ from a11y_health.models.enums import Category, FindingType, Impact
 class RuleFinding(Base):
     __tablename__ = "rule_finding"
     __table_args__ = (
-        Index("ix_rule_finding_page_result_id", "page_result_id"),
+        Index("ix_rule_finding_page_result_id_type", "page_result_id", "type"),
         Index("ix_rule_finding_wcag_criteria", "wcag_criteria", postgresql_using="gin"),
         Index("ix_rule_finding_classifications", "classifications", postgresql_using="gin"),
     )

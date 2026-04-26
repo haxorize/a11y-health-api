@@ -10,7 +10,7 @@ from a11y_health.models.enums import PageHealth
 
 class PageResult(TimestampMixin, Base):
     __tablename__ = "page_result"
-    __table_args__ = (Index("ix_page_result_scan_run_id", "scan_run_id"),)
+    __table_args__ = (Index("ix_page_result_scan_run_id_id", "scan_run_id", "id"),)
 
     scan_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("scan_run.id", ondelete="CASCADE"), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)

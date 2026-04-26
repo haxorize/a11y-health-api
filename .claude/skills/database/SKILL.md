@@ -1,6 +1,6 @@
 ---
 name: database
-description: Database conventions for this project (PostgreSQL schema design + SQLAlchemy ORM). Use when creating or editing models, defining columns, choosing data types, writing migrations, or adding indexes/constraints.
+description: Database conventions for this project (PostgreSQL schema design + SQLAlchemy ORM, plus query patterns). Use when creating or editing models, defining columns, choosing data types, writing migrations, adding indexes/constraints, or writing services and queries that hit the database.
 ---
 
 # Database Conventions
@@ -80,6 +80,24 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
 - **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`). Export constraint names as module-level constants (e.g., `UQ_APP_SLUG`, `CK_ORG_UNIT_NAME_LENGTH`) for matching in `IntegrityError` handlers
 
+## Indexes
+
+- **Composite indexes** follow the leftmost-prefix rule — equality columns first, range columns last. `(status, scanned_at)` serves `WHERE status = ? AND scanned_at > ?` and `WHERE status = ?`, but not `WHERE scanned_at > ?` alone. Prefer one composite over two singletons when queries `AND` the columns
+- **Partial indexes** when queries consistently filter on the same predicate (status, soft-delete, non-null):
+  ```python
+  from sqlalchemy import text
+  Index("ix_scan_run_pending_scanned_at", "scanned_at", postgresql_where=text("status = 'pending'"))
+  ```
+- **Covering indexes (`INCLUDE`)** for hot read paths to enable index-only scans:
+  ```python
+  Index("ix_app_slug", "slug", postgresql_include=["name", "org_unit_id"])
+  ```
+- **Index type by data**:
+  - B-tree (default): equality, ranges, ordering
+  - GIN: `JSONB` containment (`@>`, `?`), arrays, full-text
+  - BRIN: large append-only time-series columns (10–100x smaller than B-tree); good fit for monotonically growing `scanned_at`-style columns once the table is large
+  - Avoid GiST/Hash unless there's a specific reason
+
 ## Relationships
 
 Do not use `relationship()`. Use explicit FK columns only. This avoids lazy-load pitfalls with async sessions.
@@ -94,6 +112,31 @@ raw_json: Mapped[dict[str, Any]] = deferred(mapped_column(JSONB, nullable=False)
 ```
 
 Omit deferred columns from list-level Read schemas — they are not loaded by default queries. Detail schemas that always `undefer()` the column in their query path may include it.
+
+## Query patterns
+
+- **No N+1**: since `relationship()` is banned, batch parent-then-children with `in_()` (compiles to `WHERE col = ANY(...)`):
+  ```python
+  apps = (await session.execute(select(App).where(App.id.in_(app_ids)))).scalars().all()
+  ```
+- **UPSERT** for idempotent ingest, not check-then-insert (race condition):
+  ```python
+  from sqlalchemy.dialects.postgresql import insert
+  stmt = insert(App).values(rows)
+  stmt = stmt.on_conflict_do_update(
+      index_elements=["slug"],
+      set_={"name": stmt.excluded.name},
+  )
+  await session.execute(stmt)
+  ```
+  Use `on_conflict_do_nothing(...)` for insert-or-skip. Conflict target must match a UNIQUE or PK constraint
+- **Batch inserts** in ingest — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk; for very large loads use `COPY`
+- **Cursor pagination** for list endpoints, not `OFFSET` (OFFSET scans all skipped rows; degrades on deep pages). Order by an indexed key and pass the last value back as the next cursor:
+  ```python
+  q = select(ScanRun).where(ScanRun.id > cursor).order_by(ScanRun.id).limit(limit)
+  ```
+  Multi-column sort: the cursor must include all sort columns — `WHERE (created_at, id) > (:cursor_ts, :cursor_id)` ordered by `(created_at, id)`
+- **Short transactions**: never `await` HTTP or external I/O inside an open transaction. Locks held during I/O serialize unrelated requests and pin connections from the async pool. Do the I/O first, then open the transaction for the write
 
 ## Alembic migrations
 

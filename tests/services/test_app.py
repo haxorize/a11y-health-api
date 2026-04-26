@@ -80,8 +80,9 @@ async def test_list_apps(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     await make_app(db_session, name="App A", slug="app-a", brand_id=brand.id, org_unit_id=org_unit.id)
     await make_app(db_session, name="App B", slug="app-b", brand_id=brand.id, org_unit_id=org_unit.id)
-    result = await app_service.list_apps(db_session)
-    assert len(result) == 2
+    page = await app_service.list_apps(db_session)
+    assert len(page.items) == 2
+    assert page.next_cursor is None
 
 
 async def test_list_apps_filter_by_brand_id(db_session: AsyncSession) -> None:
@@ -90,9 +91,9 @@ async def test_list_apps_filter_by_brand_id(db_session: AsyncSession) -> None:
     go365 = await make_brand(db_session, name="Go365")
     await make_app(db_session, slug="humana-app", brand_id=humana.id, org_unit_id=org_unit.id)
     await make_app(db_session, slug="go365-app", brand_id=go365.id, org_unit_id=org_unit.id)
-    result = await app_service.list_apps(db_session, brand_id=[go365.id])
-    assert len(result) == 1
-    assert result[0].brand_id == go365.id
+    page = await app_service.list_apps(db_session, brand_id=[go365.id])
+    assert len(page.items) == 1
+    assert page.items[0].brand_id == go365.id
 
 
 async def test_list_apps_filter_by_multiple_brand_ids(db_session: AsyncSession) -> None:
@@ -103,9 +104,9 @@ async def test_list_apps_filter_by_multiple_brand_ids(db_session: AsyncSession) 
     await make_app(db_session, slug="humana-app", brand_id=humana.id, org_unit_id=org_unit.id)
     await make_app(db_session, slug="go365-app", brand_id=go365.id, org_unit_id=org_unit.id)
     await make_app(db_session, slug="centerwell-app", brand_id=centerwell.id, org_unit_id=org_unit.id)
-    result = await app_service.list_apps(db_session, brand_id=[humana.id, go365.id])
-    assert len(result) == 2
-    brand_ids = {a.brand_id for a in result}
+    page = await app_service.list_apps(db_session, brand_id=[humana.id, go365.id])
+    assert len(page.items) == 2
+    brand_ids = {a.brand_id for a in page.items}
     assert brand_ids == {humana.id, go365.id}
 
 
@@ -119,9 +120,9 @@ async def test_list_apps_filter_by_org_unit_id_with_descendants(db_session: Asyn
     await make_app(db_session, slug="child-app", brand_id=brand.id, org_unit_id=child.id)
     await make_app(db_session, slug="grandchild-app", brand_id=brand.id, org_unit_id=grandchild.id)
     await make_app(db_session, slug="other-app", brand_id=brand.id, org_unit_id=other.id)
-    result = await app_service.list_apps(db_session, org_unit_id=[root.id])
-    assert len(result) == 3
-    slugs = {a.slug for a in result}
+    page = await app_service.list_apps(db_session, org_unit_id=[root.id])
+    assert len(page.items) == 3
+    slugs = {a.slug for a in page.items}
     assert slugs == {"root-app", "child-app", "grandchild-app"}
 
 
@@ -131,9 +132,9 @@ async def test_list_apps_filter_by_leaf_org_unit(db_session: AsyncSession) -> No
     brand = await make_brand(db_session)
     await make_app(db_session, slug="root-app", brand_id=brand.id, org_unit_id=root.id)
     await make_app(db_session, slug="leaf-app", brand_id=brand.id, org_unit_id=leaf.id)
-    result = await app_service.list_apps(db_session, org_unit_id=[leaf.id])
-    assert len(result) == 1
-    assert result[0].slug == "leaf-app"
+    page = await app_service.list_apps(db_session, org_unit_id=[leaf.id])
+    assert len(page.items) == 1
+    assert page.items[0].slug == "leaf-app"
 
 
 async def test_list_apps_filter_by_multiple_org_units(db_session: AsyncSession) -> None:
@@ -144,9 +145,9 @@ async def test_list_apps_filter_by_multiple_org_units(db_session: AsyncSession) 
     await make_app(db_session, slug="a-app", brand_id=brand.id, org_unit_id=branch_a.id)
     await make_app(db_session, slug="b-app", brand_id=brand.id, org_unit_id=branch_b.id)
     await make_app(db_session, slug="other-app", brand_id=brand.id, org_unit_id=other.id)
-    result = await app_service.list_apps(db_session, org_unit_id=[branch_a.id, branch_b.id])
-    assert len(result) == 2
-    slugs = {a.slug for a in result}
+    page = await app_service.list_apps(db_session, org_unit_id=[branch_a.id, branch_b.id])
+    assert len(page.items) == 2
+    slugs = {a.slug for a in page.items}
     assert slugs == {"a-app", "b-app"}
 
 
@@ -155,8 +156,8 @@ async def test_list_apps_filter_org_unit_empty_subtree(db_session: AsyncSession)
     other = await make_org_unit(db_session, name="Other")
     brand = await make_brand(db_session)
     await make_app(db_session, slug="other-app", brand_id=brand.id, org_unit_id=other.id)
-    result = await app_service.list_apps(db_session, org_unit_id=[empty.id])
-    assert len(result) == 0
+    page = await app_service.list_apps(db_session, org_unit_id=[empty.id])
+    assert len(page.items) == 0
 
 
 async def test_list_apps_combined_brand_and_org_unit(db_session: AsyncSession) -> None:
@@ -169,9 +170,9 @@ async def test_list_apps_combined_brand_and_org_unit(db_session: AsyncSession) -
     await make_app(
         db_session, slug="wrong-org", brand_id=humana.id, org_unit_id=(await make_org_unit(db_session, name="Other")).id
     )
-    result = await app_service.list_apps(db_session, brand_id=[humana.id], org_unit_id=[root.id])
-    assert len(result) == 1
-    assert result[0].slug == "match"
+    page = await app_service.list_apps(db_session, brand_id=[humana.id], org_unit_id=[root.id])
+    assert len(page.items) == 1
+    assert page.items[0].slug == "match"
 
 
 async def test_list_apps_pagination(db_session: AsyncSession) -> None:
@@ -179,8 +180,15 @@ async def test_list_apps_pagination(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     for i in range(5):
         await make_app(db_session, slug=f"app-{i}", brand_id=brand.id, org_unit_id=org_unit.id)
-    result = await app_service.list_apps(db_session, offset=1, limit=2)
-    assert len(result) == 2
+    first = await app_service.list_apps(db_session, limit=2)
+    assert len(first.items) == 2
+    assert first.next_cursor is not None
+    second = await app_service.list_apps(db_session, cursor=first.next_cursor, limit=2)
+    assert len(second.items) == 2
+    assert {a.id for a in first.items}.isdisjoint({a.id for a in second.items})
+    third = await app_service.list_apps(db_session, cursor=second.next_cursor, limit=2)
+    assert len(third.items) == 1
+    assert third.next_cursor is None
 
 
 async def test_update_app(db_session: AsyncSession) -> None:

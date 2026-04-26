@@ -7,6 +7,7 @@ from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text
 
 from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
@@ -33,9 +34,9 @@ async def list_findings(
     category: list[Category] | None = None,
     wcag_criterion: list[str] | None = None,
     classification: list[Classification] | None = None,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = 20,
-) -> list[RuleFinding]:
+) -> CursorPage[RuleFinding]:
     await get_scan_run(session, scan_run_id)
 
     stmt = (
@@ -55,10 +56,16 @@ async def list_findings(
     if classification:
         targets = [classification_to_tag(c) for c in classification]
         stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
+    if cursor is not None:
+        cursor_id = int(decode_cursor(cursor, expected=1)[0])
+        stmt = stmt.where(RuleFinding.id > cursor_id)
 
-    stmt = stmt.order_by(RuleFinding.id).offset(offset).limit(limit)
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    stmt = stmt.order_by(RuleFinding.id).limit(limit + 1)
+    rows = list((await session.execute(stmt)).scalars().all())
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = encode_cursor(items[-1].id) if has_more else None
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 async def get_finding(

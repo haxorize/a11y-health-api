@@ -19,8 +19,9 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    finding = data[0]
+    assert len(data["items"]) == 1
+    assert data["next_cursor"] is None
+    finding = data["items"][0]
     assert finding["rule_id"] == "color-contrast"
     assert finding["impact"] == "serious"
     assert finding["category"] == "color"
@@ -34,7 +35,9 @@ async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSess
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings")
 
     assert response.status_code == 200
-    assert response.json() == []
+    data = response.json()
+    assert data["items"] == []
+    assert data["next_cursor"] is None
 
 
 async def test_list_findings_scan_run_not_found(db_client: AsyncClient) -> None:
@@ -56,9 +59,9 @@ async def test_filter_by_type(db_client: AsyncClient, db_session: AsyncSession) 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"type": "violation"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "color-contrast"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "color-contrast"
 
 
 async def test_filter_by_type_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -77,8 +80,8 @@ async def test_filter_by_type_multi(db_client: AsyncClient, db_session: AsyncSes
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    items = response.json()["items"]
+    assert len(items) == 2
 
 
 async def test_filter_by_impact(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -90,9 +93,9 @@ async def test_filter_by_impact(db_client: AsyncClient, db_session: AsyncSession
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"impact": "critical"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "image-alt"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "image-alt"
 
 
 async def test_filter_by_impact_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -108,9 +111,9 @@ async def test_filter_by_impact_multi(db_client: AsyncClient, db_session: AsyncS
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    rule_ids = {f["rule_id"] for f in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    rule_ids = {f["rule_id"] for f in items}
     assert rule_ids == {"image-alt", "meta-viewport"}
 
 
@@ -123,9 +126,9 @@ async def test_filter_by_category(db_client: AsyncClient, db_session: AsyncSessi
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"category": "keyboard"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "tabindex"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "tabindex"
 
 
 async def test_filter_by_category_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -141,9 +144,9 @@ async def test_filter_by_category_multi(db_client: AsyncClient, db_session: Asyn
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    rule_ids = {f["rule_id"] for f in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    rule_ids = {f["rule_id"] for f in items}
     assert rule_ids == {"color-contrast", "label"}
 
 
@@ -164,9 +167,9 @@ async def test_filter_by_wcag_criteria(db_client: AsyncClient, db_session: Async
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"wcag_criterion": "2.4.4"})
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "link-name"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "link-name"
 
 
 async def test_filter_by_wcag_criteria_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -182,9 +185,9 @@ async def test_filter_by_wcag_criteria_multi(db_client: AsyncClient, db_session:
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    rule_ids = {f["rule_id"] for f in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    rule_ids = {f["rule_id"] for f in items}
     assert rule_ids == {"color-contrast", "link-name"}
 
 
@@ -209,9 +212,9 @@ async def test_filter_by_classification(db_client: AsyncClient, db_session: Asyn
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "skip-link"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "skip-link"
 
 
 async def test_filter_by_classification_multi_select(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -242,9 +245,9 @@ async def test_filter_by_classification_multi_select(db_client: AsyncClient, db_
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    rule_ids = {f["rule_id"] for f in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    rule_ids = {f["rule_id"] for f in items}
     assert rule_ids == {"color-contrast", "skip-link"}
 
 
@@ -264,11 +267,11 @@ async def test_filter_by_classification_multi(db_client: AsyncClient, db_session
     r1 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": "wcag2aa"})
     r2 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": "wcag21aa"})
 
-    d1, d2 = r1.json(), r2.json()
-    assert len(d1) == 1
-    assert len(d2) == 1
-    assert d1[0]["rule_id"] == "color-contrast"
-    assert d2[0]["rule_id"] == "color-contrast"
+    items1, items2 = r1.json()["items"], r2.json()["items"]
+    assert len(items1) == 1
+    assert len(items2) == 1
+    assert items1[0]["rule_id"] == "color-contrast"
+    assert items2[0]["rule_id"] == "color-contrast"
 
 
 async def test_filters_combine_with_and(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -290,9 +293,9 @@ async def test_filters_combine_with_and(db_client: AsyncClient, db_session: Asyn
     )
 
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["rule_id"] == "color-contrast"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["rule_id"] == "color-contrast"
 
 
 async def test_pagination(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -302,12 +305,18 @@ async def test_pagination(db_client: AsyncClient, db_session: AsyncSession) -> N
         await make_rule_finding(db_session, page_result_id=page.id, rule_id=f"rule-{i}")
 
     r1 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"limit": 2})
-    r2 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"offset": 2, "limit": 2})
+    d1 = r1.json()
+    assert len(d1["items"]) == 2
+    assert d1["next_cursor"] is not None
+    assert d1["items"][0]["rule_id"] == "rule-0"
 
-    assert len(r1.json()) == 2
-    assert len(r2.json()) == 1
-    assert r1.json()[0]["rule_id"] == "rule-0"
-    assert r2.json()[0]["rule_id"] == "rule-2"
+    r2 = await db_client.get(
+        f"/api/v1/scan-runs/{scan_run.id}/findings", params={"limit": 2, "cursor": d1["next_cursor"]}
+    )
+    d2 = r2.json()
+    assert len(d2["items"]) == 1
+    assert d2["items"][0]["rule_id"] == "rule-2"
+    assert d2["next_cursor"] is None
 
 
 async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSession) -> None:

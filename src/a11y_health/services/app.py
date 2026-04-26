@@ -1,10 +1,9 @@
-from collections.abc import Sequence
-
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
+from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services.org_unit import get_descendant_ids
@@ -17,17 +16,24 @@ async def list_apps(
     *,
     brand_id: list[int] | None = None,
     org_unit_id: list[int] | None = None,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = 20,
-) -> Sequence[App]:
+) -> CursorPage[App]:
     stmt = select(App)
     if brand_id:
         stmt = stmt.where(App.brand_id.in_(brand_id))
     if org_unit_id:
         expanded = await get_descendant_ids(session, org_unit_id)
         stmt = stmt.where(App.org_unit_id.in_(expanded))
-    result = await session.execute(stmt.order_by(App.id).offset(offset).limit(limit))
-    return result.scalars().all()
+    if cursor is not None:
+        cursor_id = int(decode_cursor(cursor, expected=1)[0])
+        stmt = stmt.where(App.id > cursor_id)
+    stmt = stmt.order_by(App.id).limit(limit + 1)
+    rows = list((await session.execute(stmt)).scalars().all())
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = encode_cursor(items[-1].id) if has_more else None
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 async def get_app_by_slug(session: AsyncSession, slug: str) -> App:

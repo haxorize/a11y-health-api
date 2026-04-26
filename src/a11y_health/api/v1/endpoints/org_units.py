@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.core.pagination import Page
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import org_unit as org_unit_service
@@ -31,11 +32,11 @@ async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
 async def list_org_unit_scores(
     db: DbSession,
     org_unit_id: int,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = Query(default=20, le=100),
-) -> list[ScoreSnapshotRead]:
-    snapshots = await score_service.list_org_unit_scores(db, org_unit_id, offset=offset, limit=limit)
-    return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
+) -> Page[ScoreSnapshotRead]:
+    page = await score_service.list_org_unit_scores(db, org_unit_id, cursor=cursor, limit=limit)
+    return Page(items=[ScoreSnapshotRead.model_validate(s) for s in page.items], next_cursor=page.next_cursor)
 
 
 @router.get("/{org_unit_id}/ancestors")

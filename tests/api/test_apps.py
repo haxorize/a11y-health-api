@@ -80,9 +80,33 @@ async def test_list_apps(db_client: AsyncClient, db_session: AsyncSession) -> No
     response = await db_client.get("/api/v1/apps")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    slugs = {a["slug"] for a in data}
+    assert len(data["items"]) == 2
+    assert data["next_cursor"] is None
+    slugs = {a["slug"] for a in data["items"]}
     assert slugs == {"myhumana", "go365"}
+
+
+async def test_list_apps_pagination(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+    for i in range(3):
+        await make_app(db_session, slug=f"app-{i}", brand_id=brand.id, org_unit_id=org_unit.id)
+
+    r1 = await db_client.get("/api/v1/apps", params={"limit": 2})
+    d1 = r1.json()
+    assert len(d1["items"]) == 2
+    assert d1["next_cursor"] is not None
+
+    r2 = await db_client.get("/api/v1/apps", params={"limit": 2, "cursor": d1["next_cursor"]})
+    d2 = r2.json()
+    assert len(d2["items"]) == 1
+    assert d2["next_cursor"] is None
+    assert {a["id"] for a in d1["items"]}.isdisjoint({a["id"] for a in d2["items"]})
+
+
+async def test_list_apps_invalid_cursor(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/apps", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 400
 
 
 async def test_list_apps_filter_by_brand_id(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -94,9 +118,9 @@ async def test_list_apps_filter_by_brand_id(db_client: AsyncClient, db_session: 
 
     response = await db_client.get("/api/v1/apps", params={"brand_id": humana.id})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["brand_id"] == humana.id
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["brand_id"] == humana.id
 
 
 async def test_list_apps_filter_by_multiple_brand_ids(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -110,9 +134,9 @@ async def test_list_apps_filter_by_multiple_brand_ids(db_client: AsyncClient, db
 
     response = await db_client.get("/api/v1/apps", params=[("brand_id", humana.id), ("brand_id", go365.id)])
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    brand_ids = {a["brand_id"] for a in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    brand_ids = {a["brand_id"] for a in items}
     assert brand_ids == {humana.id, go365.id}
 
 
@@ -127,9 +151,9 @@ async def test_list_apps_filter_by_org_unit_hierarchical(db_client: AsyncClient,
 
     response = await db_client.get("/api/v1/apps", params={"org_unit_id": root.id})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    slugs = {a["slug"] for a in data}
+    items = response.json()["items"]
+    assert len(items) == 2
+    slugs = {a["slug"] for a in items}
     assert slugs == {"root-app", "child-app"}
 
 
@@ -145,9 +169,9 @@ async def test_list_apps_combined_brand_and_org_unit(db_client: AsyncClient, db_
 
     response = await db_client.get("/api/v1/apps", params={"brand_id": humana.id, "org_unit_id": root.id})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["slug"] == "match"
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["slug"] == "match"
 
 
 async def test_get_app(db_client: AsyncClient, db_session: AsyncSession) -> None:

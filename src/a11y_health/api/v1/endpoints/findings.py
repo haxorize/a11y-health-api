@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.core.pagination import Page
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import Classification
 from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
@@ -18,10 +19,10 @@ async def list_findings(
     category: list[Category] | None = Query(default=None),  # noqa: B008
     wcag_criterion: list[str] | None = Query(default=None),  # noqa: B008
     classification: list[Classification] | None = Query(default=None),  # noqa: B008
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = Query(default=20, le=100),  # noqa: B008
-) -> list[RuleFindingRead]:
-    findings = await rule_finding_service.list_findings(
+) -> Page[RuleFindingRead]:
+    page = await rule_finding_service.list_findings(
         db,
         scan_run_id,
         finding_type=type,
@@ -29,10 +30,10 @@ async def list_findings(
         category=category,
         wcag_criterion=wcag_criterion,
         classification=classification,
-        offset=offset,
+        cursor=cursor,
         limit=limit,
     )
-    return [RuleFindingRead.model_validate(f) for f in findings]
+    return Page(items=[RuleFindingRead.model_validate(f) for f in page.items], next_cursor=page.next_cursor)
 
 
 @router.get("/{finding_id}")

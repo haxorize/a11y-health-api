@@ -21,6 +21,7 @@ from a11y_health.core.exceptions import (
     NotFoundError,
     ScanRunCompletedError,
 )
+from a11y_health.core.pagination import InvalidCursorError
 
 
 @asynccontextmanager
@@ -61,6 +62,7 @@ _EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
     CircularReferenceError: 409,
     DuplicateSlugError: 409,
     HasDependentsError: 409,
+    InvalidCursorError: 400,
     InvalidStatusTransitionError: 409,
     ScanRunCompletedError: 409,
 }

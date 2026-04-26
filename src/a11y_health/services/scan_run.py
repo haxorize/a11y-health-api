@@ -1,9 +1,8 @@
-from collections.abc import Sequence
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
+from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -33,11 +32,20 @@ async def get_scan_run(session: AsyncSession, scan_run_id: int) -> ScanRun:
     return scan_run
 
 
-async def list_scan_runs(session: AsyncSession, app_id: int, *, offset: int = 0, limit: int = 20) -> Sequence[ScanRun]:
+async def list_scan_runs(
+    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = 20
+) -> CursorPage[ScanRun]:
     await get_app(session, app_id)
-    stmt = select(ScanRun).where(ScanRun.app_id == app_id).order_by(ScanRun.id).offset(offset).limit(limit)
-    result = await session.execute(stmt)
-    return result.scalars().all()
+    stmt = select(ScanRun).where(ScanRun.app_id == app_id)
+    if cursor is not None:
+        cursor_id = int(decode_cursor(cursor, expected=1)[0])
+        stmt = stmt.where(ScanRun.id > cursor_id)
+    stmt = stmt.order_by(ScanRun.id).limit(limit + 1)
+    rows = list((await session.execute(stmt)).scalars().all())
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = encode_cursor(items[-1].id) if has_more else None
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {
@@ -59,8 +67,8 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
 
 
 async def list_page_metrics(
-    session: AsyncSession, scan_run_id: int, *, offset: int = 0, limit: int = 20
-) -> list[PageMetricsRead]:
+    session: AsyncSession, scan_run_id: int, *, cursor: str | None = None, limit: int = 20
+) -> CursorPage[PageMetricsRead]:
     await get_scan_run(session, scan_run_id)
 
     violation_count = (
@@ -83,13 +91,15 @@ async def list_page_metrics(
         select(PageResult, violation_count, critical_count)
         .outerjoin(RuleFinding, RuleFinding.page_result_id == PageResult.id)
         .where(PageResult.scan_run_id == scan_run_id)
-        .group_by(PageResult.id)
-        .order_by(PageResult.id)
-        .offset(offset)
-        .limit(limit)
     )
-    result = await session.execute(stmt)
-    return [
+    if cursor is not None:
+        cursor_id = int(decode_cursor(cursor, expected=1)[0])
+        stmt = stmt.where(PageResult.id > cursor_id)
+    stmt = stmt.group_by(PageResult.id).order_by(PageResult.id).limit(limit + 1)
+    rows = (await session.execute(stmt)).all()
+    has_more = len(rows) > limit
+    sliced = rows[:limit]
+    items = [
         PageMetricsRead(
             id=page.id,
             url=page.url,
@@ -97,8 +107,10 @@ async def list_page_metrics(
             violation_count=violations,
             critical_violation_count=critical,
         )
-        for page, violations, critical in result.all()
+        for page, violations, critical in sliced
     ]
+    next_cursor = encode_cursor(items[-1].id) if has_more else None
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> ScoreSnapshot:

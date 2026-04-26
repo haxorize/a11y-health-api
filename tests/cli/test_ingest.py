@@ -79,7 +79,7 @@ async def test_ingest_name_mismatch_hard_fails_before_network_call(
     resp = await db_client.get("/api/v1/apps/slug/foo.com")
     assert resp.json()["id"]
     resp = await db_client.get(f"/api/v1/apps/{resp.json()['id']}/scan-runs")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClient, tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.core.pagination import Page
 from a11y_health.schemas.brand import BrandRead
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import brand as brand_service
@@ -25,8 +26,8 @@ async def get_brand(db: DbSession, brand_id: int) -> BrandRead:
 async def list_brand_scores(
     db: DbSession,
     brand_id: int,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = Query(default=20, le=100),
-) -> list[ScoreSnapshotRead]:
-    snapshots = await score_service.list_brand_scores(db, brand_id, offset=offset, limit=limit)
-    return [ScoreSnapshotRead.model_validate(s) for s in snapshots]
+) -> Page[ScoreSnapshotRead]:
+    page = await score_service.list_brand_scores(db, brand_id, cursor=cursor, limit=limit)
+    return Page(items=[ScoreSnapshotRead.model_validate(s) for s in page.items], next_cursor=page.next_cursor)

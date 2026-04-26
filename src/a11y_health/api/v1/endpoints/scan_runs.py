@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.core.pagination import Page
 from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
 from a11y_health.services import scan_run as scan_run_service
@@ -19,11 +20,11 @@ async def create_scan_run(db: DbSession, app_id: int, data: ScanRunCreate) -> Sc
 async def list_scan_runs(
     db: DbSession,
     app_id: int,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = Query(default=20, le=100),
-) -> list[ScanRunRead]:
-    scan_runs = await scan_run_service.list_scan_runs(db, app_id, offset=offset, limit=limit)
-    return [ScanRunRead.model_validate(r) for r in scan_runs]
+) -> Page[ScanRunRead]:
+    page = await scan_run_service.list_scan_runs(db, app_id, cursor=cursor, limit=limit)
+    return Page(items=[ScanRunRead.model_validate(r) for r in page.items], next_cursor=page.next_cursor)
 
 
 @router.get("/{scan_run_id}")
@@ -36,10 +37,11 @@ async def get_scan_run(db: DbSession, scan_run_id: int) -> ScanRunRead:
 async def list_scan_run_pages(
     db: DbSession,
     scan_run_id: int,
-    offset: int = 0,
+    cursor: str | None = None,
     limit: int = Query(default=20, le=100),
-) -> list[PageMetricsRead]:
-    return await scan_run_service.list_page_metrics(db, scan_run_id, offset=offset, limit=limit)
+) -> Page[PageMetricsRead]:
+    page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=cursor, limit=limit)
+    return Page(items=page.items, next_cursor=page.next_cursor)
 
 
 @router.get("/{scan_run_id}/summary")

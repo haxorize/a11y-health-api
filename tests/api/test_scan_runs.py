@@ -37,8 +37,9 @@ async def test_list_scan_runs(db_client: AsyncClient, db_session: AsyncSession) 
     response = await db_client.get(f"/api/v1/apps/{sr1.app_id}/scan-runs")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    assert all(r["app_id"] == sr1.app_id for r in data)
+    assert len(data["items"]) == 2
+    assert data["next_cursor"] is None
+    assert all(r["app_id"] == sr1.app_id for r in data["items"])
 
 
 async def test_list_scan_runs_invalid_app(db_client: AsyncClient) -> None:

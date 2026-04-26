@@ -449,6 +449,141 @@
         "title": "PageResultRead",
         "type": "object"
       },
+      "Page_AppRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AppRead]",
+        "type": "object"
+      },
+      "Page_PageMetricsRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PageMetricsRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[PageMetricsRead]",
+        "type": "object"
+      },
+      "Page_RuleFindingRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuleFindingRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[RuleFindingRead]",
+        "type": "object"
+      },
+      "Page_ScanRunRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRunRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ScanRunRead]",
+        "type": "object"
+      },
+      "Page_ScoreSnapshotRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreSnapshotRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ScoreSnapshotRead]",
+        "type": "object"
+      },
       "RuleFindingDetail": {
         "properties": {
           "category": {
@@ -943,12 +1078,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -968,11 +1109,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AppRead"
-                  },
-                  "title": "Response List Apps",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_AppRead_"
                 }
               }
             },
@@ -1216,12 +1353,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -1241,11 +1384,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ScanRunRead"
-                  },
-                  "title": "Response List Scan Runs",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_ScanRunRead_"
                 }
               }
             },
@@ -1333,12 +1472,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -1358,11 +1503,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ScoreSnapshotRead"
-                  },
-                  "title": "Response List App Scores",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_ScoreSnapshotRead_"
                 }
               }
             },
@@ -1467,12 +1608,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -1492,11 +1639,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ScoreSnapshotRead"
-                  },
-                  "title": "Response List Brand Scores",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_ScoreSnapshotRead_"
                 }
               }
             },
@@ -1836,12 +1979,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -1861,11 +2010,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ScoreSnapshotRead"
-                  },
-                  "title": "Response List Org Unit Scores",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_ScoreSnapshotRead_"
                 }
               }
             },
@@ -2132,12 +2277,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -2157,11 +2308,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RuleFindingRead"
-                  },
-                  "title": "Response List Findings",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_RuleFindingRead_"
                 }
               }
             },
@@ -2250,12 +2397,18 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "default": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -2275,11 +2428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PageMetricsRead"
-                  },
-                  "title": "Response List Scan Run Pages",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_PageMetricsRead_"
                 }
               }
             },

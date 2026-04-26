@@ -149,3 +149,66 @@ Use `pytest.approx` for float assertions (scores, percentages):
 from pytest import approx
 assert score == approx(0.85)
 ```
+
+## Markers
+
+Declared in `pyproject.toml` under `[tool.pytest.ini_options]`:
+
+- `slow` — tests that take noticeably longer; skip locally with `-m "not slow"`
+- `integration` — end-to-end tests crossing multiple layers
+
+`addopts = ["--strict-markers", "--strict-config"]` is on, so a typo'd marker fails the run. Add new markers to `pyproject.toml` before using them.
+
+```python
+@pytest.mark.slow
+async def test_full_scan_ingestion(...) -> None: ...
+```
+
+## Mocking
+
+Use the `mocker` fixture from `pytest-mock` rather than raw `unittest.mock` — it auto-cleans patches per test.
+
+```python
+async def test_cli_uploads_scan(mocker) -> None:
+    post = mocker.patch("httpx.AsyncClient.post", new_callable=mocker.AsyncMock)
+    post.return_value.status_code = 201
+    await run_ingest(...)
+    post.assert_awaited_once()
+```
+
+- Mock at the seam closest to the boundary (e.g., `httpx.AsyncClient.post`), not deep into your own code
+- For async callables use `new_callable=mocker.AsyncMock` and assert with `assert_awaited_once`/`assert_awaited_with`
+- Don't mock the database — the `db_session` rollback fixture is the canonical isolation mechanism
+
+## Coverage
+
+`pytest-cov` is wired up. Common invocations:
+
+```bash
+uv run pytest --cov=a11y_health --cov-report=term-missing       # uncovered line numbers inline
+uv run pytest --cov=a11y_health --cov-report=html               # browse htmlcov/index.html
+uv run pytest --cov=a11y_health --cov-report=annotate:cov_out   # per-file annotated source ('!' = uncovered)
+```
+
+Chase coverage by module: `--cov=a11y_health.services.score_snapshot`.
+
+## Running tests
+
+```bash
+uv run pytest -x                     # stop on first failure
+uv run pytest --lf                   # rerun only last-failed
+uv run pytest --ff                   # last-failed first, then the rest
+uv run pytest -k "scan and not run"  # filter by name expression
+uv run pytest --pdb                  # drop into debugger on failure
+uv run pytest -m "not slow"          # skip slow tests
+```
+
+## Anti-patterns
+
+- **Don't share mutable state across tests** — no module-level lists/dicts that tests append to. Use fixtures.
+- **Don't test private/internal cache state** — assert on observable behavior, not `_internal_attr`.
+- **Don't write monolithic "everything" fixtures** — small composable fixtures beat one mega-setup.
+- **Don't over-specify mocks** — assert on the call shape that matters, not every kwarg.
+- **Don't catch exceptions in tests** — use `pytest.raises(ExceptionType)`; bare `try/except` swallows real failures.
+- **Don't let real network or DB calls leak into "unit" tests** — mock the seam or use the transactional `db_session`.
+- **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation.

@@ -162,15 +162,15 @@ stmt = stmt.order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id).limit(limit + 
 next_cursor = encode_cursor(items[-1].snapshot_at, items[-1].id) if has_more else None
 ```
 
-**Helpers** — `encode_cursor(*values)` → opaque base64; `decode_cursor(cursor, expected=N)` → list (raises `InvalidCursorError`, mapped to 422). The cursor is opaque to clients; pass `expected=` to enforce arity. Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) after validating items.
+**Helpers** — `encode_cursor(*values)` → opaque base64; `decode_cursor(cursor, expected=N)` → list (raises `InvalidCursorError`, mapped to 400 in `main.py`). The cursor is opaque to clients; pass `expected=` to enforce arity. Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) after validating items.
 
 ## Error responses
 
 - Services raise domain exceptions (defined in `core/exceptions.py`)
 - `main.py` maps exception classes to HTTP status codes in `_EXCEPTION_STATUS_CODES` and registers handlers in a loop — add new domain exceptions there
 - Endpoints never catch or raise `HTTPException` directly
-- Let FastAPI's built-in 422 handling cover Pydantic schema validation errors
-- Use 404 for missing resources, 409 for domain conflicts, 422 for domain payload validation (e.g., `InvalidAxePayloadError`)
+- Pydantic shape errors return 422 — FastAPI's built-in handler covers automatic body validation; the custom `_validation_error_handler` in `main.py` covers explicit `model_validate()` calls (see `pages.py` for an example)
+- Status conventions: 404 for missing resources, 409 for domain conflicts (duplicate slug, invalid state transition, has-dependents), 400 for malformed request data (e.g., `InvalidCursorError`)
 
 ## Domain exceptions
 

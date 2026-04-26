@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
@@ -14,13 +16,13 @@ router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"]
 async def list_findings(
     db: DbSession,
     scan_run_id: int,
-    type: list[FindingType] | None = Query(default=None),  # noqa: B008
-    impact: list[Impact] | None = Query(default=None),  # noqa: B008
-    category: list[Category] | None = Query(default=None),  # noqa: B008
-    wcag_criterion: list[str] | None = Query(default=None),  # noqa: B008
-    classification: list[Classification] | None = Query(default=None),  # noqa: B008
+    type: Annotated[list[FindingType] | None, Query()] = None,
+    impact: Annotated[list[Impact] | None, Query()] = None,
+    category: Annotated[list[Category] | None, Query()] = None,
+    wcag_criterion: Annotated[list[str] | None, Query()] = None,
+    classification: Annotated[list[Classification] | None, Query()] = None,
     cursor: str | None = None,
-    limit: int = Query(default=20, le=100),  # noqa: B008
+    limit: Annotated[int, Query(le=100)] = 20,
 ) -> Page[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,

@@ -44,9 +44,16 @@ src/a11y_health/
   app_router = APIRouter(prefix="/apps/{app_id}/scan-runs", tags=["scan-runs"])
   router = APIRouter(prefix="/scan-runs", tags=["scan-runs"])
   ```
-- Prefer `Annotated` type aliases for dependency injection:
+- Prefer `Annotated` for all parameter declarations — `Depends`, `Query`, `Path`, `Body`. Lifts the default to the parameter's `=` slot, so no `Query()` default object and no `# noqa: B008`:
   ```python
   DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+  async def list_apps(
+      db: DbSession,
+      brand_id: Annotated[list[int] | None, Query()] = None,
+      cursor: str | None = None,
+      limit: Annotated[int, Query(le=100)] = 20,
+  ) -> Page[AppRead]: ...
   ```
 - Return Pydantic response models with explicit type annotations
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
@@ -56,6 +63,8 @@ src/a11y_health/
 
 ## Schemas (Pydantic)
 
+- Pydantic V2 only: `@field_validator` / `@model_validator` (not V1's `@validator`), `model_config = ConfigDict(...)` (not `class Config`), `model_dump()` / `model_validate()` (not `dict()` / `parse_obj()`)
+- Use `X | None` (PEP 604) over `Optional[X]`
 - Use `Literal` types for constrained string values
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
@@ -115,15 +124,45 @@ This keeps endpoints thin (they only call their resource service) and keeps reso
 
 ## Pagination
 
-Use offset/limit with sensible defaults:
+Cursor-based pagination via `core/pagination.py`. List endpoints accept `cursor` and `limit`, return `Page[T]` with `items` and `next_cursor` (null when no more pages).
+
+**Endpoint:**
 ```python
-@router.get("/items")
-async def list_items(
+@router.get("")
+async def list_apps(
     db: DbSession,
-    offset: int = 0,
-    limit: int = Query(default=20, le=100),
-) -> list[ItemRead]: ...
+    cursor: str | None = None,
+    limit: Annotated[int, Query(le=100)] = 20,
+) -> Page[AppRead]:
+    page = await app_service.list_apps(db, cursor=cursor, limit=limit)
+    return Page(items=[AppRead.model_validate(a) for a in page.items], next_cursor=page.next_cursor)
 ```
+
+**Service** — keyset pagination (not OFFSET; OFFSET drifts under concurrent inserts and scales poorly). Order by the cursor key, fetch `limit + 1` to detect "more", encode the last visible row's key:
+```python
+if cursor is not None:
+    cursor_id = int(decode_cursor(cursor, expected=1)[0])
+    stmt = stmt.where(App.id > cursor_id)
+stmt = stmt.order_by(App.id).limit(limit + 1)
+rows = list((await session.execute(stmt)).scalars().all())
+has_more = len(rows) > limit
+items = rows[:limit]
+next_cursor = encode_cursor(items[-1].id) if has_more else None
+return CursorPage(items=items, next_cursor=next_cursor)
+```
+
+**Composite cursor** for non-unique sort keys (e.g. timestamp + id tiebreaker). Use SQL row-tuple comparison so the index can serve it:
+```python
+decoded = decode_cursor(cursor, expected=2)
+cursor_ts = datetime.fromisoformat(decoded[0])
+cursor_id = int(decoded[1])
+stmt = stmt.where(tuple_(ScoreSnapshot.snapshot_at, ScoreSnapshot.id) > (cursor_ts, cursor_id))
+stmt = stmt.order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id).limit(limit + 1)
+...
+next_cursor = encode_cursor(items[-1].snapshot_at, items[-1].id) if has_more else None
+```
+
+**Helpers** — `encode_cursor(*values)` → opaque base64; `decode_cursor(cursor, expected=N)` → list (raises `InvalidCursorError`, mapped to 422). The cursor is opaque to clients; pass `expected=` to enforce arity. Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) after validating items.
 
 ## Error responses
 

@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
@@ -27,7 +29,7 @@ async def list_brand_scores(
     db: DbSession,
     brand_id: int,
     cursor: str | None = None,
-    limit: int = Query(default=20, le=100),
+    limit: Annotated[int, Query(le=100)] = 20,
 ) -> Page[ScoreSnapshotRead]:
     page = await score_service.list_brand_scores(db, brand_id, cursor=cursor, limit=limit)
     return Page(items=[ScoreSnapshotRead.model_validate(s) for s in page.items], next_cursor=page.next_cursor)

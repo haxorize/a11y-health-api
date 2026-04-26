@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
@@ -21,7 +23,7 @@ async def list_scan_runs(
     db: DbSession,
     app_id: int,
     cursor: str | None = None,
-    limit: int = Query(default=20, le=100),
+    limit: Annotated[int, Query(le=100)] = 20,
 ) -> Page[ScanRunRead]:
     page = await scan_run_service.list_scan_runs(db, app_id, cursor=cursor, limit=limit)
     return Page(items=[ScanRunRead.model_validate(r) for r in page.items], next_cursor=page.next_cursor)
@@ -38,7 +40,7 @@ async def list_scan_run_pages(
     db: DbSession,
     scan_run_id: int,
     cursor: str | None = None,
-    limit: int = Query(default=20, le=100),
+    limit: Annotated[int, Query(le=100)] = 20,
 ) -> Page[PageMetricsRead]:
     page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=cursor, limit=limit)
     return Page(items=page.items, next_cursor=page.next_cursor)

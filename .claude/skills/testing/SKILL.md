@@ -180,28 +180,9 @@ async def test_cli_uploads_scan(mocker) -> None:
 - For async callables use `new_callable=mocker.AsyncMock` and assert with `assert_awaited_once`/`assert_awaited_with`
 - Don't mock the database — the `db_session` rollback fixture is the canonical isolation mechanism
 
-## Coverage
+## Recipes
 
-`pytest-cov` is wired up. Common invocations:
-
-```bash
-uv run pytest --cov=a11y_health --cov-report=term-missing       # uncovered line numbers inline
-uv run pytest --cov=a11y_health --cov-report=html               # browse htmlcov/index.html
-uv run pytest --cov=a11y_health --cov-report=annotate:cov_out   # per-file annotated source ('!' = uncovered)
-```
-
-Chase coverage by module: `--cov=a11y_health.services.score_snapshot`.
-
-## Running tests
-
-```bash
-uv run pytest -x                     # stop on first failure
-uv run pytest --lf                   # rerun only last-failed
-uv run pytest --ff                   # last-failed first, then the rest
-uv run pytest -k "scan and not run"  # filter by name expression
-uv run pytest --pdb                  # drop into debugger on failure
-uv run pytest -m "not slow"          # skip slow tests
-```
+See [references/test-recipes.md](references/test-recipes.md) for coverage and runner-flag commands.
 
 ## Anti-patterns
 

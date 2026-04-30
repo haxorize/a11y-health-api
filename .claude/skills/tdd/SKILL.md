@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development workflow using vertical slices. Use when implementing a feature, building from a spec or task, or user mentions "TDD" or "test first".
+description: Test-driven development workflow using vertical slices. Use when implementing a feature, building from a story or task, or user mentions "TDD" or "test first".
 ---
 
 # Test-Driven Development

@@ -91,3 +91,7 @@
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.
 - **"Rollup"** now covers two distinct patterns: hierarchical cascading (**Org Unit Rollup**) and flat aggregation (**Brand Rollup**). When unqualified, "rollup" means the general concept. Use **Org Unit Rollup** or **Brand Rollup** when the distinction matters.
 - **"Status"** is overloaded — **Scan Run Status** (Pending/Completed) vs. the health check endpoint's `"healthy"` status. Context usually disambiguates, but prefer **Scan Run Status** when referring to the lifecycle.
+
+## Cross-repo
+
+The UI consumes these terms via the generated client. See `../a11y-health-ui/DOMAIN.md` for any UI-only conventions.

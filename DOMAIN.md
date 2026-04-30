@@ -59,29 +59,29 @@
 
 ## Example dialogue
 
-> **Builder:** "Walk me through the ingestion flow — what happens when we upload scan data?"
+> **Dev:** "Walk me through the ingestion flow — what happens when we upload scan data?"
 >
-> **Specifier:** "A **Scan Run** is created in **Pending** status. While it's **Pending**, you add **Page Results** — each one parses the **Raw JSON** and stores **Rule Findings** with their **Finding Type** (either **Violation** or **Incomplete**). Then you transition the **Scan Run Status** to **Completed**."
+> **Domain expert:** "A **Scan Run** is created in **Pending** status. While it's **Pending**, you add **Page Results** — each one parses the **Raw JSON** and stores **Rule Findings** with their **Finding Type** (either **Violation** or **Incomplete**). Then you transition the **Scan Run Status** to **Completed**."
 >
-> **Builder:** "What triggers scoring?"
+> **Dev:** "What triggers scoring?"
 >
-> **Specifier:** "The transition to **Completed**. Each **Page Result** gets a **Page Health** based on the worst **Impact** among its **Violation**-type **Rule Findings**. Then the **Score** is computed from those **Page Health** categories and saved as a **Score Snapshot**."
+> **Domain expert:** "The transition to **Completed**. Each **Page Result** gets a **Page Health** based on the worst **Impact** among its **Violation**-type **Rule Findings**. Then the **Score** is computed from those **Page Health** categories and saved as a **Score Snapshot**."
 >
-> **Builder:** "So **Incompletes** don't affect the **Score** at all?"
+> **Dev:** "So **Incompletes** don't affect the **Score** at all?"
 >
-> **Specifier:** "Correct. **Incompletes** are stored for manual review but excluded from **Page Health** and **Score** computation. Only **Violations** count — and all of them, regardless of **Classification**. A best-practice **Violation** affects the **Score** just like a WCAG one."
+> **Domain expert:** "Correct. **Incompletes** are stored for manual review but excluded from **Page Health** and **Score** computation. Only **Violations** count — and all of them, regardless of **Classification**. A best-practice **Violation** affects the **Score** just like a WCAG one."
 >
-> **Builder:** "And the **Rollup** happens automatically after that?"
+> **Dev:** "And the **Rollup** happens automatically after that?"
 >
-> **Specifier:** "Yes. Once the app's **Score Snapshot** is saved, two rollups fire. The **Org Unit Rollup** cascades up the hierarchy — each ancestor **Org Unit** recomputes its **Score Snapshot** as the mean of its children's latest snapshots. The **Brand Rollup** aggregates the latest snapshots across all **Apps** for that **Brand**, regardless of where they sit in the **Org Unit** tree."
+> **Domain expert:** "Yes. Once the app's **Score Snapshot** is saved, two rollups fire. The **Org Unit Rollup** cascades up the hierarchy — each ancestor **Org Unit** recomputes its **Score Snapshot** as the mean of its children's latest snapshots. The **Brand Rollup** aggregates the latest snapshots across all **Apps** for that **Brand**, regardless of where they sit in the **Org Unit** tree."
 >
-> **Builder:** "So **Brand Rollup** is flat — no cascading?"
+> **Dev:** "So **Brand Rollup** is flat — no cascading?"
 >
-> **Specifier:** "Exactly. A **Brand** doesn't have a hierarchy. It's a single aggregation across all **Apps** that share that **Brand**. Moving an **App** between **Org Units** changes the **Org Unit Rollup** but not the **Brand Rollup**."
+> **Domain expert:** "Exactly. A **Brand** doesn't have a hierarchy. It's a single aggregation across all **Apps** that share that **Brand**. Moving an **App** between **Org Units** changes the **Org Unit Rollup** but not the **Brand Rollup**."
 >
-> **Builder:** "What about **Import** — does that follow the same flow?"
+> **Dev:** "What about **Import** — does that follow the same flow?"
 >
-> **Specifier:** "Exactly the same. **Import** just automates it — it creates the **App** from the JSON `name` if needed, then uploads each date subdirectory as a separate **Scan Run** through the same Pending → Completed lifecycle."
+> **Domain expert:** "Exactly the same. **Import** just automates it — it creates the **App** from the JSON `name` if needed, then uploads each date subdirectory as a separate **Scan Run** through the same Pending → Completed lifecycle."
 
 ## Flagged ambiguities
 

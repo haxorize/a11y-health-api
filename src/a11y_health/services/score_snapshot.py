@@ -228,7 +228,7 @@ async def _aggregate_and_save(
     org_unit_id: int | None = None,
     brand_id: int | None = None,
 ) -> None:
-    # score is the unweighted arithmetic mean of children's scores per UBIQUITOUS_LANGUAGE.md;
+    # score is the unweighted arithmetic mean of children's scores per DOMAIN.md;
     # the pct_* / avg_* fields are recomputed from summed totals, so the two lenses can diverge.
     # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)

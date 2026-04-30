@@ -31,8 +31,13 @@ Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, se
 
 ## Domain Language
 
-See `UBIQUITOUS_LANGUAGE.md` for canonical domain terms. Use those terms in code, comments, and conversation.
+See `DOMAIN.md` for canonical domain terms. Use those terms in code, comments, and conversation.
 
 ## Architecture Decisions
 
 See `docs/adr/` for recorded architectural decisions and their rationale. Consult before making choices that touch the same areas; respect existing decisions unless the user explicitly wants to revisit one.
+
+## Issue tracker
+
+- Tracker: GitHub
+- Hierarchy: optional

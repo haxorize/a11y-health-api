@@ -17,7 +17,7 @@ See the `database` skill for ORM model, schema design, migration, and indexing c
 
 ### 1. Plan
 
-If a feature spec or task issue exists, pull acceptance criteria from it. If not, briefly identify:
+If a story or task issue exists, pull acceptance criteria from it. If not, briefly identify:
 
 - What interface changes are needed
 - Which behaviors to test (prioritize with the user)
@@ -87,6 +87,6 @@ Tests and type checks verify code correctness, not feature correctness. If the c
 
 ### 7. Update docs
 
-Check whether the changes affect anything documented in `README.md`, `CLAUDE.md`, or `UBIQUITOUS_LANGUAGE.md` (e.g., new commands, changed structure, new conventions, new or renamed domain terms). Update if needed, skip if not.
+Check whether the changes affect anything documented in `README.md`, `CLAUDE.md`, or `DOMAIN.md` (e.g., new commands, changed structure, new conventions, new or renamed domain terms). Update if needed, skip if not.
 
 If this slice ships as its own PR, run `/review` before pushing.

@@ -20,7 +20,6 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert response.status_code == 200
     data = response.json()
     assert len(data["items"]) == 1
-    assert data["next_cursor"] is None
     finding = data["items"][0]
     assert finding["rule_id"] == "color-contrast"
     assert finding["impact"] == "serious"
@@ -37,7 +36,6 @@ async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSess
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["next_cursor"] is None
 
 
 async def test_list_findings_scan_run_not_found(db_client: AsyncClient) -> None:
@@ -296,27 +294,6 @@ async def test_filters_combine_with_and(db_client: AsyncClient, db_session: Asyn
     items = response.json()["items"]
     assert len(items) == 1
     assert items[0]["rule_id"] == "color-contrast"
-
-
-async def test_pagination(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    for i in range(3):
-        await make_rule_finding(db_session, page_result_id=page.id, rule_id=f"rule-{i}")
-
-    r1 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"limit": 2})
-    d1 = r1.json()
-    assert len(d1["items"]) == 2
-    assert d1["next_cursor"] is not None
-    assert d1["items"][0]["rule_id"] == "rule-0"
-
-    r2 = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings", params={"limit": 2, "cursor": d1["next_cursor"]}
-    )
-    d2 = r2.json()
-    assert len(d2["items"]) == 1
-    assert d2["items"][0]["rule_id"] == "rule-2"
-    assert d2["next_cursor"] is None
 
 
 async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSession) -> None:

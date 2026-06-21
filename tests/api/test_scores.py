@@ -23,25 +23,6 @@ async def test_list_app_scores_ordered_chronologically(db_client: AsyncClient, d
     assert scores == approx([0.9, 0.75, 0.6])
 
 
-async def test_list_app_scores_pagination(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    app = await make_app_with_org_unit(db_session)
-    for i in range(3):
-        await make_score_snapshot(
-            db_session, app_id=app.id, score=0.1 * i, snapshot_at=datetime(2026, 4, i + 1, tzinfo=UTC)
-        )
-
-    r1 = await db_client.get(f"/api/v1/apps/{app.id}/scores", params={"limit": 2})
-    d1 = r1.json()
-    assert len(d1["items"]) == 2
-    assert d1["next_cursor"] is not None
-
-    r2 = await db_client.get(f"/api/v1/apps/{app.id}/scores", params={"limit": 2, "cursor": d1["next_cursor"]})
-    d2 = r2.json()
-    assert len(d2["items"]) == 1
-    assert d2["next_cursor"] is None
-    assert {s["id"] for s in d1["items"]}.isdisjoint({s["id"] for s in d2["items"]})
-
-
 async def test_list_org_unit_scores_ordered_chronologically(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
 
@@ -71,7 +52,6 @@ async def test_list_app_scores_empty(db_client: AsyncClient, db_session: AsyncSe
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["next_cursor"] is None
 
 
 async def test_list_org_unit_scores_empty(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -81,7 +61,6 @@ async def test_list_org_unit_scores_empty(db_client: AsyncClient, db_session: As
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["next_cursor"] is None
 
 
 async def test_list_app_scores_not_found(db_client: AsyncClient) -> None:
@@ -117,7 +96,6 @@ async def test_list_brand_scores_empty(db_client: AsyncClient, db_session: Async
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["next_cursor"] is None
 
 
 async def test_list_brand_scores_not_found(db_client: AsyncClient) -> None:

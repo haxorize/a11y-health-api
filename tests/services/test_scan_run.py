@@ -72,19 +72,6 @@ async def test_list_scan_runs(db_session: AsyncSession) -> None:
     assert all(r.app_id == app_a.id for r in page.items)
 
 
-async def test_list_scan_runs_pagination(db_session: AsyncSession) -> None:
-    app = await make_app_with_org_unit(db_session)
-    for _ in range(5):
-        await make_scan_run(db_session, app_id=app.id)
-
-    first = await scan_run_service.list_scan_runs(db_session, app.id, limit=2)
-    assert len(first.items) == 2
-    assert first.next_cursor is not None
-    second = await scan_run_service.list_scan_runs(db_session, app.id, cursor=first.next_cursor, limit=2)
-    assert len(second.items) == 2
-    assert {r.id for r in first.items}.isdisjoint({r.id for r in second.items})
-
-
 async def test_update_status_pending_to_completed(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
 

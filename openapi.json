@@ -1099,6 +1099,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1374,6 +1375,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1493,6 +1495,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1629,6 +1632,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -2000,6 +2004,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -2298,6 +2303,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -2418,6 +2424,7 @@
             "schema": {
               "default": 20,
               "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }

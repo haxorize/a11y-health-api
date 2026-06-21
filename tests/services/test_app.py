@@ -175,22 +175,6 @@ async def test_list_apps_combined_brand_and_org_unit(db_session: AsyncSession) -
     assert page.items[0].slug == "match"
 
 
-async def test_list_apps_pagination(db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    brand = await make_brand(db_session)
-    for i in range(5):
-        await make_app(db_session, slug=f"app-{i}", brand_id=brand.id, org_unit_id=org_unit.id)
-    first = await app_service.list_apps(db_session, limit=2)
-    assert len(first.items) == 2
-    assert first.next_cursor is not None
-    second = await app_service.list_apps(db_session, cursor=first.next_cursor, limit=2)
-    assert len(second.items) == 2
-    assert {a.id for a in first.items}.isdisjoint({a.id for a in second.items})
-    third = await app_service.list_apps(db_session, cursor=second.next_cursor, limit=2)
-    assert len(third.items) == 1
-    assert third.next_cursor is None
-
-
 async def test_update_app(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)

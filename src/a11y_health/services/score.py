@@ -1,10 +1,9 @@
-from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor
+from a11y_health.core.pagination import CursorPage, paginate
 from a11y_health.models.score_snapshot import ScoreSnapshot
 
 
@@ -17,17 +16,13 @@ async def _list_scores(
     limit: int = 20,
 ) -> CursorPage[ScoreSnapshot]:
     stmt = select(ScoreSnapshot).where(filter_col == filter_val)
-    if cursor is not None:
-        decoded = decode_cursor(cursor, expected=2)
-        cursor_ts = datetime.fromisoformat(decoded[0])
-        cursor_id = int(decoded[1])
-        stmt = stmt.where(tuple_(ScoreSnapshot.snapshot_at, ScoreSnapshot.id) > (cursor_ts, cursor_id))
-    stmt = stmt.order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id).limit(limit + 1)
-    rows = list((await session.execute(stmt)).scalars().all())
-    has_more = len(rows) > limit
-    items = rows[:limit]
-    next_cursor = encode_cursor(items[-1].snapshot_at, items[-1].id) if has_more else None
-    return CursorPage(items=items, next_cursor=next_cursor)
+    return await paginate(
+        session,
+        stmt,
+        keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id],
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 async def list_app_scores(

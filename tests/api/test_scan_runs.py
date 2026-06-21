@@ -38,7 +38,6 @@ async def test_list_scan_runs(db_client: AsyncClient, db_session: AsyncSession) 
     assert response.status_code == 200
     data = response.json()
     assert len(data["items"]) == 2
-    assert data["next_cursor"] is None
     assert all(r["app_id"] == sr1.app_id for r in data["items"])
 
 

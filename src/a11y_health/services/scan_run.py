@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
-from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor
+from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor, paginate
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -37,15 +37,7 @@ async def list_scan_runs(
 ) -> CursorPage[ScanRun]:
     await get_app(session, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
-    if cursor is not None:
-        cursor_id = int(decode_cursor(cursor, expected=1)[0])
-        stmt = stmt.where(ScanRun.id > cursor_id)
-    stmt = stmt.order_by(ScanRun.id).limit(limit + 1)
-    rows = list((await session.execute(stmt)).scalars().all())
-    has_more = len(rows) > limit
-    items = rows[:limit]
-    next_cursor = encode_cursor(items[-1].id) if has_more else None
-    return CursorPage(items=items, next_cursor=next_cursor)
+    return await paginate(session, stmt, keyset=[ScanRun.id], cursor=cursor, limit=limit)
 
 
 _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {

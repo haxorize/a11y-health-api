@@ -24,7 +24,7 @@ async def list_apps(
     brand_id: Annotated[list[int] | None, Query()] = None,
     org_unit_id: Annotated[list[int] | None, Query()] = None,
     cursor: str | None = None,
-    limit: Annotated[int, Query(le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[AppRead]:
     page = await app_service.list_apps(db, brand_id=brand_id, org_unit_id=org_unit_id, cursor=cursor, limit=limit)
     return Page(items=[AppRead.model_validate(a) for a in page.items], next_cursor=page.next_cursor)
@@ -53,7 +53,7 @@ async def list_app_scores(
     db: DbSession,
     app_id: int,
     cursor: str | None = None,
-    limit: Annotated[int, Query(le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[ScoreSnapshotRead]:
     page = await score_service.list_app_scores(db, app_id, cursor=cursor, limit=limit)
     return Page(items=[ScoreSnapshotRead.model_validate(s) for s in page.items], next_cursor=page.next_cursor)

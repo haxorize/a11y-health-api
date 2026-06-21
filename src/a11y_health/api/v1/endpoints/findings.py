@@ -22,7 +22,7 @@ async def list_findings(
     wcag_criterion: Annotated[list[str] | None, Query()] = None,
     classification: Annotated[list[Classification] | None, Query()] = None,
     cursor: str | None = None,
-    limit: Annotated[int, Query(le=100)] = 20,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,

@@ -95,8 +95,8 @@ async def list_page_metrics(
             id=r.PageResult.id,
             url=r.PageResult.url,
             page_health=r.PageResult.page_health,
-            violation_count=r[1],
-            critical_violation_count=r[2],
+            violation_count=r.violation_count,
+            critical_violation_count=r.critical_violation_count,
         ),
     )
 

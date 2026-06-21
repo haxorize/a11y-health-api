@@ -29,6 +29,14 @@ uv run a11y --help               # data import/ingest commands (see cli.py modul
 Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`.
 Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
 
+## Convention skills
+
+Project-local skills that carry this repo's conventions, organized by the layer they own. The global `tdd`, `implement`, and `feedback-loops` skills discover and invoke these *by role* for whatever layer a slice touches — consult the matching one before writing code at that layer, and `feedback-loops` applies any stack finalization they own (e.g. migrations).
+
+- **`database`** — data layer: PostgreSQL schema design, SQLAlchemy models/columns/types, migrations, indexes/constraints, and query patterns. Owns migration finalization after a model change.
+- **`fastapi`** — backend layer: endpoints, schemas, services, and app configuration.
+- **`testing`** — test layer: fixtures, factories, test layout, markers, and mocking.
+
 ## Domain Language
 
 See `DOMAIN.md` for canonical domain terms. Use those terms in code, comments, and conversation.

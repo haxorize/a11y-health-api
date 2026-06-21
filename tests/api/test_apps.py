@@ -86,24 +86,9 @@ async def test_list_apps(db_client: AsyncClient, db_session: AsyncSession) -> No
     assert slugs == {"myhumana", "go365"}
 
 
-async def test_list_apps_pagination(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    brand = await make_brand(db_session)
-    for i in range(3):
-        await make_app(db_session, slug=f"app-{i}", brand_id=brand.id, org_unit_id=org_unit.id)
-
-    r1 = await db_client.get("/api/v1/apps", params={"limit": 2})
-    d1 = r1.json()
-    assert len(d1["items"]) == 2
-    assert d1["next_cursor"] is not None
-
-    r2 = await db_client.get("/api/v1/apps", params={"limit": 2, "cursor": d1["next_cursor"]})
-    d2 = r2.json()
-    assert len(d2["items"]) == 1
-    assert d2["next_cursor"] is None
-    assert {a["id"] for a in d1["items"]}.isdisjoint({a["id"] for a in d2["items"]})
-
-
+# Cursor pagination mechanics (limit, next_cursor, second-page round-trip) are proven
+# centrally in tests/core/test_pagination.py. This endpoint test keeps only the generic
+# InvalidCursorError -> 400 mapping, which has no other HTTP-layer home.
 async def test_list_apps_invalid_cursor(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/apps", params={"cursor": "not-a-cursor"})
     assert response.status_code == 400

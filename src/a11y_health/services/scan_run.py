@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
-from a11y_health.core.pagination import CursorPage, decode_cursor, encode_cursor, paginate
+from a11y_health.core.pagination import CursorPage, paginate
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -83,26 +83,22 @@ async def list_page_metrics(
         select(PageResult, violation_count, critical_count)
         .outerjoin(RuleFinding, RuleFinding.page_result_id == PageResult.id)
         .where(PageResult.scan_run_id == scan_run_id)
+        .group_by(PageResult.id)
     )
-    if cursor is not None:
-        cursor_id = int(decode_cursor(cursor, expected=1)[0])
-        stmt = stmt.where(PageResult.id > cursor_id)
-    stmt = stmt.group_by(PageResult.id).order_by(PageResult.id).limit(limit + 1)
-    rows = (await session.execute(stmt)).all()
-    has_more = len(rows) > limit
-    sliced = rows[:limit]
-    items = [
-        PageMetricsRead(
-            id=page.id,
-            url=page.url,
-            page_health=page.page_health,
-            violation_count=violations,
-            critical_violation_count=critical,
-        )
-        for page, violations, critical in sliced
-    ]
-    next_cursor = encode_cursor(items[-1].id) if has_more else None
-    return CursorPage(items=items, next_cursor=next_cursor)
+    return await paginate(
+        session,
+        stmt,
+        keyset=[PageResult.id],
+        cursor=cursor,
+        limit=limit,
+        into=lambda r: PageMetricsRead(
+            id=r.PageResult.id,
+            url=r.PageResult.url,
+            page_health=r.PageResult.page_health,
+            violation_count=r[1],
+            critical_violation_count=r[2],
+        ),
+    )
 
 
 async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> ScoreSnapshot:

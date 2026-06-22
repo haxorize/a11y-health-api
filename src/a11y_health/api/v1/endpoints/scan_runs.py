@@ -26,7 +26,7 @@ async def list_scan_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[ScanRunRead]:
     page = await scan_run_service.list_scan_runs(db, app_id, cursor=cursor, limit=limit)
-    return Page(items=[ScanRunRead.model_validate(r) for r in page.items], next_cursor=page.next_cursor)
+    return Page.from_cursor_page(page, ScanRunRead.model_validate)
 
 
 @router.get("/{scan_run_id}")
@@ -43,7 +43,7 @@ async def list_scan_run_pages(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[PageMetricsRead]:
     page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=cursor, limit=limit)
-    return Page(items=page.items, next_cursor=page.next_cursor)
+    return Page.from_cursor_page(page)
 
 
 @router.get("/{scan_run_id}/summary")

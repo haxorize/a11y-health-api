@@ -217,6 +217,13 @@ and encoding the `next_cursor`. A **cursor** is just the keyset values of the la
 row, base64-encoded; the client sends it back to get the next page. Paging is
 **forward-only and ascending**, always tiebroken by `id`.
 
+`paginate` returns the internal `CursorPage` (ORM items + cursor); the endpoint turns
+that into the public `Page` wire response with `Page.from_cursor_page(page, ItemRead.model_validate)`,
+which maps each item through the Read schema and carries the cursor across unchanged.
+The conversion lives in one place, co-located with `Page`, so no list endpoint
+re-assembles the response item-by-item. Endpoints whose items are already the public
+type (the `into` aggregates) call it without a mapper.
+
 Two things to know if you touch it:
 
 - Keyset columns must be **NOT NULL** (a NULL breaks the row-value comparison and

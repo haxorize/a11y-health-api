@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.pagination import InvalidCursorError, encode_cursor, paginate
+from a11y_health.core.pagination import CursorPage, InvalidCursorError, Page, encode_cursor, paginate
 from a11y_health.models.brand import Brand
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_brand, make_score_snapshot
@@ -157,3 +157,40 @@ async def test_paginate_string_keyset_round_trip(db_session: AsyncSession) -> No
     assert [b.name for b in first.items] == ["alpha", "bravo"]
     assert [b.name for b in second.items] == ["charlie"]
     assert second.next_cursor is None
+
+
+def _to_str(n: int) -> str:
+    return str(n)
+
+
+class TestPageFromCursorPage:
+    def test_maps_items_and_preserves_cursor(self) -> None:
+        internal = CursorPage(items=[1, 2, 3], next_cursor="cursor-xyz")
+
+        page = Page.from_cursor_page(internal, _to_str)
+
+        assert page.items == ["1", "2", "3"]
+        assert page.next_cursor == "cursor-xyz"
+
+    def test_default_mapper_passes_items_through_unchanged(self) -> None:
+        internal = CursorPage(items=["already", "shaped"], next_cursor="c1")
+
+        page = Page.from_cursor_page(internal)
+
+        assert page.items == ["already", "shaped"]
+        assert page.next_cursor == "c1"
+
+    def test_empty_result_yields_no_items_and_no_cursor(self) -> None:
+        internal: CursorPage[int] = CursorPage(items=[], next_cursor=None)
+
+        page = Page.from_cursor_page(internal, _to_str)
+
+        assert page.items == []
+        assert page.next_cursor is None
+
+    def test_absent_cursor_stays_absent(self) -> None:
+        internal = CursorPage(items=[1], next_cursor=None)
+
+        page = Page.from_cursor_page(internal, _to_str)
+
+        assert page.next_cursor is None

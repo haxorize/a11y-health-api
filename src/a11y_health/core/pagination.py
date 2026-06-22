@@ -13,7 +13,7 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import cast, overload
 
 from pydantic import BaseModel
 from sqlalchemy import Row, Select, tuple_
@@ -36,15 +36,29 @@ class UnsupportedKeysetTypeError(Exception):
 _MAX_CURSOR_LENGTH = 512
 
 
-class Page[T](BaseModel):
-    items: list[T]
-    next_cursor: str | None = None
-
-
 @dataclass(frozen=True)
 class CursorPage[T]:
     items: list[T]
     next_cursor: str | None
+
+
+class Page[T](BaseModel):
+    items: list[T]
+    next_cursor: str | None = None
+
+    # `item` is omitted only where the internal items are already the public type —
+    # an `into` aggregate returning the Read model itself (e.g. PageMetricsRead).
+    @overload
+    @classmethod
+    def from_cursor_page[I](cls, page: CursorPage[I]) -> "Page[I]": ...
+    @overload
+    @classmethod
+    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> "Page[R]": ...
+    @classmethod
+    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> "Page[I] | Page[R]":
+        if item is None:
+            return Page(items=page.items, next_cursor=page.next_cursor)
+        return Page(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
 
 
 def encode_cursor(*values: int | str | datetime) -> str:

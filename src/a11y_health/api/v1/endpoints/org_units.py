@@ -38,7 +38,7 @@ async def list_org_unit_scores(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[ScoreSnapshotRead]:
     page = await score_service.list_org_unit_scores(db, org_unit_id, cursor=cursor, limit=limit)
-    return Page(items=[ScoreSnapshotRead.model_validate(s) for s in page.items], next_cursor=page.next_cursor)
+    return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 
 
 @router.get("/{org_unit_id}/ancestors")

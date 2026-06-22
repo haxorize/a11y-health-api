@@ -1,3 +1,12 @@
+"""The switchboard that decides which rollups fire after a change.
+
+Each `on_*` handler maps a domain event (scan run completed or deleted, app
+deleted or reassigned, org unit reparented) to the score computation and rollups
+it must trigger. The actual computation lives in `score_snapshot.py`.
+
+See `docs/architecture.md` ("What triggers a rollup") for the event-to-rollup table.
+"""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.scan_run import ScanRun

@@ -1,3 +1,14 @@
+"""The validated boundary for incoming axe DevTools JSON.
+
+All validation of an uploaded payload — structural and semantic (impact values,
+classification shape, WCAG criteria parsing) — happens here at the API edge, so
+services downstream receive a trusted `AxePayload` and never re-check raw dicts.
+Tag-vocabulary parsing is delegated to `_tag_parsing.py`.
+
+See `docs/architecture.md` ("The layers") and
+`docs/adr/0009-axe-payload-pydantic-boundary.md`.
+"""
+
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

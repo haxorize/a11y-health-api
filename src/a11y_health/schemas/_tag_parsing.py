@@ -1,3 +1,13 @@
+"""Parsing axe's open tag vocabulary into our domain enums.
+
+Maps a rule's raw `tags` list onto a Category, its WCAG Criteria, and its
+Classifications (WCAG version/level pairs or best-practice). Private to the
+schemas layer (`axe_payload.py` is the only caller); unknown WCAG-shaped tags are
+dropped rather than rejected, since the axe tag set is open-ended.
+
+See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
+"""
+
 import re
 from typing import Literal
 

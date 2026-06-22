@@ -45,6 +45,17 @@ See `DOMAIN.md` for canonical domain terms. Use those terms in code, comments, a
 
 See `docs/adr/` for recorded architectural decisions and their rationale. Consult before making choices that touch the same areas; respect existing decisions unless the user explicitly wants to revisit one.
 
+## Code documentation
+
+Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr/0018-documentation-strategy-prose-over-docstrings.md) for the why. The rules:
+
+- **Explain the non-obvious; never restate what types and names already say.** No `Args:`/`Returns:` blocks (the type hints carry that), no docstring on a module whose purpose is clear from its path. Docstrings, when written, are plain prose.
+- **Cross-cutting behavior and architecture go in [`docs/architecture.md`](docs/architecture.md)** (the layer model, scoring/rollup, scan-run lifecycle, pagination, contract pipeline, operating). `DOMAIN.md` stays a glossary.
+- **Module docstrings only on modules whose job isn't self-evident** (e.g. scoring, pagination, the axe boundary), and they point to the relevant `architecture.md` section rather than re-explaining it.
+- **Function docstrings only for a caller contract the signature can't express** — a precondition or a `Raises:` (see `paginate()`).
+
+No ruff `D` rules enforce this; it's judgment, applied here.
+
 ## Issue tracker
 
 - Tracker: GitHub

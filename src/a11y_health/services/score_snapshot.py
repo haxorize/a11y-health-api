@@ -1,3 +1,13 @@
+"""Score computation and rollups — the write side of scoring.
+
+Turns a completed Scan Run's findings into a Page Health per page, an App Score,
+and a Score Snapshot, then rolls those totals up to Org Units (hierarchical,
+cascading) and Brands (flat). The reading/listing side lives in `score.py`;
+the events that call in here live in `scoring_orchestration.py`.
+
+See `docs/architecture.md` ("The scoring & rollup model") for the full walk-through.
+"""
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime

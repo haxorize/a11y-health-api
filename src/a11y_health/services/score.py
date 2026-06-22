@@ -1,7 +1,8 @@
 """Reading Score Snapshots back out — the read side of scoring.
 
-Paginated history listings for an App, Org Unit, or Brand, newest first. The
-computation that produces these snapshots lives in `score_snapshot.py`.
+Paginated history listings for an App, Org Unit, or Brand, oldest first
+(ascending by `snapshot_at`). The computation that produces these snapshots lives
+in `score_snapshot.py`.
 
 See `docs/architecture.md` ("The scoring & rollup model").
 """

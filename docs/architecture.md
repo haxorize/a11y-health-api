@@ -53,8 +53,8 @@ rules; if you find logic in an endpoint, it belongs in a service.
 **Services** (`services/`) own everything that matters: queries, validation that
 needs the database, and the domain operations (scoring, rollups, status
 transitions). They take a session plus plain arguments and return ORM objects or
-a `CursorPage` — never HTTP types. This is what makes them reusable: the CLI
-(section 6) drives the same behavior over HTTP, and tests call services directly.
+a `CursorPage` — never HTTP types, so tests can call them directly without
+spinning up the web layer.
 
 **Models** (`models/`) are SQLAlchemy table definitions — the columns, types, and
 foreign keys. **Schemas** (`schemas/`) are Pydantic classes for request and
@@ -62,8 +62,8 @@ response bodies; they are *not* the database models, and keeping them separate i
 what lets the stored shape and the wire shape evolve independently.
 
 **`core/`** holds the cross-cutting machinery every layer leans on: `database.py`
-(engine, session, base classes), `pagination.py` (section 4), and `exceptions.py`
-(the domain error types).
+(engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)),
+and `exceptions.py` (the domain error types).
 
 ### How the database session and transactions work
 
@@ -196,10 +196,10 @@ A **Scan Run** is a small state machine (`services/scan_run.py`):
   409. Completed is terminal — there is no reopening.
 - The Pending → Completed transition is what **triggers scoring**: it calls
   `on_scan_run_completed`, which computes the app score and runs both rollups
-  (section 2).
+  (see [The scoring & rollup model](#2-the-scoring--rollup-model)).
 
 This is why ingestion is always "create run → add pages → complete run," in that
-order (section 6).
+order (see [Operating & debugging](#6-operating--debugging)).
 
 ---
 
@@ -276,7 +276,8 @@ Endpoint (`api/v1/endpoints/`) → service (`services/`) → model. A failing re
 surfaces as a JSON `{"detail": …}` body; the status code tells you which layer
 rejected it (404/409 = a domain exception from a service; 422 = the request body
 failed schema validation before any service ran). Map the status back through the
-table in section 1 to the exception, then grep for where that exception is raised.
+[exception→status table](#how-errors-become-http-status-codes) to the exception,
+then grep for where that exception is raised.
 
 ### Inspecting the data
 

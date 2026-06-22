@@ -1,3 +1,12 @@
+"""Database engine, session factory, and the ORM base classes.
+
+`get_db()` is the per-request session dependency: one transaction per request,
+committed on success and rolled back on any exception, so services never call
+`commit()` themselves.
+
+See `docs/architecture.md` ("How the database session and transactions work").
+"""
+
 import enum
 from collections.abc import AsyncIterator
 from datetime import datetime

@@ -1,3 +1,13 @@
+"""Keyset (cursor) pagination shared by every list endpoint.
+
+`paginate()` is the single deep entry point: callers hand it a filtered query and
+the keyset columns, and it owns cursor decode/encode, ordering, the `limit + 1`
+has-more probe, and slicing. No list service rolls its own paging.
+
+See `docs/architecture.md` ("Pagination") for the model and
+`docs/adr/0017-keyset-pagination-deep-module.md` for why it's one module.
+"""
+
 import base64
 import json
 from collections.abc import Callable, Sequence
@@ -82,8 +92,6 @@ def _coerce(attr: InstrumentedAttribute, raw: object) -> object:
     raise UnsupportedKeysetTypeError(python_type)
 
 
-# Keyset columns must be NOT NULL: a NULL makes the row-value `>` comparison
-# return NULL, silently dropping rows. All current keysets are PKs or NOT NULL.
 async def paginate[T](
     session: AsyncSession,
     stmt: Select,
@@ -93,6 +101,18 @@ async def paginate[T](
     limit: int,
     into: Callable[[Row], T] | None = None,
 ) -> CursorPage[T]:
+    """Apply keyset pagination to `stmt`, returning one page and the next cursor.
+
+    Caller contract not captured by the types:
+    - `keyset` columns must be NOT NULL — a NULL makes the row-value `>` comparison
+      return NULL and silently drops rows. Use primary keys or NOT NULL columns.
+    - each keyset column's owning entity must appear in the result row (true for
+      `select(Entity)` and `select(Entity, agg, ...)`); a bare scalar keyset column
+      raises rather than mis-paging.
+
+    Raises `InvalidCursorError` on a malformed cursor (handled as 400) and
+    `UnsupportedKeysetTypeError` if a keyset column's type isn't int/datetime/str.
+    """
     if cursor is not None:
         decoded = decode_cursor(cursor, expected=len(keyset))
         try:

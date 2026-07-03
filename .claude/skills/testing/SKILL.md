@@ -193,3 +193,4 @@ See [references/test-recipes.md](references/test-recipes.md) for coverage and ru
 - **Don't catch exceptions in tests** — use `pytest.raises(ExceptionType)`; bare `try/except` swallows real failures.
 - **Don't let real network or DB calls leak into "unit" tests** — mock the seam or use the transactional `db_session`.
 - **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation.
+- **Don't `asyncio.sleep()` to wait for state** — poll the condition with a deadline (loop: check, short sleep, re-check, fail past timeout) and assert what you waited *for*; a fixed sleep is either too slow or flaky. Fixed sleeps are legitimate only when elapsed time is itself the behavior under test (e.g., TTL expiry).

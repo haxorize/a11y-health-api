@@ -136,6 +136,7 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
   q = select(ScanRun).where(ScanRun.id > cursor).order_by(ScanRun.id).limit(limit)
   ```
   Multi-column sort: the cursor must include all sort columns — `WHERE (created_at, id) > (:cursor_ts, :cursor_id)` ordered by `(created_at, id)`
+- **AsyncSession isn't concurrent-safe**: never `asyncio.gather` (or otherwise interleave) operations on a shared session — concurrent use deadlocks or corrupts state. One session per concurrent task
 - **Short transactions**: never `await` HTTP or external I/O inside an open transaction. Locks held during I/O serialize unrelated requests and pin connections from the async pool. Do the I/O first, then open the transaction for the write
 
 ## Alembic migrations

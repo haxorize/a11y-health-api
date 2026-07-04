@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | **Org Unit** | A node in the organizational hierarchy (company, division, team, etc.) with an optional parent. | Organization, team, department, group, dimension |
 | **App** | A web application whose accessibility is tracked, owned by an **Org Unit**. | Property, site, project, product |
-| **Slug** | A unique, URL-friendly identifier for an **App**, derived from the `name` field in the axe DevTools JSON at **Ingest** or **Import** time. | Key, code, handle |
+| **Slug** | A unique, URL-friendly identifier for an **App**, derived server-side from the name at **App** creation — folded to lowercase ASCII with words joined by hyphens — never chosen by an operator and immutable thereafter. Distinct names that derive to the same **Slug** collide loudly at creation rather than silently sharing an **App**. | Key, code, handle |
 | **Brand** | A commercial brand (Humana, CenterWell, Go365, CarePlus, Reliance) that owns one or more **Apps**, stored as a first-class entity with its own table. | Label, product line |
 
 ## Scanning & Ingestion

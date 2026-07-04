@@ -16,7 +16,7 @@
 | **Scan Run** | A single test execution across one or more pages of an **App**. The timestamp reflects when the scan was performed (from test data), not when it was uploaded. | Test run, scan, batch, execution, report |
 | **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending** (accepting **Page Results**) or **Completed** (finalized, triggers scoring). Only the forward transition Pending → Completed is valid. | State, phase, stage |
 | **Page Result** | The outcome of scanning a single URL within a **Scan Run**, including raw JSON, health category, and summary counts. | Page scan, page report, test result |
-| **Raw JSON** | The full axe DevTools JSON payload preserved as JSONB on a **Page Result** for reprocessing and debugging. | Payload, source data |
+| **Raw JSON** | The full axe DevTools JSON payload preserved as JSONB on a **Page Result** for reprocessing and debugging — stored exactly as uploaded (including fields the ingestion schema doesn't model) and never rewritten or re-serialized. | Payload, source data |
 | **Ingest** | A CLI operation that uploads a single scan directory as a **Scan Run** to an existing **App**, resolving the **App** by the JSON `name` field. | Upload, push |
 | **Import** | A CLI operation that onboards an **App** along with its historical scan directories, creating the **App** from the JSON `name` field if it doesn't exist. Each `YYYY-MM-DD/` subdirectory becomes a **Scan Run**. | Bulk Import, batch upload, mass import |
 

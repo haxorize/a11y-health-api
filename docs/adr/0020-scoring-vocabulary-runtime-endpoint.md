@@ -1,0 +1,48 @@
+# Scoring Vocabulary is one module, served over a runtime endpoint
+
+The contract already carries the Impact and Page Health *value sets* (both are
+enum components in the OpenAPI document), but their *meaning* — which health is
+worse, how each health weighs into a Score, which Impact produces which Page
+Health — lived only in three private lookup tables inside the scoring engine,
+one of them named with the banned "severity" alias. A UI legend, sort order, or
+"how is this score computed?" explainer would have to hard-code duplicates that
+can silently drift from the server.
+
+Decided: extract a **Scoring Vocabulary** module — pure, in-process, the single
+source of the health ordering (worst → best, with rank derived from position),
+the health weights, and a **total** Impact → Page Health mapping (`minor →
+good` stated explicitly, so no consumer needs an "unmapped means good" default
+rule and the completeness test is exact: mapping keys equal the Impact
+members). The scoring engine imports it. It crosses the contract seam through a
+read-only vocabulary endpoint that reports the **deployed server's** vocabulary
+— the values are deploy-static, so the response is cacheable forever
+client-side, and it declares no domain error modes (composes with the error
+contract planned in #73). The endpoint rides the existing contract pipeline
+(spec → generated types → Zod → query options) with zero custom plumbing.
+
+Considered and rejected:
+
+- **Build-time artifact through the codegen pipeline** (vocabulary values
+  embedded in the committed spec or a sibling JSON, turned into generated
+  constants): the generator does not consume extension values natively, so this
+  needs a second, parallel codegen channel for one payload — and a stale UI
+  build would silently display outdated weights next to server-computed
+  scores. The runtime endpoint cannot lie about the deployed server.
+- **Module-only, defer exposure until a UI screen needs it**: purest YAGNI, but
+  the first scoring screen would then become a mid-feature two-repo contract
+  change; the endpoint is trivial once the module exists and its payload is
+  the module's already-tested truth.
+- **Enum declaration order as the ordering contract, weights documented only in
+  prose**: ordering-by-side-effect breaks the first time someone reorders an
+  enum for readability, and doc-only weights are exactly the drift this
+  decision exists to close.
+- **Per-snapshot vocabulary stamping / versioning** (record the weights each
+  Score Snapshot was computed under): schema, migration, and contract surface
+  for a weight change that has never happened. Changing the weights is a
+  *rescoring* event, not a display event — that future change owns the history
+  problem, and this rejection is the recorded reason the endpoint is
+  current-only.
+- **Partial mapping with a default rule** (keep the three-entry Impact map,
+  document "absent means good"): the default is a second fact every consumer
+  must know, and a new Impact member would silently score as good instead of
+  failing a completeness test.

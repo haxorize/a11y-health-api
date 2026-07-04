@@ -45,6 +45,13 @@
 | **Rollup** | The recomputation of aggregate scores as the arithmetic mean of children's latest **Score Snapshots**. Two forms: **Org Unit Rollup** (hierarchical, cascades up the tree) and **Brand Rollup** (flat, aggregates all **Apps** for a **Brand**). Triggered by any event that changes an **App**'s latest **Score Snapshot**: **Scan Run** completion, **Scan Run** deletion, **App** deletion, **App** reassignment to a different **Org Unit**, or **Org Unit** reparenting. | Aggregation, roll-up, propagation |
 | **Brand Rollup** | A flat aggregation of the latest **Score Snapshots** across all **Apps** belonging to a **Brand**, regardless of **Org Unit** placement. Does not cascade. | Brand aggregation, brand scoring |
 
+## API Contract
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Error Contract** | The declared set of error modes each API operation can produce — status code, **Error Code**, and human-readable message — derived from a single table so runtime behavior, handler registration, and the OpenAPI document cannot drift apart. Request-shape violations use the framework's standard 422; well-formed requests that fail domain validation return 400 with a coded body. | Error handling, error mapping, exception mapping |
+| **Error Code** | A machine-readable identifier for one domain error mode, drawn from a closed vocabulary declared in the **Error Contract** (exactly one code per mode). The UI narrows on it instead of parsing message text. | Error type, error name, reason code |
+
 ## Relationships
 
 - An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**

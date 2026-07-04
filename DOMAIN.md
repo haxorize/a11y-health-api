@@ -52,6 +52,7 @@
 | --- | --- | --- |
 | **Error Contract** | The declared set of error modes each API operation can produce — status code, **Error Code**, and human-readable message — derived from a single table so runtime behavior, handler registration, and the OpenAPI document cannot drift apart. Request-shape violations use the framework's standard 422; well-formed requests that fail domain validation return 400 with a coded body. | Error handling, error mapping, exception mapping |
 | **Error Code** | A machine-readable identifier for one domain error mode, drawn from a closed vocabulary declared in the **Error Contract** (exactly one code per mode). The UI narrows on it instead of parsing message text. | Error type, error name, reason code |
+| **Existence Guard** | The single check that a referenced entity exists before an operation proceeds, raising the not-found error mode from one module with the entity's canonical label — so an absent **App**, **Brand**, **Org Unit**, **Scan Run**, or **Rule Finding** always fails the same way, and no service imports another service just to ask "does it exist?". | Get-or-404, existence check, lookup guard |
 
 ## Relationships
 

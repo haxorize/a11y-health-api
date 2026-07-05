@@ -71,9 +71,15 @@ jobs:
         with:
           python-version: "3.13"
       - name: Migration roundtrip
+        # Roundtrips to the newest irreversible migration, not base — its
+        # downgrade() raises by design (48770eba4885, the one-time slug
+        # rederivation; ADR 0019). Bump the floor when a new irreversible
+        # migration lands; everything above it must stay reversible.
+        env:
+          DOWNGRADE_FLOOR: "48770eba4885"
         run: |
           uv run alembic upgrade head
-          uv run alembic downgrade base
+          uv run alembic downgrade "$DOWNGRADE_FLOOR"
           uv run alembic upgrade head
       - name: Check for model/migration drift
         run: |

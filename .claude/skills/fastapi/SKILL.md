@@ -33,7 +33,7 @@ src/a11y_health/
 4. **Endpoint** in `api/v1/endpoints/<resource>.py` — thin router delegating to service
 5. **Register** router in `api/v1/router.py`
 6. **Re-export** model in `models/__init__.py`
-7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify with `alembic downgrade base && alembic upgrade head`
+7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify with `alembic downgrade <floor> && alembic upgrade head` (the floor is the newest irreversible migration — see the database skill)
 
 ## Endpoints
 

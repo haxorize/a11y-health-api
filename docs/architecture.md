@@ -122,20 +122,32 @@ This is the heart of the system and the part worth reading slowly. The code live
 in `services/score_snapshot.py`. Terms: **Page Health**, **Score**, **Score
 Snapshot**, **Rollup** — all in `DOMAIN.md`.
 
+The *meaning* behind the scoring value sets — the health ordering (worst → best,
+each health's rank derived from its position), the health weights, and the total
+Impact → Page Health mapping — has one home: the **Scoring Vocabulary** module,
+`services/_scoring_vocabulary.py`. The scoring engine imports it, and
+`GET /scoring-vocabulary` serves the deployed server's copy so no client
+hard-codes it ([ADR 0020](adr/0020-scoring-vocabulary-runtime-endpoint.md)). The
+tables and weights quoted below are illustrations of that vocabulary, not a
+second authority.
+
 ### Step 1 — each page gets a Page Health
 
 A **Page Result**'s health is decided by the **worst Impact** among its
 **Violation** findings. **Incompletes never count** — they are stored for manual
 review but excluded from every score
-([ADR 0006](adr/0006-incompletes-excluded-from-score.md)). The impact-to-health
-map is intentionally lossy:
+([ADR 0006](adr/0006-incompletes-excluded-from-score.md)). The vocabulary's
+Impact → Page Health mapping is intentionally lossy — and **total**: every
+Impact maps explicitly, so there is no "unmapped means Good" default. A page
+with no violations at all is Good; that empty case is the engine's, not the
+mapping's.
 
 | Worst violation impact | Page Health |
 | --- | --- |
 | critical | Critical |
 | serious | Serious |
 | moderate | Fair |
-| minor, or no violations | Good |
+| minor | Good |
 
 Page Health uses different words from Impact on purpose, so "the page is Fair" is
 never confused with "an issue is moderate" —
@@ -143,8 +155,9 @@ never confused with "an issue is moderate" —
 
 ### Step 2 — the app's Score is a weighted average of its pages
 
-Each Page Health carries a weight: **Critical = 0, Serious = 0.4, Fair = 0.8,
-Good = 1.0**. The **Score** is the mean of those weights across all pages:
+Each Page Health carries a weight in the vocabulary — currently **Critical = 0,
+Serious = 0.4, Fair = 0.8, Good = 1.0**. The **Score** is the mean of those
+weights across all pages:
 
 ```
 score = (0·critical_pages + 0.4·serious_pages + 0.8·fair_pages + 1.0·good_pages) / total_pages

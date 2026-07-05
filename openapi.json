@@ -999,6 +999,44 @@
         "title": "ScoreSnapshotRead",
         "type": "object"
       },
+      "ScoringVocabularyRead": {
+        "properties": {
+          "impact_to_page_health": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PageHealth"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Impact"
+            },
+            "title": "Impact To Page Health",
+            "type": "object"
+          },
+          "page_health_ordering": {
+            "items": {
+              "$ref": "#/components/schemas/PageHealth"
+            },
+            "title": "Page Health Ordering",
+            "type": "array"
+          },
+          "page_health_weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PageHealth"
+            },
+            "title": "Page Health Weights",
+            "type": "object"
+          }
+        },
+        "required": [
+          "page_health_ordering",
+          "page_health_weights",
+          "impact_to_page_health"
+        ],
+        "title": "ScoringVocabularyRead",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3056,6 +3094,27 @@
         "summary": "Get Scan Run Summary",
         "tags": [
           "scan-runs"
+        ]
+      }
+    },
+    "/api/v1/scoring-vocabulary": {
+      "get": {
+        "operationId": "get_scoring_vocabulary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringVocabularyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scoring Vocabulary",
+        "tags": [
+          "scoring-vocabulary"
         ]
       }
     }

@@ -23,26 +23,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-
-_IMPACT_TO_PAGE_HEALTH: dict[Impact, PageHealth] = {
-    Impact.CRITICAL: PageHealth.CRITICAL,
-    Impact.SERIOUS: PageHealth.SERIOUS,
-    Impact.MODERATE: PageHealth.FAIR,
-}
-
-_PAGE_HEALTH_SEVERITY: dict[PageHealth, int] = {
-    PageHealth.CRITICAL: 0,
-    PageHealth.SERIOUS: 1,
-    PageHealth.FAIR: 2,
-    PageHealth.GOOD: 3,
-}
-
-_PAGE_HEALTH_WEIGHT: dict[PageHealth, float] = {
-    PageHealth.CRITICAL: 0.0,
-    PageHealth.SERIOUS: 0.4,
-    PageHealth.FAIR: 0.8,
-    PageHealth.GOOD: 1.0,
-}
+from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -62,16 +43,10 @@ class AppScoreResult:
 def compute_page_health(impacts: list[Impact]) -> PageHealth:
     if not impacts:
         return PageHealth.GOOD
-    worst = PageHealth.GOOD
-    for impact in impacts:
-        health = _IMPACT_TO_PAGE_HEALTH.get(impact)
-        if health is None:
-            continue
-        if _PAGE_HEALTH_SEVERITY[health] < _PAGE_HEALTH_SEVERITY[worst]:
-            worst = health
-            if worst == PageHealth.CRITICAL:
-                break
-    return worst
+    return min(
+        (scoring_vocabulary.IMPACT_TO_PAGE_HEALTH[impact] for impact in impacts),
+        key=lambda health: scoring_vocabulary.PAGE_HEALTH_RANK[health],
+    )
 
 
 def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, list[Impact]]) -> AppScoreResult:
@@ -86,7 +61,7 @@ def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, 
         impacts = violations_by_page.get(page_id, [])
         health = compute_page_health(impacts)
         page_healths[page_id] = health
-        weighted_sum += _PAGE_HEALTH_WEIGHT[health]
+        weighted_sum += scoring_vocabulary.PAGE_HEALTH_WEIGHT[health]
 
         violation_count = len(impacts)
         total_violations += violation_count

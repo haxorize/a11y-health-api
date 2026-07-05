@@ -3,6 +3,8 @@
 Pick by app state:
 - `a11y import <dir> --org-unit-id <id> --brand-id <id>` onboards a new app from a
   directory of YYYY-MM-DD subdirectories. Creates the app if missing, reuses if not.
+  `--name` sets the display name at creation (must be derivation-equivalent to the
+  axe JSON name; identity is locked once created).
 - `a11y ingest <dir>` uploads a single scan to an existing app. Errors with a pointer
   to `import` if the app isn't registered.
 """
@@ -18,6 +20,7 @@ from pathlib import Path
 
 import httpx
 
+from a11y_health.core.slug import derive_slug
 from a11y_health.models.enums import ScanRunStatus
 
 ProgressCallback = Callable[[str], None]
@@ -76,11 +79,23 @@ def _load_scan(directory: Path) -> LoadedScan:
 
 
 class AppNotFoundError(Exception):
-    def __init__(self, slug: str) -> None:
+    def __init__(self, name: str, slug: str) -> None:
+        self.name = name
         self.slug = slug
         super().__init__(
-            f"App with slug {slug!r} not found. "
+            f"App with slug {slug!r} (derived from axe JSON name {name!r}) not found. "
             "Run `a11y import <dir> --org-unit-id <id> --brand-id <id>` to onboard a new app."
+        )
+
+
+class NameOverrideMismatchError(Exception):
+    def __init__(self, *, name: str, json_name: str) -> None:
+        self.name = name
+        self.json_name = json_name
+        super().__init__(
+            f"--name {name!r} derives to slug {derive_slug(name)!r}, but the axe JSON name {json_name!r} "
+            f"derives to {derive_slug(json_name)!r}. The override must derive to the same slug, "
+            "or future imports of this directory would resolve to a different App."
         )
 
 
@@ -197,11 +212,12 @@ async def ingest(
     scan = _load_scan(directory)
     on_progress(f"Found {len(scan.files)} JSON files in {directory}")
 
-    slug = _resolve_app_name([scan])
+    name = _resolve_app_name([scan])
+    slug = derive_slug(name)
 
     resp = await client.get(f"{api_prefix}/apps/slug/{slug}")
     if resp.status_code == 404:
-        raise AppNotFoundError(slug)
+        raise AppNotFoundError(name, slug)
     resp.raise_for_status()
     app_id = resp.json()["id"]
     on_progress(f"Resolved app '{slug}' (id={app_id})")
@@ -230,6 +246,7 @@ async def import_app(
     directory: Path,
     org_unit_id: int,
     brand_id: int,
+    name: str | None = None,
     api_prefix: str = "/api/v1",
     on_progress: ProgressCallback = _noop,
 ) -> ImportResult:
@@ -240,13 +257,18 @@ async def import_app(
         on_progress(f"Skipping non-date entries: {', '.join(e.name for e in skipped)}")
 
     scans = [_load_scan(d) for d in date_dirs]
-    slug = _resolve_app_name(scans)
+    json_name = _resolve_app_name(scans)
+    slug = derive_slug(json_name)
 
     resp = await client.get(f"{api_prefix}/apps/slug/{slug}")
     if resp.status_code == 404:
+        # Equivalence is only enforced when the override actually names the App;
+        # on an existing App the override is ignored below, mismatched or not (AC10).
+        if name is not None and derive_slug(name) != slug:
+            raise NameOverrideMismatchError(name=name, json_name=json_name)
         resp = await client.post(
             f"{api_prefix}/apps",
-            json={"name": slug, "slug": slug, "brand_id": brand_id, "org_unit_id": org_unit_id},
+            json={"name": name or json_name, "brand_id": brand_id, "org_unit_id": org_unit_id},
         )
         resp.raise_for_status()
         app_id = resp.json()["id"]
@@ -254,9 +276,15 @@ async def import_app(
         on_progress(f"Created app '{slug}' (id={app_id})")
     else:
         resp.raise_for_status()
-        app_id = resp.json()["id"]
+        existing = resp.json()
+        app_id = existing["id"]
         app_created = False
         on_progress(f"Found existing app '{slug}' (id={app_id})")
+        if name is not None and name != existing["name"]:
+            on_progress(
+                f"--name {name!r} ignored: identity is locked at creation and the app "
+                f"already exists as {existing['name']!r}"
+            )
 
     ingest_results: list[IngestResult] = []
     for scan in scans:
@@ -287,6 +315,11 @@ def main() -> None:
     import_parser.add_argument("directory", type=Path, help="App directory containing YYYY-MM-DD subdirectories")
     import_parser.add_argument("--org-unit-id", type=int, required=True, help="Org unit ID for the onboarded app")
     import_parser.add_argument("--brand-id", type=int, required=True, help="Brand ID for the onboarded app")
+    import_parser.add_argument(
+        "--name",
+        default=None,
+        help="Display name for the app on first import; must derive to the same slug as the axe JSON name",
+    )
     import_parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
 
     args = parser.parse_args()
@@ -312,6 +345,7 @@ def main() -> None:
                     directory=args.directory,
                     org_unit_id=args.org_unit_id,
                     brand_id=args.brand_id,
+                    name=args.name,
                     on_progress=print,
                 )
 

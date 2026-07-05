@@ -19,7 +19,7 @@
 | **Raw JSON** | The full axe DevTools JSON preserved as JSONB on a **Page Result** for reprocessing and debugging — stored exactly as uploaded (including fields the ingestion schema doesn't model) and never rewritten or re-serialized. | Payload (unqualified), source data |
 | **Axe Payload** | The axe DevTools JSON document uploaded for one page, validated at the ingest boundary by the `AxePayload` schema. A well-formed request whose axe payload fails that validation is the `invalid_axe_payload` error mode (400). Say **Axe Payload** for the document being validated, **Raw JSON** for the preserved copy; "payload" alone stays banned. | Payload (unqualified), upload, scan JSON |
 | **Ingest** | A CLI operation that uploads a single scan directory as a **Scan Run** to an existing **App**, resolving the **App** by the JSON `name` field. | Upload, push |
-| **Import** | A CLI operation that onboards an **App** along with its historical scan directories, creating the **App** from the JSON `name` field if it doesn't exist. Each `YYYY-MM-DD/` subdirectory becomes a **Scan Run**. | Bulk Import, batch upload, mass import |
+| **Import** | A CLI operation that onboards an **App** along with its historical scan directories, creating the **App** from the JSON `name` field if it doesn't exist. An operator-supplied display name may stand in for the JSON `name` at creation only when it derives to the same **Slug**; against an existing **App** it is ignored with a warning. Each `YYYY-MM-DD/` subdirectory becomes a **Scan Run**. | Bulk Import, batch upload, mass import |
 
 ## Findings & Rules
 
@@ -62,7 +62,7 @@
 - An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**
 - An **Org Unit** owns zero or more **Apps**
 - A **Brand** has zero or more **Apps**
-- An **App** has exactly one **Brand** and one **Slug** (immutable after creation)
+- An **App** has exactly one **Brand** and one **Slug** (name and **Slug** immutable after creation)
 - An **App** has zero or more **Scan Runs**
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**
 - A **Page Result** has zero or more **Rule Findings** and exactly one **Page Health**

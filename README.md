@@ -46,18 +46,24 @@ make clean
 
 ## CLI
 
-Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by the `name` field in the axe DevTools JSON:
+Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by deriving its **Slug** from the `name` field in the axe DevTools JSON (lowercase ASCII, words joined by hyphens, accents folded — e.g. `My App (Prod)` → `my-app-prod`):
 
 ```sh
 uv run a11y ingest <directory>
 uv run a11y ingest ./scans/humana.com/2026-03-30 --base-url http://localhost:8000
 ```
 
-Onboard a new **App** from a directory of `YYYY-MM-DD/` subdirectories (auto-creates the app on first import). The `name` field in the JSON is used for both `name` and `slug`:
+Onboard a new **App** from a directory of `YYYY-MM-DD/` subdirectories (auto-creates the app on first import). The JSON `name` field becomes the App's `name`, and the server derives the `slug` from it — the same derivation the CLI uses to resolve existing Apps, so re-importing the same directory always lands on the same App:
 
 ```sh
 uv run a11y import <directory> --org-unit-id <id> --brand-id <id>
 uv run a11y import ./scans/humana.com --org-unit-id 1 --brand-id 1
+```
+
+Pass `--name` to choose the App's display name at creation (identity is locked afterward — there is no rename). The override must derive to the same slug as the JSON `name`, so it can prettify casing and punctuation but never change which App the scans resolve to:
+
+```sh
+uv run a11y import ./scans/humana.com --org-unit-id 1 --brand-id 1 --name "Humana.com"
 ```
 
 ## Migrations

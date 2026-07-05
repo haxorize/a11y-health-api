@@ -1,19 +1,25 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from a11y_health.core.slug import derive_slug
 
 __all__ = ["AppCreate", "AppRead", "AppUpdate"]
 
 
 class AppCreate(BaseModel):
     name: str = Field(max_length=255)
-    slug: str = Field(max_length=255)
     brand_id: int
     org_unit_id: int
 
+    @field_validator("name")
+    @classmethod
+    def name_must_be_derivable(cls, name: str) -> str:
+        derive_slug(name)  # raises ValueError → framework 422 (request-shape, ADR 0009)
+        return name
+
 
 class AppUpdate(BaseModel):
-    name: str | None = Field(default=None, max_length=255)
     org_unit_id: int | None = None
 
 

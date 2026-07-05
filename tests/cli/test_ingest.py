@@ -15,7 +15,7 @@ from tests.factories import make_app_with_org_unit, make_axe_payload
 async def test_ingest_creates_completed_scan_run_for_existing_app(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
-    test_app = await make_app_with_org_unit(db_session, slug="foo.com")
+    test_app = await make_app_with_org_unit(db_session, slug="foo-com")
 
     for i, url in enumerate(["https://example.com/page1", "https://example.com/page2"]):
         payload = make_axe_payload(name="foo.com", url=url)
@@ -25,7 +25,7 @@ async def test_ingest_creates_completed_scan_run_for_existing_app(
     result = await ingest(db_client, directory=tmp_path)
 
     assert result.app_id == test_app.id
-    assert result.app_slug == "foo.com"
+    assert result.app_slug == "foo-com"
 
     resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
     assert resp.status_code == 200
@@ -59,7 +59,7 @@ async def test_ingest_missing_or_empty_name_hard_fails(db_client: AsyncClient, t
 async def test_ingest_name_mismatch_hard_fails_before_network_call(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
-    await make_app_with_org_unit(db_session, slug="foo.com")
+    await make_app_with_org_unit(db_session, slug="foo-com")
 
     foo = make_axe_payload(name="foo.com", url="https://example.com/a")
     foo["endTime"] = "2026-03-30T11:55:52-0400"
@@ -76,7 +76,7 @@ async def test_ingest_name_mismatch_hard_fails_before_network_call(
     assert "foo.com" in message
     assert "bar.com" in message
 
-    resp = await db_client.get("/api/v1/apps/slug/foo.com")
+    resp = await db_client.get("/api/v1/apps/slug/foo-com")
     assert resp.json()["id"]
     resp = await db_client.get(f"/api/v1/apps/{resp.json()['id']}/scan-runs")
     assert resp.json()["items"] == []
@@ -95,6 +95,15 @@ async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClie
     assert "a11y import" in message
 
 
+async def test_ingest_name_deriving_to_empty_slug_fails_loudly(db_client: AsyncClient, tmp_path: Path) -> None:
+    payload = make_axe_payload(name="!!!", url="https://example.com/a")
+    payload["endTime"] = "2026-03-30T11:55:52-0400"
+    (tmp_path / "a.json").write_text(json.dumps(payload))
+
+    with pytest.raises(ValueError, match="empty slug"):
+        await ingest(db_client, directory=tmp_path)
+
+
 async def test_ingest_missing_directory_raises(db_client: AsyncClient, tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
 
@@ -110,7 +119,7 @@ async def test_ingest_empty_directory_raises(db_client: AsyncClient, tmp_path: P
 async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
-    await make_app_with_org_unit(db_session, slug="foo.com")
+    await make_app_with_org_unit(db_session, slug="foo-com")
 
     payload = make_axe_payload(name="foo.com", url="https://example.com/a")
     payload.pop("endTime", None)
@@ -130,7 +139,7 @@ async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
 async def test_ingest_records_per_page_upload_failures(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
-    await make_app_with_org_unit(db_session, slug="foo.com")
+    await make_app_with_org_unit(db_session, slug="foo-com")
 
     good = make_axe_payload(name="foo.com", url="https://example.com/a")
     good["endTime"] = "2026-03-30T11:55:52-0400"
@@ -150,7 +159,7 @@ async def test_ingest_records_per_page_upload_failures(
 async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
-    test_app = await make_app_with_org_unit(db_session, slug="foo.com")
+    test_app = await make_app_with_org_unit(db_session, slug="foo-com")
 
     for i in range(2):
         payload = make_axe_payload(name="foo.com", url=f"https://example.com/page{i}")
@@ -161,7 +170,7 @@ async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
     result = await ingest(db_client, directory=tmp_path, on_progress=messages.append)
 
     first_upload = next(i for i, m in enumerate(messages) if "page0.json" in m and "Upload" in m)
-    resolved_idx = next(i for i, m in enumerate(messages) if "foo.com" in m and str(test_app.id) in m)
+    resolved_idx = next(i for i, m in enumerate(messages) if "foo-com" in m and str(test_app.id) in m)
     scan_run_idx = next(i for i, m in enumerate(messages) if str(result.scan_run_id) in m)
 
     assert resolved_idx < first_upload

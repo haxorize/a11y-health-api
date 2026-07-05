@@ -44,3 +44,15 @@ at creation rather than silently sharing an App — accepted, in the spirit of
 0010's "collisions surface rather than silently rebind." Renaming an App is no
 longer possible through the API; if a display name ever needs to vary from
 identity, that is a new, separately-decided field.
+
+**Amended 2026-07-05 (story #74, AC10):** Import takes an optional
+operator-supplied display name, applied only when it creates the App and only
+when it derives to the same slug as the axe JSON `name` (a mismatch fails
+loudly before anything is created); against an existing App it is ignored with
+a warning. The App's name and the Raw JSON `name` may therefore differ in
+presentation (casing, punctuation) but never in identity — the invariant held
+by construction is precisely `slug == derive(name) == derive(raw JSON name)`,
+with both identity fields still fixed at creation and rename still impossible.
+This is not the "separately-decided display-name field" above: the override
+cannot vary from identity, only prettify within its derivation-equivalence
+class.

@@ -9,14 +9,14 @@ from a11y_health.services import app as app_service
 from tests.factories import make_app, make_brand, make_org_unit
 
 
-async def test_create_app(db_session: AsyncSession) -> None:
+async def test_create_app_derives_slug_from_name(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session, name="Humana")
     app = await app_service.create_app(
-        db_session, AppCreate(name="MyApp", slug="my-app", brand_id=brand.id, org_unit_id=org_unit.id)
+        db_session, AppCreate(name="My App (Prod)", brand_id=brand.id, org_unit_id=org_unit.id)
     )
-    assert app.name == "MyApp"
-    assert app.slug == "my-app"
+    assert app.name == "My App (Prod)"
+    assert app.slug == "my-app-prod"
     assert app.brand_id == brand.id
     assert app.org_unit_id == org_unit.id
     assert app.id is not None
@@ -25,26 +25,24 @@ async def test_create_app(db_session: AsyncSession) -> None:
 async def test_create_app_invalid_brand(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     with pytest.raises(NotFoundError, match="Brand"):
-        await app_service.create_app(
-            db_session, AppCreate(name="MyApp", slug="my-app", brand_id=999999, org_unit_id=org_unit.id)
-        )
+        await app_service.create_app(db_session, AppCreate(name="MyApp", brand_id=999999, org_unit_id=org_unit.id))
 
 
 async def test_create_app_invalid_org_unit(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     with pytest.raises(NotFoundError, match="Org unit"):
-        await app_service.create_app(
-            db_session, AppCreate(name="MyApp", slug="my-app", brand_id=brand.id, org_unit_id=999999)
-        )
+        await app_service.create_app(db_session, AppCreate(name="MyApp", brand_id=brand.id, org_unit_id=999999))
 
 
-async def test_create_app_duplicate_slug(db_session: AsyncSession) -> None:
+async def test_create_app_distinct_names_colliding_slug_conflict(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
-    await make_app(db_session, slug="taken", brand_id=brand.id, org_unit_id=org_unit.id)
-    with pytest.raises(DuplicateSlugError, match="taken"):
+    await app_service.create_app(
+        db_session, AppCreate(name="My App (Prod)", brand_id=brand.id, org_unit_id=org_unit.id)
+    )
+    with pytest.raises(DuplicateSlugError, match="my-app-prod"):
         await app_service.create_app(
-            db_session, AppCreate(name="Another", slug="taken", brand_id=brand.id, org_unit_id=org_unit.id)
+            db_session, AppCreate(name="my app PROD!", brand_id=brand.id, org_unit_id=org_unit.id)
         )
 
 
@@ -175,18 +173,10 @@ async def test_list_apps_combined_brand_and_org_unit(db_session: AsyncSession) -
     assert page.items[0].slug == "match"
 
 
-async def test_update_app(db_session: AsyncSession) -> None:
-    org_unit = await make_org_unit(db_session)
-    brand = await make_brand(db_session)
-    created = await make_app(db_session, name="Old Name", brand_id=brand.id, org_unit_id=org_unit.id)
-    updated = await app_service.update_app(db_session, created.id, AppUpdate(name="New Name"))
-    assert updated.name == "New Name"
-    assert updated.id == created.id
-
-
 async def test_update_app_not_found(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session)
     with pytest.raises(NotFoundError, match="App"):
-        await app_service.update_app(db_session, 999999, AppUpdate(name="Ghost"))
+        await app_service.update_app(db_session, 999999, AppUpdate(org_unit_id=org_unit.id))
 
 
 async def test_delete_app(db_session: AsyncSession) -> None:
@@ -212,15 +202,6 @@ async def test_update_app_same_org_unit_no_rollup(db_session: AsyncSession) -> N
     org_unit = await make_org_unit(db_session)
     app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
     await app_service.update_app(db_session, app.id, AppUpdate(org_unit_id=org_unit.id))
-    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
-    assert result.scalar_one_or_none() is None
-
-
-async def test_update_app_name_only_no_rollup(db_session: AsyncSession) -> None:
-    brand = await make_brand(db_session)
-    org_unit = await make_org_unit(db_session)
-    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
-    await app_service.update_app(db_session, app.id, AppUpdate(name="Renamed"))
     result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
     assert result.scalar_one_or_none() is None
 

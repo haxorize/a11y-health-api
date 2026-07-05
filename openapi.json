@@ -15,16 +15,10 @@
           "org_unit_id": {
             "title": "Org Unit Id",
             "type": "integer"
-          },
-          "slug": {
-            "maxLength": 255,
-            "title": "Slug",
-            "type": "string"
           }
         },
         "required": [
           "name",
-          "slug",
           "brand_id",
           "org_unit_id"
         ],
@@ -78,18 +72,6 @@
       },
       "AppUpdate": {
         "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
           "org_unit_id": {
             "anyOf": [
               {

@@ -44,22 +44,27 @@ def test_main_ingest_exits_when_uploads_fail(monkeypatch: pytest.MonkeyPatch, tm
 def test_main_import_dispatches_to_import_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    async def fake_import(_client, *, directory, org_unit_id, brand_id, on_progress):
+    async def fake_import(_client, *, directory, org_unit_id, brand_id, name, on_progress):
         captured["directory"] = directory
         captured["org_unit_id"] = org_unit_id
         captured["brand_id"] = brand_id
+        captured["name"] = name
         return ImportResult(app_id=1, app_slug="foo", app_created=True, ingest_results=[])
 
     monkeypatch.setattr(cli, "import_app", fake_import)
-    monkeypatch.setattr(sys, "argv", ["a11y", "import", str(tmp_path), "--org-unit-id", "7", "--brand-id", "9"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["a11y", "import", str(tmp_path), "--org-unit-id", "7", "--brand-id", "9", "--name", "Humana.com"],
+    )
 
     cli.main()
 
-    assert captured == {"directory": tmp_path, "org_unit_id": 7, "brand_id": 9}
+    assert captured == {"directory": tmp_path, "org_unit_id": 7, "brand_id": 9, "name": "Humana.com"}
 
 
 def test_main_import_exits_when_any_scan_has_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    async def fake_import(_client, *, directory, org_unit_id, brand_id, on_progress):
+    async def fake_import(_client, *, directory, org_unit_id, brand_id, name, on_progress):
         return ImportResult(
             app_id=1,
             app_slug="foo",

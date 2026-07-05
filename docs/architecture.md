@@ -280,23 +280,27 @@ HTTP* — it has no direct database access, so anything it does, you could do wi
 `curl`. Two commands, chosen by app state:
 
 - **`a11y ingest <dir>`** — upload one scan to an **existing** app. It reads the
-  JSON files in the directory, resolves the app by the `name` field in the payload
-  (the **Slug**), then runs the lifecycle: create Scan Run → POST each page →
-  PATCH to Completed. If the app isn't registered it raises `AppNotFoundError`
-  pointing you to `import`.
+  JSON files in the directory, derives the **Slug** from the `name` field in the
+  payload and resolves the app by it, then runs the lifecycle: create Scan Run →
+  POST each page → PATCH to Completed. If the app isn't registered it raises
+  `AppNotFoundError` pointing you to `import`.
 - **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** — onboard an app
   from a directory of `YYYY-MM-DD/` subdirectories, creating the app if missing
   and uploading each date subdirectory as its own Scan Run.
 
-The **Slug** is derived from the axe JSON `name` and is immutable
-([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md)). Common CLI
-failures and what they mean:
+The **Slug** is derived from the axe JSON `name` by the single derivation
+function in `core/slug.py` — lowercase ASCII, non-alphanumeric runs collapsed
+to hyphens, accents folded — and both name and Slug are immutable after
+creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md),
+[ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)).
+Common CLI failures and what they mean:
 
 | Error | Cause |
 | --- | --- |
 | `AppNotFoundError` | `ingest` against an app that was never imported |
 | `NoDateDirsError` | `import` against a directory with no `YYYY-MM-DD/` subdirs |
 | `NameResolutionError` | JSON files missing a `name`, or disagreeing on it |
+| `NameOverrideMismatchError` | `import --name` that doesn't derive to the same slug as the JSON `name` |
 
 ### Tracing a request
 

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
 from a11y_health.core.pagination import CursorPage, paginate
+from a11y_health.core.slug import derive_slug
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services.org_unit import get_descendant_ids
@@ -49,14 +50,15 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
 
     await get_brand(session, data.brand_id)
     await get_org_unit(session, data.org_unit_id)
-    app = App(**data.model_dump())
+    slug = derive_slug(data.name)
+    app = App(**data.model_dump(), slug=slug)
     session.add(app)
     try:
         async with session.begin_nested():
             await session.flush()
     except IntegrityError as exc:
         if UQ_APP_SLUG in str(exc):
-            raise DuplicateSlugError(data.slug) from exc
+            raise DuplicateSlugError(slug) from exc
         raise
     await session.refresh(app)
     return app
@@ -66,18 +68,16 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
     from a11y_health.services import scoring_orchestration
 
     app = await get_app(session, app_id)
-    fields = data.model_dump(exclude_unset=True)
     old_org_unit_id = app.org_unit_id
-    new_org_unit_id = fields.get("org_unit_id")
+    new_org_unit_id = data.org_unit_id
     reassigning = new_org_unit_id is not None and new_org_unit_id != old_org_unit_id
 
     if new_org_unit_id is not None:
         from a11y_health.services.org_unit import get_org_unit
 
         await get_org_unit(session, new_org_unit_id)
+        app.org_unit_id = new_org_unit_id
 
-    for field, value in fields.items():
-        setattr(app, field, value)
     await session.flush()
     await session.refresh(app)
 

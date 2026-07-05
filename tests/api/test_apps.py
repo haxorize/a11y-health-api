@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_app, make_brand, make_org_unit, make_scan_run, make_score_snapshot
+from tests.factories import assert_error, make_app, make_brand, make_org_unit, make_scan_run, make_score_snapshot
 
 
 async def test_create_app(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -11,16 +11,15 @@ async def test_create_app(db_client: AsyncClient, db_session: AsyncSession) -> N
     response = await db_client.post(
         "/api/v1/apps",
         json={
-            "name": "MyHumana",
-            "slug": "myhumana",
+            "name": "MyHumana (Prod)",
             "brand_id": brand.id,
             "org_unit_id": org_unit.id,
         },
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["name"] == "MyHumana"
-    assert data["slug"] == "myhumana"
+    assert data["name"] == "MyHumana (Prod)"
+    assert data["slug"] == "myhumana-prod"
     assert data["brand_id"] == brand.id
     assert data["org_unit_id"] == org_unit.id
     assert "id" in data
@@ -34,7 +33,6 @@ async def test_create_app_invalid_brand(db_client: AsyncClient, db_session: Asyn
         "/api/v1/apps",
         json={
             "name": "MyHumana",
-            "slug": "myhumana",
             "brand_id": 999999,
             "org_unit_id": org_unit.id,
         },
@@ -48,7 +46,6 @@ async def test_create_app_invalid_org_unit(db_client: AsyncClient, db_session: A
         "/api/v1/apps",
         json={
             "name": "MyHumana",
-            "slug": "myhumana",
             "brand_id": brand.id,
             "org_unit_id": 999999,
         },
@@ -62,13 +59,24 @@ async def test_create_app_duplicate_slug(db_client: AsyncClient, db_session: Asy
 
     await db_client.post(
         "/api/v1/apps",
-        json={"name": "MyHumana", "slug": "myhumana", "brand_id": brand.id, "org_unit_id": org_unit.id},
+        json={"name": "MyHumana", "brand_id": brand.id, "org_unit_id": org_unit.id},
     )
     response = await db_client.post(
         "/api/v1/apps",
-        json={"name": "MyHumana 2", "slug": "myhumana", "brand_id": brand.id, "org_unit_id": org_unit.id},
+        json={"name": "MYHUMANA!!", "brand_id": brand.id, "org_unit_id": org_unit.id},
     )
-    assert response.status_code == 409
+    assert_error(response, 409, "duplicate_slug", message_contains="myhumana")
+
+
+async def test_create_app_name_deriving_to_empty_slug_is_422(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    response = await db_client.post(
+        "/api/v1/apps",
+        json={"name": "!!! ($%) !!!", "brand_id": brand.id, "org_unit_id": org_unit.id},
+    )
+    assert response.status_code == 422
 
 
 async def test_list_apps(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -189,7 +197,7 @@ async def test_get_app_by_slug_not_found(db_client: AsyncClient) -> None:
     assert response.status_code == 404
 
 
-async def test_update_app_name(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_update_app_ignores_name_identity_is_locked(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
     app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
@@ -200,7 +208,7 @@ async def test_update_app_name(db_client: AsyncClient, db_session: AsyncSession)
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["name"] == "MyHumana Redesign"
+    assert data["name"] == "MyHumana"
     assert data["slug"] == "myhumana"
 
 

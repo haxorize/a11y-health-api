@@ -1,14 +1,20 @@
 import enum
 
 
-class NotFoundError(Exception):
+class DomainError(Exception):
+    """Base for every domain error mode. Subclassing is what makes an error a
+    mode: the error contract's handler catches `DomainError`, and its
+    exhaustiveness test requires a table entry for every subclass."""
+
+
+class NotFoundError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id
         super().__init__(f"{resource} {resource_id} not found")
 
 
-class CircularReferenceError(Exception):
+class CircularReferenceError(DomainError):
     def __init__(self, resource: str, resource_id: object, parent_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id
@@ -16,13 +22,13 @@ class CircularReferenceError(Exception):
         super().__init__(f"{resource} {resource_id} cannot have {parent_id} as parent: circular reference")
 
 
-class DuplicateSlugError(Exception):
+class DuplicateSlugError(DomainError):
     def __init__(self, slug: str) -> None:
         self.slug = slug
         super().__init__(f"App with slug '{slug}' already exists")
 
 
-class InvalidStatusTransitionError(Exception):
+class InvalidStatusTransitionError(DomainError):
     def __init__(self, resource: str, resource_id: object, current_status: enum.Enum, target_status: enum.Enum) -> None:
         self.resource = resource
         self.resource_id = resource_id
@@ -33,13 +39,19 @@ class InvalidStatusTransitionError(Exception):
         )
 
 
-class ScanRunCompletedError(Exception):
+class ScanRunCompletedError(DomainError):
     def __init__(self, scan_run_id: object) -> None:
         self.scan_run_id = scan_run_id
         super().__init__(f"Scan run {scan_run_id} is completed and cannot accept new pages")
 
 
-class HasDependentsError(Exception):
+class InvalidAxePayloadError(DomainError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Invalid axe payload: {reason}")
+
+
+class HasDependentsError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id

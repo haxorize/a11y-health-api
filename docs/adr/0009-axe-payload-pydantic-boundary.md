@@ -1,5 +1,10 @@
 # Axe payload validation lives in Pydantic at the API boundary
 
+> **Amended by [ADR 0022](0022-error-contract-single-table-400-vs-422.md):** the
+> boundary decision stands, but validation failures no longer surface as 422s —
+> `parse_axe_payload()` wraps them into `InvalidAxePayloadError` (400,
+> `invalid_axe_payload`) under the Error Contract.
+
 The axe DevTools JSON shape is fully validated by the `AxePayload` Pydantic
 schema at the API boundary, including semantic checks (impact values,
 classification tag shape, criteria parsing) — not just structural ones. The

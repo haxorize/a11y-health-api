@@ -1,27 +1,15 @@
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import ValidationError
 from sqlalchemy import text
-from starlette.requests import Request
 
 from a11y_health.api.v1.router import api_router
 from a11y_health.config import settings
 from a11y_health.core.database import engine
-from a11y_health.core.exceptions import (
-    CircularReferenceError,
-    DuplicateSlugError,
-    HasDependentsError,
-    InvalidStatusTransitionError,
-    NotFoundError,
-    ScanRunCompletedError,
-)
-from a11y_health.core.pagination import InvalidCursorError
+from a11y_health.core.error_contract import register_error_handlers
 
 
 @asynccontextmanager
@@ -57,33 +45,6 @@ app.add_middleware(
 )
 
 
-_EXCEPTION_STATUS_CODES: dict[type[Exception], int] = {
-    NotFoundError: 404,
-    CircularReferenceError: 409,
-    DuplicateSlugError: 409,
-    HasDependentsError: 409,
-    InvalidCursorError: 400,
-    InvalidStatusTransitionError: 409,
-    ScanRunCompletedError: 409,
-}
-
-
-def _make_handler(status: int) -> Callable[..., Coroutine[Any, Any, JSONResponse]]:
-    async def handler(_request: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse(status_code=status, content={"detail": str(exc)})
-
-    return handler
-
-
-for _exc_cls, _status_code in _EXCEPTION_STATUS_CODES.items():
-    app.exception_handler(_exc_cls)(_make_handler(_status_code))
-
-
-@app.exception_handler(ValidationError)
-async def _validation_error_handler(_request: Request, exc: ValidationError) -> JSONResponse:
-    err = exc.errors()[0]
-    loc = " → ".join(str(part) for part in err["loc"])
-    return JSONResponse(status_code=422, content={"detail": f"{loc}: {err['msg']}"})
-
+register_error_handlers(app)
 
 app.include_router(api_router)

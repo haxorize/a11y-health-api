@@ -144,7 +144,7 @@ async def test_ingest_records_per_page_upload_failures(
     assert result.pages_uploaded == 1
     assert len(result.errors) == 1
     assert "b.json" in result.errors[0]
-    assert "422" in result.errors[0]
+    assert "400" in result.errors[0]
 
 
 async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(

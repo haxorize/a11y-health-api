@@ -44,6 +44,22 @@ class TestAxePayloadBoundary:
         with pytest.raises(ValidationError):
             AxePayload.model_validate(raw)
 
+    def test_wrong_type_incomplete_rejected(self) -> None:
+        raw = make_axe_payload()
+        raw["findings"]["incomplete"] = 42
+        with pytest.raises(ValidationError):
+            AxePayload.model_validate(raw)
+
+    def test_rule_missing_required_fields_rejected(self) -> None:
+        raw = make_axe_payload(violations=[{"id": "some-rule"}])
+        with pytest.raises(ValidationError):
+            AxePayload.model_validate(raw)
+
+    def test_rule_missing_id_rejected(self) -> None:
+        raw = make_axe_payload(violations=[{"impact": "serious", "description": "d", "help": "h", "helpUrl": "u"}])
+        with pytest.raises(ValidationError):
+            AxePayload.model_validate(raw)
+
     def test_empty_violations_and_incomplete_accepted(self) -> None:
         raw = make_axe_payload(violations=[], incomplete=[])
         payload = AxePayload.model_validate(raw)

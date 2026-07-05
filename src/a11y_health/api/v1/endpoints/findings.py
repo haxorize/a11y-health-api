@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
+from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import Classification
@@ -12,7 +13,7 @@ from a11y_health.services import rule_finding as rule_finding_service
 router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
 
 
-@router.get("")
+@router.get("", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_CURSOR))
 async def list_findings(
     db: DbSession,
     scan_run_id: int,
@@ -38,7 +39,7 @@ async def list_findings(
     return Page.from_cursor_page(page, RuleFindingRead.model_validate)
 
 
-@router.get("/{finding_id}")
+@router.get("/{finding_id}", responses=error_responses(ErrorCode.NOT_FOUND))
 async def get_finding(
     db: DbSession,
     scan_run_id: int,

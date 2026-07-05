@@ -154,6 +154,37 @@
         "title": "Category",
         "type": "string"
       },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "not_found",
+          "duplicate_slug",
+          "has_dependents",
+          "invalid_status_transition",
+          "scan_run_completed",
+          "circular_reference",
+          "invalid_cursor",
+          "invalid_axe_payload"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
       "FindingType": {
         "enum": [
           "violation",
@@ -1116,6 +1147,19 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1154,6 +1198,32 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: duplicate_slug",
+            "x-error-codes": [
+              "duplicate_slug"
+            ]
           },
           "422": {
             "content": {
@@ -1197,6 +1267,19 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1231,6 +1314,19 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1271,6 +1367,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1321,6 +1430,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1392,6 +1514,32 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1441,6 +1589,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1512,6 +1673,32 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1578,6 +1765,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1648,6 +1848,32 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1734,6 +1960,19 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1768,6 +2007,32 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: has_dependents",
+            "x-error-codes": [
+              "has_dependents"
+            ]
           },
           "422": {
             "content": {
@@ -1808,6 +2073,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -1859,6 +2137,32 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: circular_reference",
+            "x-error-codes": [
+              "circular_reference"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1905,6 +2209,19 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1950,6 +2267,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -2021,6 +2351,32 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2055,6 +2411,19 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -2095,6 +2464,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -2145,6 +2527,32 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_status_transition",
+            "x-error-codes": [
+              "invalid_status_transition"
+            ]
           },
           "422": {
             "content": {
@@ -2320,6 +2728,32 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2370,6 +2804,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {
@@ -2441,6 +2888,32 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2493,6 +2966,45 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_axe_payload",
+            "x-error-codes": [
+              "invalid_axe_payload"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: scan_run_completed",
+            "x-error-codes": [
+              "scan_run_completed"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2534,6 +3046,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
           },
           "422": {
             "content": {

@@ -27,11 +27,11 @@ from tests.factories import (
     make_axe_payload,
     make_brand,
     make_org_unit,
+    make_parsed_axe_payload,
     make_scan_run,
     make_scan_run_with_parents,
     make_score_snapshot,
     make_violation,
-    parse_axe_payload,
 )
 
 
@@ -192,7 +192,7 @@ class TestScoreSnapshotMetrics:
 class TestComputeAppScoreCreatesSnapshot:
     async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        parsed, raw = parse_axe_payload(violations=[make_violation("r1", "serious")])
+        parsed, raw = make_parsed_axe_payload(violations=[make_violation("r1", "serious")])
         await create_page_result(db_session, scan_run.id, parsed, raw)
         scan_run.status = ScanRunStatus.COMPLETED
         await db_session.flush()
@@ -210,7 +210,7 @@ class TestComputeAppScoreCreatesSnapshot:
 class TestScoreIndependentOfPageHealth:
     async def test_score_correct_when_page_health_preset_to_wrong_value(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        parsed, raw = parse_axe_payload(violations=[make_violation("r1", "critical")])
+        parsed, raw = make_parsed_axe_payload(violations=[make_violation("r1", "critical")])
         await create_page_result(db_session, scan_run.id, parsed, raw)
 
         result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))

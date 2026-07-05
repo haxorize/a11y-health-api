@@ -20,8 +20,10 @@ from sqlalchemy import Row, Select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
+from a11y_health.core.exceptions import DomainError
 
-class InvalidCursorError(Exception):
+
+class InvalidCursorError(DomainError):
     def __init__(self) -> None:
         super().__init__("Invalid cursor")
 

@@ -12,8 +12,11 @@ from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
+from tests._declaration_honesty import DeclarationHonestyShim
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+_honest_transport = ASGITransport(app=DeclarationHonestyShim(app))
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +32,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def client() -> AsyncIterator[AsyncClient]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(transport=_honest_transport, base_url="http://test") as ac:
         yield ac
 
 
@@ -52,7 +55,7 @@ async def db_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(transport=_honest_transport, base_url="http://test") as ac:
             yield ac
     finally:
         app.dependency_overrides.clear()

@@ -75,7 +75,7 @@ src/a11y_health/
 
 - Accept `AsyncSession` as first parameter
 - Return ORM model instances (endpoint serializes via schema)
-- Raise domain exceptions (not `HTTPException`) — endpoints catch and translate to HTTP status codes
+- Raise domain exceptions (not `HTTPException`) — the Error Contract's app-level handler translates them to HTTP
 - One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
 - Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
@@ -166,17 +166,19 @@ next_cursor = encode_cursor(items[-1].snapshot_at, items[-1].id) if has_more els
 
 ## Error responses
 
-- Services raise domain exceptions (defined in `core/exceptions.py`)
-- `main.py` maps exception classes to HTTP status codes in `_EXCEPTION_STATUS_CODES` and registers handlers in a loop — add new domain exceptions there
+- Services raise domain exceptions — subclasses of `DomainError` (defined in `core/exceptions.py`)
+- `core/error_contract.py` owns the Error Contract: the `ERROR_MODES` table maps each exception type to its status and machine-readable `ErrorCode`; the handler, the shared `ErrorBody` body (`{"code", "message"}`), and per-operation OpenAPI declarations all derive from it
+- Every operation declares the modes that can escape it: `@router.get(..., responses=error_responses(ErrorCode.NOT_FOUND, ...))` — declare in domain vocabulary, never write a status code in an endpoint
 - Endpoints never catch or raise `HTTPException` directly
-- Pydantic shape errors return 422 — FastAPI's built-in handler covers automatic body validation; the custom `_validation_error_handler` in `main.py` covers explicit `model_validate()` calls (see `pages.py` for an example)
-- Status conventions: 404 for missing resources, 409 for domain conflicts (duplicate slug, invalid state transition, has-dependents), 400 for malformed request data (e.g., `InvalidCursorError`)
+- 422 belongs to the framework: only FastAPI's own request-shape validation produces it, with the standard body. Well-formed requests failing domain validation return 400 with a coded body (`invalid_cursor`, `invalid_axe_payload`) — do not add app-level `ValidationError` handlers; wrap explicit `model_validate()` calls at the boundary into a domain error instead (see `parse_axe_payload` in `schemas/axe_payload.py`)
+- Adding a mode: subclass `DomainError`, add the `ERROR_MODES` row + `ErrorCode` member, declare it on the operations that raise it. The exhaustiveness test and the suite-wide declaration-honesty shim (`tests/_declaration_honesty.py`, applying `error_contract.assert_declared_mode`) fail on gaps
+- Status conventions: 404 for missing resources, 409 for domain conflicts (duplicate slug, invalid state transition, has-dependents), 400 for well-formed-but-domain-invalid data
 
 ## Domain exceptions
 
-Exception classes store context as instance attributes before calling `super().__init__()`:
+Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`:
 ```python
-class NotFoundError(Exception):
+class NotFoundError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id

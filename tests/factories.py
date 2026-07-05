@@ -2,6 +2,7 @@ import itertools
 from datetime import UTC, datetime
 from typing import Any
 
+from httpx import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -254,7 +255,7 @@ def make_axe_payload(
     return {"name": name, "testSubject": {"fileName": url}, "findings": findings}
 
 
-def parse_axe_payload(
+def make_parsed_axe_payload(
     *,
     url: str = "https://example.com",
     violations: Any = None,
@@ -262,3 +263,11 @@ def parse_axe_payload(
 ) -> tuple[AxePayload, dict[str, Any]]:
     raw = make_axe_payload(url=url, violations=violations, incomplete=incomplete)
     return AxePayload.model_validate(raw), raw
+
+
+def assert_error(response: Response, status: int, code: str, *, message_contains: str | None = None) -> None:
+    assert response.status_code == status
+    body = response.json()
+    assert body["code"] == code
+    if message_contains is not None:
+        assert message_contains in body["message"].lower()

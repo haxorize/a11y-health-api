@@ -63,7 +63,8 @@ what lets the stored shape and the wire shape evolve independently.
 
 **`core/`** holds the cross-cutting machinery every layer leans on: `database.py`
 (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)),
-and `exceptions.py` (the domain error types).
+`exceptions.py` (the domain error types), and `error_contract.py` (the **Error
+Contract** — how domain errors become HTTP responses and contract declarations).
 
 ### How the database session and transactions work
 
@@ -78,20 +79,40 @@ rollback behavior for isolation — [ADR 0011](adr/0011-transactional-rollback-t
 
 ### How errors become HTTP status codes
 
-Services raise **semantic** exceptions from `core/exceptions.py` —
-`NotFoundError`, `DuplicateSlugError`, `InvalidStatusTransitionError`, and so on.
-They do not know or care about HTTP. `main.py` owns the single mapping from each
-exception type to a status code:
+Services raise **semantic** exceptions — subclasses of `DomainError` from
+`core/exceptions.py` (`NotFoundError`, `DuplicateSlugError`, and so on; the
+pagination module contributes `InvalidCursorError`). They do not know or care
+about HTTP. `core/error_contract.py` owns the **Error Contract**: one table
+(`ERROR_MODES`) maps each domain error mode to its status and machine-readable
+**Error Code**, and everything else derives from that table — the runtime
+handler (registered once for `DomainError`), the shared `ErrorBody` response
+shape (`{"code", "message"}`), and each operation's OpenAPI declaration
+(`error_responses(...)` on the route decorator, which also embeds the declared
+codes as `x-error-codes`).
 
-| Exception | Status |
+| Mode (exception → code) | Status |
 | --- | --- |
-| `NotFoundError` | 404 |
-| `CircularReferenceError`, `DuplicateSlugError`, `HasDependentsError`, `InvalidStatusTransitionError`, `ScanRunCompletedError` | 409 |
-| `InvalidCursorError` | 400 |
-| Pydantic `ValidationError` (bad request body) | 422 |
+| `NotFoundError` → `not_found` | 404 |
+| `CircularReferenceError` → `circular_reference`, `DuplicateSlugError` → `duplicate_slug`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
+| `InvalidCursorError` → `invalid_cursor`, `InvalidAxePayloadError` → `invalid_axe_payload` | 400 |
+| Pydantic `ValidationError` (request failed FastAPI's own shape validation) | 422 |
 
-So: to add a new failure mode, raise a domain exception in the service and
-register its status in `main.py`. The endpoint stays untouched.
+The 400-vs-422 rule: **422 belongs to the framework** — it means the request
+never matched the declared request schema, with FastAPI's standard error body.
+A request that is well-formed but fails *domain* validation (a malformed
+cursor, an axe payload that doesn't parse) returns **400 with a coded body**.
+There is no app-level handler for `ValidationError`: an internal validation
+failure escaping the domain is a bug and surfaces as a 500, never a disguised
+client error. See
+[ADR 0022](adr/0022-error-contract-single-table-400-vs-422.md).
+
+So: to add a new failure mode, subclass `DomainError`, add its row to
+`ERROR_MODES`, and list its code in `error_responses(...)` on the operations
+that can produce it. An exhaustiveness test fails if a `DomainError` subclass
+lacks a table entry, and the test suite's declaration-honesty shim (the ASGI
+wrapper in `tests/_declaration_honesty.py`, applying
+`error_contract.assert_declared_mode`) fails any test that observes an
+undeclared error status or code. The endpoint logic stays untouched.
 
 ---
 
@@ -280,10 +301,12 @@ failures and what they mean:
 ### Tracing a request
 
 Endpoint (`api/v1/endpoints/`) → service (`services/`) → model. A failing request
-surfaces as a JSON `{"detail": …}` body; the status code tells you which layer
-rejected it (404/409 = a domain exception from a service; 422 = the request body
-failed schema validation before any service ran). Map the status back through the
-[exception→status table](#how-errors-become-http-status-codes) to the exception,
+surfaces as a JSON `{"code": …, "message": …}` body (the **Error Contract**'s
+`ErrorBody`); the `code` names the exact domain error mode, and the status tells
+you which layer rejected it (404/409/400-with-code = a domain exception; 422 =
+the request body failed FastAPI's schema validation before any service ran, with
+the framework's standard body). Map the code back through the
+[`ERROR_MODES` table](#how-errors-become-http-status-codes) to the exception,
 then grep for where that exception is raised.
 
 ### Inspecting the data

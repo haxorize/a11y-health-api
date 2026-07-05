@@ -11,8 +11,9 @@ See `docs/architecture.md` ("The layers") and
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.enums import Category, Impact
 from a11y_health.schemas._tag_parsing import extract_category, extract_classifications, extract_wcag_criteria
 
@@ -76,3 +77,14 @@ class AxePayload(BaseModel):
 
     test_subject: AxeTestSubject = Field(alias="testSubject")
     findings: AxeFindings
+
+
+def parse_axe_payload(raw: dict[str, Any]) -> AxePayload:
+    """Validate an uploaded payload, surfacing failure as the domain's own
+    invalid-axe-payload error mode rather than a framework `ValidationError`."""
+    try:
+        return AxePayload.model_validate(raw)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        loc = " → ".join(str(part) for part in first["loc"])
+        raise InvalidAxePayloadError(f"{loc}: {first['msg']}") from exc

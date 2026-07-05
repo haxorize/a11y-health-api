@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_app, make_brand, make_org_unit, make_score_snapshot
+from tests.factories import assert_error, make_app, make_brand, make_org_unit, make_score_snapshot
 
 
 async def test_create_org_unit(db_client: AsyncClient) -> None:
@@ -145,8 +145,7 @@ async def test_delete_org_unit_with_apps(db_client: AsyncClient, db_session: Asy
     await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
 
     response = await db_client.delete(f"/api/v1/org-units/{org_unit.id}")
-    assert response.status_code == 409
-    assert "dependent" in response.json()["detail"].lower()
+    assert_error(response, 409, "has_dependents", message_contains="dependent")
 
 
 async def test_delete_org_unit_with_score_snapshots(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -154,8 +153,7 @@ async def test_delete_org_unit_with_score_snapshots(db_client: AsyncClient, db_s
     await make_score_snapshot(db_session, org_unit_id=org_unit.id)
 
     response = await db_client.delete(f"/api/v1/org-units/{org_unit.id}")
-    assert response.status_code == 409
-    assert "dependent" in response.json()["detail"].lower()
+    assert_error(response, 409, "has_dependents", message_contains="dependent")
 
 
 async def test_delete_org_unit_with_children(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -163,5 +161,4 @@ async def test_delete_org_unit_with_children(db_client: AsyncClient, db_session:
     await make_org_unit(db_session, name="CenterWell", parent_id=parent.id)
 
     response = await db_client.delete(f"/api/v1/org-units/{parent.id}")
-    assert response.status_code == 409
-    assert "dependent" in response.json()["detail"].lower()
+    assert_error(response, 409, "has_dependents", message_contains="dependent")

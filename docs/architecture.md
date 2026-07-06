@@ -215,6 +215,12 @@ rollup shapes:
   apps in one shot, regardless of where those apps sit in the org tree. It does
   not cascade. [ADR 0004](adr/0004-org-unit-rollup-cascades-brand-rollup-flat.md).
 
+"Latest" has exactly one definition — newest `snapshot_at`, ties broken by
+`id`, per owner — owned by `services/_latest_snapshot.py` and shared by both
+rollup shapes and the `GET /scores/latest` read endpoint
+([ADR 0023](adr/0023-scores-latest-read-endpoint.md)), so what a dashboard shows
+as "latest" can never disagree with what rollups aggregate.
+
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.
 Note a subtlety captured in the code: the `pct_*` / `avg_*` metrics on a rollup
@@ -284,7 +290,8 @@ order and tiebreak the results), and `paginate` handles the rest — applying th
 cursor, ordering, fetching `limit + 1` rows to detect whether more exist, slicing,
 and encoding the `next_cursor`. A **cursor** is just the keyset values of the last
 row, base64-encoded; the client sends it back to get the next page. Paging is
-**forward-only and ascending**, always tiebroken by `id`.
+**forward-only and ascending**, tiebroken by `id` wherever the keyset isn't
+already unique.
 
 `paginate` returns the internal `CursorPage` (ORM items + cursor); the endpoint turns
 that into the public `Page` wire response with `Page.from_cursor_page(page, ItemRead.model_validate)`,
@@ -308,7 +315,8 @@ query parameter (all FastAPI versions through 0.139).
 Two things to know if you touch it:
 
 - Keyset columns must be **NOT NULL** (a NULL breaks the row-value comparison and
-  silently drops rows). All current keysets are primary keys or NOT NULL columns.
+  silently drops rows). Current keysets are primary keys, NOT NULL columns, or —
+  for `/scores/latest` — the owner FK the query already filters to non-NULL.
 - An optional `into` callback maps each result row into a response object. Most
   lists return ORM objects directly; `list_page_metrics` uses `into` to shape
   aggregate query rows into `PageMetricsRead`.

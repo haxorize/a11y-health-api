@@ -1,11 +1,12 @@
 import ast
+import importlib
 import inspect
 from datetime import UTC, datetime
 from types import ModuleType
 
 import pytest
 from pytest import approx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.enums import Impact, PageHealth, ScanRunStatus
@@ -264,23 +265,23 @@ def _sibling_service_imports(module: ModuleType) -> set[str]:
     return siblings
 
 
-class TestScoreModuleImports:
-    def test_score_module_imports_no_sibling_services(self) -> None:
-        import a11y_health.services.score as score_module
+class TestScoringModuleImports:
+    # Entity fetches go through the Existence Guard, not a sibling service (see
+    # architecture.md, "The Existence Guard and the two-tier call rule"): a
+    # scoring module may cross the services namespace only for the shared
+    # underscore helpers named here — never a sibling resource service, and not
+    # another service's private module just because its name starts with "_".
+    @pytest.mark.parametrize(
+        ("module_name", "shared_helpers"),
+        [
+            ("score", {"_latest_snapshot"}),
+            ("score_snapshot", {"_scoring_vocabulary", "_latest_snapshot"}),
+        ],
+    )
+    def test_module_imports_only_shared_helpers(self, module_name: str, shared_helpers: set[str]) -> None:
+        module = importlib.import_module(f"a11y_health.services.{module_name}")
 
-        # Entity fetches go through the Existence Guard, not a sibling service
-        # (see architecture.md, "The Existence Guard and the two-tier call
-        # rule"), so score.py crosses the services namespace nowhere.
-        assert _sibling_service_imports(score_module) == set()
-
-
-class TestScoreSnapshotModuleImports:
-    def test_score_snapshot_module_imports_no_sibling_services(self) -> None:
-        import a11y_health.services.score_snapshot as score_snapshot_module
-
-        # Only the shared _scoring_vocabulary helper may cross the services
-        # namespace — never a sibling resource service.
-        assert _sibling_service_imports(score_snapshot_module) <= {"_scoring_vocabulary"}
+        assert _sibling_service_imports(module) <= shared_helpers
 
 
 class TestDecoupledImports:
@@ -403,6 +404,39 @@ class TestOrgUnitRollup:
         )
 
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)
+
+    async def test_child_app_and_org_unit_with_equal_ids_both_count(self, db_session: AsyncSession) -> None:
+        # app.id and org_unit.id come from separate identity sequences, so a
+        # child App and a child Org Unit can legitimately share an id value —
+        # the latest-per-child partition must keep them apart.
+        parent = await make_org_unit(db_session, name="Collide Parent")
+        brand = await make_brand(db_session)
+        collided_id = 900_000_001
+        await db_session.execute(
+            text(
+                "INSERT INTO org_unit (id, name, parent_id) "
+                "OVERRIDING SYSTEM VALUE VALUES (:id, 'Collide OU', :parent_id)"
+            ),
+            {"id": collided_id, "parent_id": parent.id},
+        )
+        await db_session.execute(
+            text(
+                "INSERT INTO app (id, name, slug, brand_id, org_unit_id) "
+                "OVERRIDING SYSTEM VALUE VALUES (:id, 'Collide App', 'collide-app', :brand_id, :org_unit_id)"
+            ),
+            {"id": collided_id, "brand_id": brand.id, "org_unit_id": parent.id},
+        )
+
+        await make_score_snapshot(
+            db_session, app_id=collided_id, score=0.4, snapshot_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        )
+        await make_score_snapshot(
+            db_session, org_unit_id=collided_id, score=0.8, snapshot_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
+        )
+
+        await rollup_org_unit_scores(db_session, parent.id)
+
+        assert (await latest_ou_snapshot(db_session, parent.id)).score == approx((0.4 + 0.8) / 2)
 
     async def test_higher_id_wins_when_snapshot_at_ties(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Tie Org")

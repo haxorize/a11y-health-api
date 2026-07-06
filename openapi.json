@@ -880,6 +880,15 @@
         "title": "ScanRunSummaryRead",
         "type": "object"
       },
+      "ScoreSnapshotOwnerType": {
+        "enum": [
+          "app",
+          "org_unit",
+          "brand"
+        ],
+        "title": "ScoreSnapshotOwnerType",
+        "type": "string"
+      },
       "ScoreSnapshotRead": {
         "properties": {
           "app_id": {
@@ -3094,6 +3103,88 @@
         "summary": "Get Scan Run Summary",
         "tags": [
           "scan-runs"
+        ]
+      }
+    },
+    "/api/v1/scores/latest": {
+      "get": {
+        "operationId": "list_latest_scores",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner_type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ScoreSnapshotOwnerType"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ScoreSnapshotRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: invalid_cursor",
+            "x-error-codes": [
+              "invalid_cursor"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Latest Scores",
+        "tags": [
+          "scores"
         ]
       }
     },

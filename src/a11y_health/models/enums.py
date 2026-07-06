@@ -39,3 +39,11 @@ class Category(enum.Enum):
 class ScanRunStatus(enum.Enum):
     PENDING = "pending"
     COMPLETED = "completed"
+
+
+# Not a stored column — the Score Snapshot owner mutex (ADR 0002) expressed as
+# a query vocabulary: which of the three owner FKs a read selects on.
+class ScoreSnapshotOwnerType(enum.Enum):
+    APP = "app"
+    ORG_UNIT = "org_unit"
+    BRAND = "brand"

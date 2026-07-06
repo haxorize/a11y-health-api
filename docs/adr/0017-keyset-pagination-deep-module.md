@@ -40,4 +40,6 @@ Considered and rejected:
 
 Forward-only, ascending, `id`-tiebroken keysets only — reverse paging is out of
 scope. Cursor mechanics are tested once in a central `paginate` suite; per-endpoint
-tests keep only their filter and item assertions.
+tests keep only their own assertions. [ADR 0021](0021-domain-rules-test-once-at-the-service-seam.md)
+later extended this test-once precedent to the whole suite: filter semantics now
+live at the service seam, and per-endpoint tests keep only transport slots.

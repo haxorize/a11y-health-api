@@ -123,9 +123,11 @@ async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapsho
 
 ## What to test at which layer
 
-- **Endpoints**: HTTP status codes, response shape, auth/permission checks
-- **Services**: business logic, edge cases, error conditions
-- **Both**: use endpoint tests as integration tests; service tests for focused unit coverage
+A domain rule is asserted at exactly one seam — the service interface, where every entry path (HTTP, CLI, scoring orchestration) converges. See [ADR 0021](../../../docs/adr/0021-domain-rules-test-once-at-the-service-seam.md) for the rationale.
+
+- **Services** (`tests/services/`): the single home of domain rules — create/update/delete rules, filters, existence errors, lifecycle triggers. Assert error modes as exception types (`pytest.raises(NotFoundError)`), not status codes.
+- **Endpoints** (`tests/api/`): transport translation only, chosen positively per file — one representative round-trip per operation, every distinct status-code path the operation can produce, and assertions only transport can make (response serialization, query-parameter decoding). Never "the service test again, over HTTP."
+- **Never both.** Before adding an endpoint test, check whether a service test already asserts the rule; if it does, the endpoint test is justified only by one of the transport slots above. Before removing a duplicated endpoint test, twin-verify: confirm a service test asserts the same rule, and move any assertion unique to the endpoint twin (a status-code path, a serialized shape) into the surviving layer first — never remove by name-match alone.
 
 ## Class-based test grouping
 

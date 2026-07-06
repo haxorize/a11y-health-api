@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core import existence
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
@@ -239,15 +240,13 @@ async def _aggregate_and_save(
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
-    from a11y_health.services.org_unit import get_org_unit
-
     children = await _latest_child_snapshots(session, org_unit_id)
     if children:
         await _aggregate_and_save(session, children, org_unit_id=org_unit_id)
     else:
         await session.execute(delete(ScoreSnapshot).where(_owner_filter(org_unit_id=org_unit_id)))
 
-    org_unit = await get_org_unit(session, org_unit_id)
+    org_unit = await existence.get_by_pk(session, OrgUnit, org_unit_id)
     if org_unit.parent_id is not None:
         await rollup_org_unit_scores(session, org_unit.parent_id)
 

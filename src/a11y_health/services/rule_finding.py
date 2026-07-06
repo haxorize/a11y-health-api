@@ -6,23 +6,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text
 
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core import existence
 from a11y_health.core.pagination import CursorPage, paginate
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas._tag_parsing import Classification, classification_to_tag
-from a11y_health.services.scan_run import get_scan_run
 
 
 @dataclass
 class FindingWithNodes:
     finding: RuleFinding
     node_findings: list[NodeFinding]
-
-
-_RESOURCE = "Finding"
 
 
 async def list_findings(
@@ -37,7 +34,7 @@ async def list_findings(
     cursor: str | None = None,
     limit: int = 20,
 ) -> CursorPage[RuleFinding]:
-    await get_scan_run(session, scan_run_id)
+    await existence.get_by_pk(session, ScanRun, scan_run_id)
 
     stmt = (
         select(RuleFinding)
@@ -65,17 +62,14 @@ async def get_finding(
     scan_run_id: int,
     finding_id: int,
 ) -> FindingWithNodes:
-    await get_scan_run(session, scan_run_id)
+    await existence.get_by_pk(session, ScanRun, scan_run_id)
 
     stmt = (
         select(RuleFinding)
         .join(PageResult, RuleFinding.page_result_id == PageResult.id)
         .where(PageResult.scan_run_id == scan_run_id, RuleFinding.id == finding_id)
     )
-    result = await session.execute(stmt)
-    finding = result.scalar_one_or_none()
-    if finding is None:
-        raise NotFoundError(_RESOURCE, finding_id)
+    finding = await existence.get_by_query(session, RuleFinding, stmt, finding_id)
 
     nodes_stmt = (
         select(NodeFinding)

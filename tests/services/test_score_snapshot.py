@@ -1,4 +1,7 @@
+import ast
+import inspect
 from datetime import UTC, datetime
+from types import ModuleType
 
 import pytest
 from pytest import approx
@@ -241,52 +244,55 @@ async def _complete_and_score(
     return snapshot
 
 
-class TestScoreModuleImports:
-    def test_score_module_does_not_import_service_modules(self) -> None:
-        import inspect
+def _sibling_service_imports(module: ModuleType) -> set[str]:
+    # AST rather than source substrings: catches every import form and ignores
+    # comments that merely mention the package path.
+    prefix = "a11y_health.services"
+    siblings: set[str] = set()
+    for node in ast.walk(ast.parse(inspect.getsource(module))):
+        if isinstance(node, ast.Import):
+            siblings.update(
+                alias.name.removeprefix(f"{prefix}.").split(".")[0]
+                for alias in node.names
+                if alias.name.startswith(f"{prefix}.")
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module == prefix:
+                siblings.update(alias.name for alias in node.names)
+            elif node.module.startswith(f"{prefix}."):
+                siblings.add(node.module.removeprefix(f"{prefix}.").split(".")[0])
+    return siblings
 
+
+class TestScoreModuleImports:
+    def test_score_module_imports_no_sibling_services(self) -> None:
         import a11y_health.services.score as score_module
 
-        source = inspect.getsource(score_module)
-        assert "from a11y_health.services import app" not in source
-        assert "from a11y_health.services import brand" not in source
-        assert "from a11y_health.services import org_unit" not in source
+        # Entity fetches go through the Existence Guard, not a sibling service
+        # (see architecture.md, "The Existence Guard and the two-tier call
+        # rule"), so score.py crosses the services namespace nowhere.
+        assert _sibling_service_imports(score_module) == set()
 
 
 class TestScoreSnapshotModuleImports:
-    def test_score_snapshot_module_does_not_import_service_modules(self) -> None:
-        import inspect
-
+    def test_score_snapshot_module_imports_no_sibling_services(self) -> None:
         import a11y_health.services.score_snapshot as score_snapshot_module
 
-        source = inspect.getsource(score_snapshot_module)
-        assert "from a11y_health.services import app" not in source
-        assert "from a11y_health.services import brand" not in source
-        assert "from a11y_health.services import org_unit" not in source
+        # Only the shared _scoring_vocabulary helper may cross the services
+        # namespace — never a sibling resource service.
+        assert _sibling_service_imports(score_snapshot_module) <= {"_scoring_vocabulary"}
 
 
 class TestDecoupledImports:
     def test_org_unit_module_does_not_import_score(self) -> None:
-        import inspect
-
         import a11y_health.services.org_unit as org_unit_module
 
-        source = inspect.getsource(org_unit_module)
-        assert "from a11y_health.services.score" not in source
-        assert "import a11y_health.services.score" not in source
-        assert "from a11y_health.services.score_snapshot" not in source
-        assert "import a11y_health.services.score_snapshot" not in source
+        assert not {"score", "score_snapshot"} & _sibling_service_imports(org_unit_module)
 
     def test_scan_run_module_does_not_import_score(self) -> None:
-        import inspect
-
         import a11y_health.services.scan_run as scan_run_module
 
-        source = inspect.getsource(scan_run_module)
-        assert "from a11y_health.services.score" not in source
-        assert "import a11y_health.services.score" not in source
-        assert "from a11y_health.services.score_snapshot" not in source
-        assert "import a11y_health.services.score_snapshot" not in source
+        assert not {"score", "score_snapshot"} & _sibling_service_imports(scan_run_module)
 
 
 class TestOrgUnitRollup:

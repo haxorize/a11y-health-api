@@ -1,8 +1,10 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
+from a11y_health.core import existence
+from a11y_health.core.exceptions import InvalidStatusTransitionError, ScanRunCompletedError
 from a11y_health.core.pagination import CursorPage, paginate
+from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -11,13 +13,12 @@ from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scoring_orchestration
-from a11y_health.services.app import get_app
 
-_RESOURCE = "Scan run"
+_RESOURCE = existence.ENTITY_LABELS[ScanRun]
 
 
 async def create_scan_run(session: AsyncSession, app_id: int, data: ScanRunCreate) -> ScanRun:
-    await get_app(session, app_id)
+    await existence.get_by_pk(session, App, app_id)
     scan_run = ScanRun(app_id=app_id, status=ScanRunStatus.PENDING, **data.model_dump())
     session.add(scan_run)
     await session.flush()
@@ -26,16 +27,13 @@ async def create_scan_run(session: AsyncSession, app_id: int, data: ScanRunCreat
 
 
 async def get_scan_run(session: AsyncSession, scan_run_id: int) -> ScanRun:
-    scan_run = await session.get(ScanRun, scan_run_id)
-    if scan_run is None:
-        raise NotFoundError(_RESOURCE, scan_run_id)
-    return scan_run
+    return await existence.get_by_pk(session, ScanRun, scan_run_id)
 
 
 async def list_scan_runs(
     session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = 20
 ) -> CursorPage[ScanRun]:
-    await get_app(session, app_id)
+    await existence.get_by_pk(session, App, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
     return await paginate(session, stmt, keyset=[ScanRun.id], cursor=cursor, limit=limit)
 
@@ -103,16 +101,13 @@ async def list_page_metrics(
 
 async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> ScoreSnapshot:
     await get_scan_run(session, scan_run_id)
-    result = await session.execute(select(ScoreSnapshot).where(ScoreSnapshot.scan_run_id == scan_run_id))
-    snapshot = result.scalar_one_or_none()
-    if snapshot is None:
-        raise NotFoundError(f"{_RESOURCE} summary", scan_run_id)
-    return snapshot
+    stmt = select(ScoreSnapshot).where(ScoreSnapshot.scan_run_id == scan_run_id)
+    return await existence.get_by_query(session, ScoreSnapshot, stmt, scan_run_id)
 
 
 async def delete_scan_run(session: AsyncSession, scan_run_id: int) -> None:
     scan_run = await get_scan_run(session, scan_run_id)
-    app = await get_app(session, scan_run.app_id)
+    app = await existence.get_by_pk(session, App, scan_run.app_id)
     await session.delete(scan_run)
     await session.flush()
     await scoring_orchestration.on_scan_run_deleted(session, app.org_unit_id, app.brand_id)

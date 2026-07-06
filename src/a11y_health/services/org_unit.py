@@ -5,12 +5,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError, NotFoundError
+from a11y_health.core import existence
+from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
 
-_RESOURCE = "Org unit"
+_RESOURCE = existence.ENTITY_LABELS[OrgUnit]
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
@@ -29,10 +30,7 @@ async def list_org_units(session: AsyncSession) -> Sequence[OrgUnit]:
 
 
 async def get_org_unit(session: AsyncSession, org_unit_id: int) -> OrgUnit:
-    org_unit = await session.get(OrgUnit, org_unit_id)
-    if org_unit is None:
-        raise NotFoundError(_RESOURCE, org_unit_id)
-    return org_unit
+    return await existence.get_by_pk(session, OrgUnit, org_unit_id)
 
 
 async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnit:

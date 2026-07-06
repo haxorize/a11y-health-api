@@ -3,10 +3,8 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core import existence
 from a11y_health.models.brand import Brand
-
-_RESOURCE = "Brand"
 
 
 async def list_brands(session: AsyncSession) -> Sequence[Brand]:
@@ -15,7 +13,4 @@ async def list_brands(session: AsyncSession) -> Sequence[Brand]:
 
 
 async def get_brand(session: AsyncSession, brand_id: int) -> Brand:
-    brand = await session.get(Brand, brand_id)
-    if brand is None:
-        raise NotFoundError(_RESOURCE, brand_id)
-    return brand
+    return await existence.get_by_pk(session, Brand, brand_id)

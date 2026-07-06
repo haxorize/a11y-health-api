@@ -2,12 +2,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core import existence
 from a11y_health.models.enums import FindingType
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.axe_payload import AxePayload, AxeRule
-from a11y_health.services.scan_run import assert_scan_run_pending, get_scan_run
+from a11y_health.services.scan_run import assert_scan_run_pending
 
 
 async def _persist_findings(
@@ -59,7 +61,7 @@ async def _persist_findings(
 async def create_page_result(
     session: AsyncSession, scan_run_id: int, payload: AxePayload, raw_payload: dict[str, Any]
 ) -> PageResult:
-    scan_run = await get_scan_run(session, scan_run_id)
+    scan_run = await existence.get_by_pk(session, ScanRun, scan_run_id)
     assert_scan_run_pending(scan_run)
 
     page_result = PageResult(

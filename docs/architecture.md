@@ -63,8 +63,40 @@ what lets the stored shape and the wire shape evolve independently.
 
 **`core/`** holds the cross-cutting machinery every layer leans on: `database.py`
 (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)),
-`exceptions.py` (the domain error types), and `error_contract.py` (the **Error
-Contract** — how domain errors become HTTP responses and contract declarations).
+`exceptions.py` (the domain error types), `error_contract.py` (the **Error
+Contract** — how domain errors become HTTP responses and contract declarations),
+and `existence.py` (the **Existence Guard** — see below).
+
+### The Existence Guard and the two-tier call rule
+
+Checking that a referenced entity exists before an operation proceeds is one
+concept, owned by one deep module: `core/existence.py`. It has two entry
+points — `get_by_pk(session, model, id)` and `get_by_query(session, model,
+stmt, id)` — both returning the entity or raising `NotFoundError` with the
+entity's label from the module's one closed label table. That table is the only
+place entity label text lives (the services' other error modes read their
+entity's name from it too), and the guard is the only module that raises
+`NotFoundError` (a test pins both).
+
+Callers follow a **two-tier call rule**:
+
+- **Each entity's own service keeps its named accessors** (`get_app`,
+  `get_app_by_slug`, `get_brand`, `get_org_unit`, `get_scan_run`,
+  `get_finding`) delegating to the guard. Endpoints read through these
+  accessors, never through the guard.
+- **Every other module calls the guard directly** — `existence.get_by_pk(...)`
+  with the model class. No service ever imports a sibling service just to ask
+  "does it exist?" (or to fetch an entity it only reads); that import topology
+  is what previously forced function-local imports to dodge cycles.
+
+The guard lives in the service/domain layer — not in endpoint dependencies —
+because services are entered from the CLI and scoring orchestration as well as
+from transport; a transport-level check would silently unguard those paths and
+violate the thin-endpoint rule. It concentrates the not-found mode into a
+single raise site the same way `paginate()` concentrated keyset pagination
+([ADR 0017](adr/0017-keyset-pagination-deep-module.md)). Rationale and
+rejected alternatives:
+[ADR 0024](adr/0024-existence-guard-core-module-two-tier-rule.md).
 
 ### How the database session and transactions work
 

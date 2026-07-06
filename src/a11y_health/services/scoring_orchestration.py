@@ -9,14 +9,15 @@ See `docs/architecture.md` ("What triggers a rollup") for the event-to-rollup ta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core import existence
+from a11y_health.models.app import App
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.services import app as app_service
 from a11y_health.services import score_snapshot as score_snapshot_service
 
 
 async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
     await score_snapshot_service.compute_app_score(session, scan_run)
-    app = await app_service.get_app(session, scan_run.app_id)
+    app = await existence.get_by_pk(session, App, scan_run.app_id)
     await score_snapshot_service.rollup_org_unit_scores(session, app.org_unit_id)
     await score_snapshot_service.rollup_brand_scores(session, app.brand_id)
 

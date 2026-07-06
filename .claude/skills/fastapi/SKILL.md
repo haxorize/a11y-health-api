@@ -33,7 +33,7 @@ src/a11y_health/
 4. **Endpoint** in `api/v1/endpoints/<resource>.py` — thin router delegating to service
 5. **Register** router in `api/v1/router.py`
 6. **Re-export** model in `models/__init__.py`
-7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify with `alembic downgrade <floor> && alembic upgrade head` (the floor is the newest irreversible migration — see the database skill)
+7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify the downgrade/upgrade roundtrip (see the database skill)
 
 ## Endpoints
 
@@ -57,25 +57,23 @@ src/a11y_health/
   ```
 - Return Pydantic response models with explicit type annotations
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
-- Do not raise `HTTPException` — let domain exceptions propagate to app-level exception handlers (see Error responses)
 - Use `async def` — this project uses async SQLAlchemy throughout
 - POST endpoints set `status_code=201`, DELETE endpoints set `status_code=204`
 
 ## Schemas (Pydantic)
 
 - Pydantic V2 only: `@field_validator` / `@model_validator` (not V1's `@validator`), `model_config = ConfigDict(...)` (not `class Config`), `model_dump()` / `model_validate()` (not `dict()` / `parse_obj()`)
-- Use `X | None` (PEP 604) over `Optional[X]`
 - Use `Literal` types for constrained string values
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
 - Do not use `RootModel` for wrapping single values
-- Omit deferred columns from Read schemas (see database skill)
+- Deferred columns in Read schemas: see the database skill
 
 ## Services
 
 - Accept `AsyncSession` as first parameter
 - Return ORM model instances (endpoint serializes via schema)
-- Raise domain exceptions (not `HTTPException`) — the Error Contract's app-level handler translates them to HTTP
+- Raise domain exceptions — the Error Contract's app-level handler translates them to HTTP
 - One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
 - Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
@@ -111,8 +109,6 @@ scan_run = await _do_status_update(session, scan_run, data)
 if data.status == ScanRunStatus.COMPLETED:
     await scoring_orchestration.on_scan_run_completed(session, scan_run)
 ```
-
-This keeps endpoints thin (they only call their resource service) and keeps resource services focused on their own domain while the orchestration module coordinates cross-cutting effects.
 
 ## Database sessions
 

@@ -81,7 +81,7 @@ async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: 
 
 Call in tests: `org_unit = await make_org_unit(db_session, name="Humana")`
 
-Factories use `await db.flush()` (not `commit()`) — this matches the service layer pattern and works within the transactional rollback isolation of `db_session`. When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score_snapshot.py`) rather than duplicating the formula inline.
+When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score_snapshot.py`) rather than duplicating the formula inline.
 
 For resources with required parent FK chains, add `make_<resource>_with_parents` composite helpers that create the full ancestry in one call:
 
@@ -188,12 +188,6 @@ See [references/test-recipes.md](references/test-recipes.md) for coverage and ru
 
 ## Anti-patterns
 
-- **Don't share mutable state across tests** — no module-level lists/dicts that tests append to. Use fixtures.
-- **Don't test private/internal cache state** — assert on observable behavior, not `_internal_attr`.
-- **Don't write monolithic "everything" fixtures** — small composable fixtures beat one mega-setup.
-- **Don't over-specify mocks** — assert on the call shape that matters, not every kwarg.
-- **Don't catch exceptions in tests** — use `pytest.raises(ExceptionType)`; bare `try/except` swallows real failures.
-- **Don't let real network or DB calls leak into "unit" tests** — mock the seam or use the transactional `db_session`.
 - **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation.
 - **Don't make parallel HTTP calls in a single test** — `db_client` routes every request through one shared `AsyncSession`, which isn't concurrent-safe; `asyncio.gather` on it deadlocks or corrupts state. Await calls sequentially.
 - **Don't `asyncio.sleep()` to wait for state** — poll the condition with a deadline (loop: check, short sleep, re-check, fail past timeout) and assert what you waited *for*; a fixed sleep is either too slow or flaky. Fixed sleeps are legitimate only when elapsed time is itself the behavior under test (e.g., TTL expiry).

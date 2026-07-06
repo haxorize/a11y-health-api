@@ -9,7 +9,7 @@ from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
-from a11y_health.schemas.axe_payload import AxePayload
+from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.services.page_result import create_page_result
 from tests.factories import make_scan_run_with_parents
 
@@ -17,8 +17,7 @@ from tests.factories import make_scan_run_with_parents
 @pytest.fixture
 async def page_result(db_session: AsyncSession, axe_payload: dict[str, Any]) -> PageResult:
     scan_run = await make_scan_run_with_parents(db_session)
-    parsed = AxePayload.model_validate(axe_payload)
-    return await create_page_result(db_session, scan_run.id, parsed, axe_payload)
+    return await create_page_result(db_session, scan_run.id, parse_axe_payload(axe_payload))
 
 
 async def test_violations_stored_as_rule_findings(db_session: AsyncSession, page_result: PageResult) -> None:

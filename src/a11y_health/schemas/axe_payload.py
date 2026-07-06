@@ -11,7 +11,7 @@ See `docs/architecture.md` ("The layers") and
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.enums import Category, Impact
@@ -78,13 +78,34 @@ class AxePayload(BaseModel):
     test_subject: AxeTestSubject = Field(alias="testSubject")
     findings: AxeFindings
 
+    # Set only by parse_axe_payload().
+    _source_document: dict[str, Any] = PrivateAttr()
+
+    @property
+    def source_document(self) -> dict[str, Any]:
+        """The exact document this Axe Payload was parsed from, unmodeled
+        fields included — the Raw JSON to store. A private attribute rather
+        than a field so it never appears in the schema's own serialization and
+        can't be populated from input. Raises `AttributeError` on an Axe
+        Payload not created via `parse_axe_payload()`."""
+        try:
+            return self._source_document
+        except AttributeError:
+            raise AttributeError(
+                "source_document is set only by parse_axe_payload(), the sole sanctioned crossing of the axe boundary"
+            ) from None
+
 
 def parse_axe_payload(raw: dict[str, Any]) -> AxePayload:
-    """Validate an uploaded payload, surfacing failure as the domain's own
-    invalid-axe-payload error mode rather than a framework `ValidationError`."""
+    """Validate an uploaded document, surfacing failure as the domain's own
+    invalid-axe-payload error mode rather than a framework `ValidationError`.
+    The sole sanctioned crossing of the axe boundary: the returned Axe Payload
+    retains `raw` as its `source_document`."""
     try:
-        return AxePayload.model_validate(raw)
+        payload = AxePayload.model_validate(raw)
     except ValidationError as exc:
         first = exc.errors()[0]
         loc = " → ".join(str(part) for part in first["loc"])
         raise InvalidAxePayloadError(f"{loc}: {first['msg']}") from exc
+    payload._source_document = raw
+    return payload

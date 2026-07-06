@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import AxePayload
+from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.scoring_orchestration import (
@@ -31,7 +31,7 @@ from tests.factories import (
 
 async def _complete_scan_run(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> None:
     for raw in payloads:
-        await create_page_result(db, scan_run_id, AxePayload.model_validate(raw), raw)
+        await create_page_result(db, scan_run_id, parse_axe_payload(raw))
     sr = await get_scan_run(db, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
     await db.flush()

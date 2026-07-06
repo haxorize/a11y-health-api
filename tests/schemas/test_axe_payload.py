@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from a11y_health.schemas.axe_payload import AxePayload
-from tests.factories import make_axe_payload, make_violation
+from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
+from tests.factories import make_axe_payload, make_parsed_axe_payload, make_violation
 
 
 class TestAxePayloadMissingFields:
@@ -167,6 +167,23 @@ class TestAxeRuleSemanticValidation:
         assert rule.wcag_criteria == ["1.4.3"]
         assert {"standard": "wcag", "version": "2.0", "level": "AA"} in rule.classifications
         assert {"standard": "best-practice"} in rule.classifications
+
+
+class TestParseAxePayloadSourceRetention:
+    def test_source_document_is_the_exact_uploaded_document(self) -> None:
+        raw = make_axe_payload(violations=[make_violation("color-contrast", "serious")])
+        raw["toolVersion"] = "4.10.2"  # not modeled by the schema
+        payload = parse_axe_payload(raw)
+        assert payload.source_document == raw
+
+    def test_source_document_excluded_from_serialization(self) -> None:
+        payload = make_parsed_axe_payload()
+        assert "source_document" not in payload.model_dump()
+
+    def test_payload_not_from_parse_entry_point_has_no_source_document(self) -> None:
+        payload = AxePayload.model_validate(make_axe_payload())
+        with pytest.raises(AttributeError, match="parse_axe_payload"):
+            _ = payload.source_document
 
 
 class TestAxePayloadValid:

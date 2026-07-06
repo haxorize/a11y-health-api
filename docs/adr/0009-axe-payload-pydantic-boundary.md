@@ -5,6 +5,16 @@
 > `parse_axe_payload()` wraps them into `InvalidAxePayloadError` (400,
 > `invalid_axe_payload`) under the Error Contract.
 
+> **Amended by #77:** "eliminated entirely" below overstated the outcome. The
+> raw document kept crossing the service seam as a second argument
+> (`raw_payload`, stored as the Page Result's Raw JSON) beside the validated
+> Axe Payload, matched to it only by caller convention. #77 closed that
+> side-channel: `parse_axe_payload()` is the single sanctioned crossing of the
+> axe boundary, and it retains the exact uploaded document on the Axe Payload
+> (`source_document`, a property backed by a private attribute, excluded from
+> the schema's own serialization), from which the service reads the Raw JSON
+> to store.
+
 The axe DevTools JSON shape is fully validated by the `AxePayload` Pydantic
 schema at the API boundary, including semantic checks (impact values,
 classification tag shape, criteria parsing) — not just structural ones. The

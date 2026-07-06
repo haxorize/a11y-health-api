@@ -22,5 +22,5 @@ async def create_page_result(
     raw_payload: Annotated[dict[str, Any], Body()],
 ) -> PageResultRead:
     payload = parse_axe_payload(raw_payload)
-    page_result = await page_result_service.create_page_result(db, scan_run_id, payload, raw_payload)
+    page_result = await page_result_service.create_page_result(db, scan_run_id, payload)
     return PageResultRead.model_validate(page_result)

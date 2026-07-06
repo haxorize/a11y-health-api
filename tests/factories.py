@@ -15,7 +15,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import AxePayload
+from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services.score_snapshot import build_snapshot
 
 
@@ -260,9 +260,9 @@ def make_parsed_axe_payload(
     url: str = "https://example.com",
     violations: Any = None,
     incomplete: Any = None,
-) -> tuple[AxePayload, dict[str, Any]]:
+) -> AxePayload:
     raw = make_axe_payload(url=url, violations=violations, incomplete=incomplete)
-    return AxePayload.model_validate(raw), raw
+    return parse_axe_payload(raw)
 
 
 def assert_error(response: Response, status: int, code: str, *, message_contains: str | None = None) -> None:

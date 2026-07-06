@@ -12,7 +12,7 @@ from a11y_health.core.exceptions import (
 )
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import AxePayload
+from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
 from a11y_health.services.page_result import create_page_result
@@ -112,7 +112,7 @@ async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -
     scan_run = await make_scan_run(db_session, app_id=app.id)
 
     payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-    await create_page_result(db_session, scan_run.id, AxePayload.model_validate(payload), payload)
+    await create_page_result(db_session, scan_run.id, parse_axe_payload(payload))
 
     await scan_run_service.update_scan_run_status(
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)

@@ -293,6 +293,18 @@ The conversion lives in one place, co-located with `Page`, so no list endpoint
 re-assembles the response item-by-item. Endpoints whose items are already the public
 type (the `into` aggregates) call it without a mapper.
 
+The module also owns the **request-facing half**: a paginated endpoint declares one
+`pagination: PageParams` argument (a `PaginationParams` dependency from
+`core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the
+page-size bounds and default live only on that model and flow into every operation
+and the OpenAPI document together. Two contract tests in `tests/core/test_pagination.py`
+enforce the arrangement suite-wide: every operation that accepts a cursor must obtain
+it via `PageParams` (no local re-declaration), and must declare the `invalid_cursor`
+error mode — so a new paginated route cannot forget either. `PageParams` is a
+`Depends()` dependency rather than a `Query()` parameter model because a `Query()`
+model silently stops flattening into its fields when the endpoint declares any other
+query parameter (all FastAPI versions through 0.139).
+
 Two things to know if you touch it:
 
 - Keyset columns must be **NOT NULL** (a NULL breaks the row-value comparison and

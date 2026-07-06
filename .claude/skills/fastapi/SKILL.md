@@ -50,11 +50,11 @@ src/a11y_health/
 
   async def list_apps(
       db: DbSession,
+      pagination: PageParams,
       brand_id: Annotated[list[int] | None, Query()] = None,
-      cursor: str | None = None,
-      limit: Annotated[int, Query(le=100)] = 20,
   ) -> Page[AppRead]: ...
   ```
+- Paginated endpoints never declare `cursor`/`limit` themselves — they take one `pagination: PageParams` argument (see Pagination below); a contract test fails any operation that re-declares the pair locally
 - Return Pydantic response models with explicit type annotations
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
 - Use `async def` — this project uses async SQLAlchemy throughout
@@ -120,45 +120,33 @@ if data.status == ScanRunStatus.COMPLETED:
 
 ## Pagination
 
-Cursor-based pagination via `core/pagination.py`. List endpoints accept `cursor` and `limit`, return `Page[T]` with `items` and `next_cursor` (null when no more pages).
+Cursor-based (keyset) pagination via `core/pagination.py` — one deep module owns both halves (see [ADR 0017](../../../docs/adr/0017-keyset-pagination-deep-module.md) and `docs/architecture.md` "Pagination"):
+
+- **Request surface** — endpoints take one `pagination: PageParams` argument; never declare `cursor`/`limit` locally. Page-size bounds and `DEFAULT_PAGE_SIZE` live on `PaginationParams` only. `PageParams` is a `Depends()` model dependency, not a `Query()` parameter model — a `Query()` model silently stops flattening into its fields when the endpoint has any other query parameter (all FastAPI versions through 0.139).
+- **Query mechanics** — services call `paginate(session, stmt, keyset=[...], cursor=..., limit=...)`; no service hand-rolls the cursor decode/encode, ordering, or `limit + 1` probe.
 
 **Endpoint:**
 ```python
-@router.get("")
+@router.get("", responses=error_responses(ErrorCode.INVALID_CURSOR))
 async def list_apps(
     db: DbSession,
-    cursor: str | None = None,
-    limit: Annotated[int, Query(le=100)] = 20,
+    pagination: PageParams,
 ) -> Page[AppRead]:
-    page = await app_service.list_apps(db, cursor=cursor, limit=limit)
-    return Page(items=[AppRead.model_validate(a) for a in page.items], next_cursor=page.next_cursor)
+    page = await app_service.list_apps(db, cursor=pagination.cursor, limit=pagination.limit)
+    return Page.from_cursor_page(page, AppRead.model_validate)
 ```
 
-**Service** — keyset pagination (not OFFSET; OFFSET drifts under concurrent inserts and scales poorly). Order by the cursor key, fetch `limit + 1` to detect "more", encode the last visible row's key:
+**Service:**
 ```python
-if cursor is not None:
-    cursor_id = int(decode_cursor(cursor, expected=1)[0])
-    stmt = stmt.where(App.id > cursor_id)
-stmt = stmt.order_by(App.id).limit(limit + 1)
-rows = list((await session.execute(stmt)).scalars().all())
-has_more = len(rows) > limit
-items = rows[:limit]
-next_cursor = encode_cursor(items[-1].id) if has_more else None
-return CursorPage(items=items, next_cursor=next_cursor)
+async def list_apps(session: AsyncSession, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE) -> CursorPage[App]:
+    return await paginate(session, select(App), keyset=[App.id], cursor=cursor, limit=limit)
 ```
 
-**Composite cursor** for non-unique sort keys (e.g. timestamp + id tiebreaker). Use SQL row-tuple comparison so the index can serve it:
-```python
-decoded = decode_cursor(cursor, expected=2)
-cursor_ts = datetime.fromisoformat(decoded[0])
-cursor_id = int(decoded[1])
-stmt = stmt.where(tuple_(ScoreSnapshot.snapshot_at, ScoreSnapshot.id) > (cursor_ts, cursor_id))
-stmt = stmt.order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id).limit(limit + 1)
-...
-next_cursor = encode_cursor(items[-1].snapshot_at, items[-1].id) if has_more else None
-```
+Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id]`. Keyset columns must be NOT NULL.
 
-**Helpers** — `encode_cursor(*values)` → opaque base64; `decode_cursor(cursor, expected=N)` → list (raises `InvalidCursorError`, mapped to 400 in `main.py`). The cursor is opaque to clients; pass `expected=` to enforce arity. Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) after validating items.
+**Enforcement** — contract tests in `tests/core/test_pagination.py` sweep every served operation: accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). A forgotten declaration fails the suite, not review.
+
+Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) with `Page.from_cursor_page`.
 
 ## Error responses
 

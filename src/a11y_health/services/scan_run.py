@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
 from a11y_health.core.exceptions import InvalidStatusTransitionError, ScanRunCompletedError
-from a11y_health.core.pagination import CursorPage, paginate
+from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
@@ -31,7 +31,7 @@ async def get_scan_run(session: AsyncSession, scan_run_id: int) -> ScanRun:
 
 
 async def list_scan_runs(
-    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = 20
+    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
 ) -> CursorPage[ScanRun]:
     await existence.get_by_pk(session, App, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
@@ -57,7 +57,7 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
 
 
 async def list_page_metrics(
-    session: AsyncSession, scan_run_id: int, *, cursor: str | None = None, limit: int = 20
+    session: AsyncSession, scan_run_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
 ) -> CursorPage[PageMetricsRead]:
     await get_scan_run(session, scan_run_id)
 

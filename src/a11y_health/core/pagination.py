@@ -1,8 +1,11 @@
 """Keyset (cursor) pagination shared by every list endpoint.
 
-`paginate()` is the single deep entry point: callers hand it a filtered query and
-the keyset columns, and it owns cursor decode/encode, ordering, the `limit + 1`
-has-more probe, and slicing. No list service rolls its own paging.
+The module owns both halves of pagination. `PageParams` is the one
+request-facing declaration — endpoints consume it instead of hand-rolling
+`cursor`/`limit`, so page-size bounds and the default live only here.
+`paginate()` is the single deep query entry point: callers hand it a filtered
+query and the keyset columns, and it owns cursor decode/encode, ordering, the
+`limit + 1` has-more probe, and slicing. No list service rolls its own paging.
 
 See `docs/architecture.md` ("Pagination") for the model and
 `docs/adr/0017-keyset-pagination-deep-module.md` for why it's one module.
@@ -13,9 +16,10 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast, overload
+from typing import Annotated, cast, overload
 
-from pydantic import BaseModel
+from fastapi import Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import Row, Select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -36,6 +40,23 @@ class UnsupportedKeysetTypeError(Exception):
 
 
 _MAX_CURSOR_LENGTH = 512
+
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
+
+class PaginationParams(BaseModel):
+    cursor: str | None = None
+    limit: int = Field(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)
+
+
+# The one request-facing declaration of pagination: endpoints take a single
+# `PageParams` argument and FastAPI surfaces it as the flat `cursor`/`limit`
+# query parameters, so bounds and default live only here. Depends(), not
+# Query(): a Query() parameter model silently stops flattening when the
+# endpoint declares any other query parameter (all FastAPI versions through
+# 0.139), while a model dependency composes with them.
+PageParams = Annotated[PaginationParams, Depends()]
 
 
 @dataclass(frozen=True)

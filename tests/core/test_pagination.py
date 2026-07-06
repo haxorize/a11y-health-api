@@ -1,10 +1,25 @@
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
+from fastapi.routing import iter_route_contexts
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.pagination import CursorPage, InvalidCursorError, Page, encode_cursor, paginate
+from a11y_health.core.error_contract import ErrorCode
+from a11y_health.core.pagination import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    CursorPage,
+    InvalidCursorError,
+    Page,
+    PaginationParams,
+    encode_cursor,
+    paginate,
+)
+from a11y_health.main import app
 from a11y_health.models.brand import Brand
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_brand, make_score_snapshot
@@ -157,6 +172,82 @@ async def test_paginate_string_keyset_round_trip(db_session: AsyncSession) -> No
     assert [b.name for b in first.items] == ["alpha", "bravo"]
     assert [b.name for b in second.items] == ["charlie"]
     assert second.next_cursor is None
+
+
+def _flat_dependants(dependant: Any) -> Iterator[Any]:
+    yield dependant
+    for sub in dependant.dependencies:
+        yield from _flat_dependants(sub)
+
+
+# An operation "accepts a cursor" whether the parameter arrives hand-rolled on
+# the endpoint or through any dependency — both shapes are swept, so a
+# hand-rolled regression is still caught. iter_route_contexts is the traversal
+# FastAPI's own OpenAPI generation walks, so the sweep sees every served
+# operation, not just one router's.
+def _accepts_cursor(dependant: Any) -> bool:
+    return any(field.name == "cursor" for dep in _flat_dependants(dependant) for field in dep.query_params)
+
+
+def _cursor_operations() -> list[Any]:
+    operations = [
+        ctx
+        for ctx in iter_route_contexts(app.routes)
+        # docs/spec routes are plain starlette Routes with no dependant to sweep
+        if getattr(ctx, "dependant", None) is not None and _accepts_cursor(ctx.dependant)
+    ]
+    assert operations, "cursor-operation sweep found nothing — detection is broken"
+    return operations
+
+
+def test_every_cursor_operation_uses_the_pagination_owned_definition() -> None:
+    for op in _cursor_operations():
+        own_params = {field.name for field in op.dependant.query_params}
+        assert "cursor" not in own_params and "limit" not in own_params, (
+            f"{sorted(op.methods)} {op.path_format} re-declares pagination parameters "
+            f"locally — consume PageParams from core.pagination instead"
+        )
+        assert any(dep.call is PaginationParams for dep in _flat_dependants(op.dependant)), (
+            f"{sorted(op.methods)} {op.path_format} accepts a cursor but not via PageParams from core.pagination"
+        )
+
+
+def test_every_cursor_operation_declares_the_invalid_cursor_mode() -> None:
+    for op in _cursor_operations():
+        declared_codes = {code for entry in op.responses.values() for code in entry.get("x-error-codes", [])}
+        assert ErrorCode.INVALID_CURSOR in declared_codes, (
+            f"{sorted(op.methods)} {op.path_format} accepts a cursor but does not declare "
+            f"the invalid-cursor error mode — add ErrorCode.INVALID_CURSOR to its error_responses()"
+        )
+
+
+def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> None:
+    spec = app.openapi()
+    for op in _cursor_operations():
+        for method in op.methods:
+            params = {p["name"]: p for p in spec["paths"][op.path_format][method.lower()]["parameters"]}
+            limit_schema = params["limit"]["schema"]
+            assert limit_schema["minimum"] == 1, f"{method} {op.path_format}"
+            assert limit_schema["maximum"] == MAX_PAGE_SIZE, f"{method} {op.path_format}"
+            assert limit_schema["default"] == DEFAULT_PAGE_SIZE, f"{method} {op.path_format}"
+
+
+# Expected values are the published contract (Story #80): default page size 20,
+# bounds 1..100 — literals here, so a drift in the module is caught, not mirrored.
+class TestPaginationParams:
+    def test_defaults_to_no_cursor_and_page_size_twenty(self) -> None:
+        params = PaginationParams()
+        assert params.cursor is None
+        assert params.limit == 20
+
+    @pytest.mark.parametrize("limit", [0, 101, -1])
+    def test_out_of_bounds_page_size_is_rejected(self, limit: int) -> None:
+        with pytest.raises(ValidationError):
+            PaginationParams(limit=limit)
+
+    @pytest.mark.parametrize("limit", [1, 100])
+    def test_bounds_are_inclusive(self, limit: int) -> None:
+        assert PaginationParams(limit=limit).limit == limit
 
 
 def _to_str(n: int) -> str:

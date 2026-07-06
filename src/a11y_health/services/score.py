@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
-from a11y_health.core.pagination import CursorPage, paginate
+from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
 from a11y_health.models.org_unit import OrgUnit
@@ -26,7 +26,7 @@ async def _list_scores(
     filter_val: int,
     *,
     cursor: str | None = None,
-    limit: int = 20,
+    limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
     stmt = select(ScoreSnapshot).where(filter_col == filter_val)
     return await paginate(
@@ -39,21 +39,21 @@ async def _list_scores(
 
 
 async def list_app_scores(
-    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = 20
+    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, App, app_id)
     return await _list_scores(session, ScoreSnapshot.app_id, app_id, cursor=cursor, limit=limit)
 
 
 async def list_brand_scores(
-    session: AsyncSession, brand_id: int, *, cursor: str | None = None, limit: int = 20
+    session: AsyncSession, brand_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, Brand, brand_id)
     return await _list_scores(session, ScoreSnapshot.brand_id, brand_id, cursor=cursor, limit=limit)
 
 
 async def list_org_unit_scores(
-    session: AsyncSession, org_unit_id: int, *, cursor: str | None = None, limit: int = 20
+    session: AsyncSession, org_unit_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, OrgUnit, org_unit_id)
     return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, cursor=cursor, limit=limit)

@@ -1,10 +1,8 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
-from a11y_health.core.pagination import Page
+from a11y_health.core.pagination import Page, PageParams
 from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
 from a11y_health.services import scan_run as scan_run_service
@@ -23,10 +21,9 @@ async def create_scan_run(db: DbSession, app_id: int, data: ScanRunCreate) -> Sc
 async def list_scan_runs(
     db: DbSession,
     app_id: int,
-    cursor: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    pagination: PageParams,
 ) -> Page[ScanRunRead]:
-    page = await scan_run_service.list_scan_runs(db, app_id, cursor=cursor, limit=limit)
+    page = await scan_run_service.list_scan_runs(db, app_id, cursor=pagination.cursor, limit=pagination.limit)
     return Page.from_cursor_page(page, ScanRunRead.model_validate)
 
 
@@ -40,10 +37,9 @@ async def get_scan_run(db: DbSession, scan_run_id: int) -> ScanRunRead:
 async def list_scan_run_pages(
     db: DbSession,
     scan_run_id: int,
-    cursor: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    pagination: PageParams,
 ) -> Page[PageMetricsRead]:
-    page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=cursor, limit=limit)
+    page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=pagination.cursor, limit=pagination.limit)
     return Page.from_cursor_page(page)
 
 

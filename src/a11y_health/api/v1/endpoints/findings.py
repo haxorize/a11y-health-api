@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
-from a11y_health.core.pagination import Page
+from a11y_health.core.pagination import Page, PageParams
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import Classification
 from a11y_health.schemas.rule_finding import RuleFindingDetail, RuleFindingRead
@@ -17,13 +17,12 @@ router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"]
 async def list_findings(
     db: DbSession,
     scan_run_id: int,
+    pagination: PageParams,
     type: Annotated[list[FindingType] | None, Query()] = None,
     impact: Annotated[list[Impact] | None, Query()] = None,
     category: Annotated[list[Category] | None, Query()] = None,
     wcag_criterion: Annotated[list[str] | None, Query()] = None,
     classification: Annotated[list[Classification] | None, Query()] = None,
-    cursor: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> Page[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,
@@ -33,8 +32,8 @@ async def list_findings(
         category=category,
         wcag_criterion=wcag_criterion,
         classification=classification,
-        cursor=cursor,
-        limit=limit,
+        cursor=pagination.cursor,
+        limit=pagination.limit,
     )
     return Page.from_cursor_page(page, RuleFindingRead.model_validate)
 

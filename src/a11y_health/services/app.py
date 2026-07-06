@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
 from a11y_health.core.exceptions import DuplicateSlugError
-from a11y_health.core.pagination import CursorPage, paginate
+from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.core.slug import derive_slug
 from a11y_health.models.app import UQ_APP_SLUG, App
 from a11y_health.models.brand import Brand
@@ -20,7 +20,7 @@ async def list_apps(
     brand_id: list[int] | None = None,
     org_unit_id: list[int] | None = None,
     cursor: str | None = None,
-    limit: int = 20,
+    limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[App]:
     stmt = select(App)
     if brand_id:

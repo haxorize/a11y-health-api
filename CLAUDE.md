@@ -45,6 +45,10 @@ See `DOMAIN.md` for canonical domain terms. Use those terms in code, comments, a
 
 See `docs/adr/` for recorded architectural decisions and their rationale. Consult before making choices that touch the same areas; respect existing decisions unless the user explicitly wants to revisit one.
 
+## Solved problems
+
+`docs/solutions/` — solved problems keyed by symptom frontmatter (one Learning doc per diagnosis).
+
 ## Code documentation
 
 Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr/0018-documentation-strategy-prose-over-docstrings.md) for the why. The rules:

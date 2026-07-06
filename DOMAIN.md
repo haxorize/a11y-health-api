@@ -56,6 +56,7 @@
 | **Error Code** | A machine-readable identifier for one domain error mode, drawn from a closed vocabulary declared in the **Error Contract** (exactly one code per mode). The UI narrows on it instead of parsing message text. | Error type, error name, reason code |
 | **Declaration Honesty** | The suite-wide invariant that any non-framework 4xx observed during tests must be declared on the operation that produced it, with its **Error Code** among the operation's declared codes. Enforced by an ASGI shim wrapping the test clients, so an undeclared mode fails the suite instead of surviving review. | Honesty check, contract check |
 | **Existence Guard** | The single check that a referenced entity exists before an operation proceeds, raising the not-found error mode from one module with a label from its one closed table — so an absent **App**, **Brand**, **Org Unit**, **Scan Run**, **Rule Finding**, or **Score Snapshot** (labeled as its **Scan Run**'s summary) always fails the same way, and no service imports another service just to ask "does it exist?" (or to fetch an entity it only reads). | Get-or-404, existence check, lookup guard |
+| **Dependents Guard** | The rule that an **Org Unit** with dependent records — child **Org Units**, **Apps**, or **Score Snapshots** — refuses deletion with the `has_dependents` error mode (409). The database RESTRICT constraints are the source of truth; the service translates the violation into the **Error Contract**. Contrast with **App** deletion, which cascades to the **App**'s **Scan Runs** and **Score Snapshots** instead of refusing. | Delete guard, dependency check, referential guard |
 
 ## Relationships
 
@@ -68,6 +69,7 @@
 - A **Page Result** has zero or more **Rule Findings** and exactly one **Page Health**
 - A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), one or more **Classifications**, and zero or more **WCAG Criteria**
 - A **Score Snapshot** belongs to an **App** (linked to a **Scan Run**), an **Org Unit** (recomputed via **Rollup**), or a **Brand** (recomputed via **Brand Rollup**)
+- Deleting an **App** cascades to its **Scan Runs** and **Score Snapshots**; deleting an **Org Unit** that has dependents is refused (**Dependents Guard**)
 
 ## Example dialogue
 

@@ -3,10 +3,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import app as app_service
-from tests.factories import make_app, make_brand, make_org_unit
+from tests.factories import (
+    make_app,
+    make_app_with_org_unit,
+    make_brand,
+    make_org_unit,
+    make_scan_run,
+    make_score_snapshot,
+)
 
 
 async def test_create_app_derives_slug_from_name(db_session: AsyncSession) -> None:
@@ -186,6 +194,18 @@ async def test_delete_app(db_session: AsyncSession) -> None:
     await app_service.delete_app(db_session, created.id)
     with pytest.raises(NotFoundError):
         await app_service.get_app(db_session, created.id)
+
+
+async def test_delete_app_cascades_dependents(db_session: AsyncSession) -> None:
+    app = await make_app_with_org_unit(db_session)
+    app_id = app.id
+    await make_scan_run(db_session, app_id=app_id)
+    await make_score_snapshot(db_session, app_id=app_id)
+    await app_service.delete_app(db_session, app_id)
+    scan_runs = await db_session.execute(select(ScanRun).where(ScanRun.app_id == app_id))
+    assert scan_runs.scalars().all() == []
+    snapshots = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app_id))
+    assert snapshots.scalars().all() == []
 
 
 async def test_update_app_org_unit(db_session: AsyncSession) -> None:

@@ -72,6 +72,11 @@ async def test_list_scan_runs(db_session: AsyncSession) -> None:
     assert all(r.app_id == app_a.id for r in page.items)
 
 
+async def test_list_scan_runs_invalid_app(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError, match="App"):
+        await scan_run_service.list_scan_runs(db_session, 999999)
+
+
 async def test_update_status_pending_to_completed(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
 

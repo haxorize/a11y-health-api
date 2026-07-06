@@ -2,7 +2,7 @@ import pytest
 from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import CircularReferenceError, NotFoundError
+from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError, NotFoundError
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
@@ -73,6 +73,27 @@ async def test_delete_org_unit(db_session: AsyncSession) -> None:
 async def test_delete_org_unit_not_found(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError, match="Org unit"):
         await org_unit_service.delete_org_unit(db_session, 999999)
+
+
+async def test_delete_org_unit_with_apps_rejected(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    await make_app(db_session, slug="blocker-app", org_unit_id=org_unit.id)
+    with pytest.raises(HasDependentsError, match="dependent"):
+        await org_unit_service.delete_org_unit(db_session, org_unit.id)
+
+
+async def test_delete_org_unit_with_score_snapshots_rejected(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    await make_score_snapshot(db_session, org_unit_id=org_unit.id)
+    with pytest.raises(HasDependentsError, match="dependent"):
+        await org_unit_service.delete_org_unit(db_session, org_unit.id)
+
+
+async def test_delete_org_unit_with_children_rejected(db_session: AsyncSession) -> None:
+    parent = await make_org_unit(db_session, name="Humana")
+    await make_org_unit(db_session, name="CenterWell", parent_id=parent.id)
+    with pytest.raises(HasDependentsError, match="dependent"):
+        await org_unit_service.delete_org_unit(db_session, parent.id)
 
 
 async def test_get_ancestors_returns_path_to_root(db_session: AsyncSession) -> None:

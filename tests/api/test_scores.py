@@ -101,3 +101,30 @@ async def test_list_brand_scores_empty(db_client: AsyncClient, db_session: Async
 async def test_list_brand_scores_not_found(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/brands/999999/scores")
     assert response.status_code == 404
+
+
+async def test_list_latest_scores_round_trip(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    app_a = await make_app_with_org_unit(db_session, org_name="Org A", app_name="App A", slug="app-a")
+    app_b = await make_app_with_org_unit(db_session, org_name="Org B", app_name="App B", slug="app-b")
+    # never scanned — absent from the response, not null-filled
+    await make_app_with_org_unit(db_session, org_name="Org C", app_name="App C", slug="app-c")
+
+    await make_score_snapshot(db_session, app_id=app_a.id, score=0.5, snapshot_at=datetime(2026, 4, 1, tzinfo=UTC))
+    latest_a = await make_score_snapshot(
+        db_session, app_id=app_a.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    latest_b = await make_score_snapshot(
+        db_session, app_id=app_b.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "app"})
+    assert response.status_code == 200
+
+    page = response.json()
+    assert {item["id"] for item in page["items"]} == {latest_a.id, latest_b.id}
+    assert page["next_cursor"] is None
+
+
+async def test_list_latest_scores_invalid_owner_type(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "fleet"})
+    assert response.status_code == 422

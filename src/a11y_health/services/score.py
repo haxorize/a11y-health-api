@@ -1,8 +1,9 @@
 """Reading Score Snapshots back out — the read side of scoring.
 
 Paginated history listings for an App, Org Unit, or Brand, oldest first
-(ascending by `snapshot_at`). The computation that produces these snapshots lives
-in `score_snapshot.py`.
+(ascending by `snapshot_at`), plus the cross-entity latest-per-owner read behind
+`/scores/latest` (selection shared with the rollups via `_latest_snapshot.py`).
+The computation that produces these snapshots lives in `score_snapshot.py`.
 
 See `docs/architecture.md` ("The scoring & rollup model").
 """
@@ -16,8 +17,42 @@ from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.services._latest_snapshot import select_latest_snapshots
+
+_OWNER_COLUMN = {
+    ScoreSnapshotOwnerType.APP: ScoreSnapshot.app_id,
+    ScoreSnapshotOwnerType.ORG_UNIT: ScoreSnapshot.org_unit_id,
+    ScoreSnapshotOwnerType.BRAND: ScoreSnapshot.brand_id,
+}
+
+
+async def list_latest_scores(
+    session: AsyncSession,
+    owner_type: ScoreSnapshotOwnerType,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+) -> CursorPage[ScoreSnapshot]:
+    owner_col = _OWNER_COLUMN[owner_type]
+    stmt = select_latest_snapshots(
+        select(ScoreSnapshot).where(owner_col.is_not(None)),
+        partition_on=[owner_col],
+    )
+    # Keyset on the owner id alone: it is unique here (one row per owner), never
+    # NULL (the filter above), and an owner's position can't move when the latest
+    # view recomputes between requests. Keying on snapshot_at — or adding the
+    # usual id tiebreak — would let a mid-walk import re-serve an already-served
+    # owner (its new latest row compares greater than the cursor) or hide one.
+    return await paginate(
+        session,
+        stmt,
+        keyset=[owner_col],
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 async def _list_scores(

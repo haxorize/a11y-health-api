@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
@@ -24,6 +24,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
+from a11y_health.services._latest_snapshot import select_latest_snapshots
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -159,21 +160,10 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
         .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
         .where(OrgUnit.parent_id == org_unit_id)
     )
-    all_children = app_child.union_all(ou_child).subquery()
-
-    partition_col = func.coalesce(all_children.c.app_id, all_children.c.org_unit_id)
-    row_num = (
-        func.row_number()
-        .over(
-            partition_by=partition_col,
-            order_by=(all_children.c.snapshot_at.desc(), all_children.c.id.desc()),
-        )
-        .label("rn")
+    stmt = select_latest_snapshots(
+        app_child.union_all(ou_child), partition_on=[ScoreSnapshot.app_id, ScoreSnapshot.org_unit_id]
     )
-    ranked = select(all_children.c.id, row_num).subquery()
-    result = await session.execute(
-        select(ScoreSnapshot).join(ranked, ScoreSnapshot.id == ranked.c.id).where(ranked.c.rn == 1)
-    )
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -240,20 +230,9 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> Non
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    row_num = (
-        func.row_number()
-        .over(
-            partition_by=ScoreSnapshot.app_id,
-            order_by=(ScoreSnapshot.snapshot_at.desc(), ScoreSnapshot.id.desc()),
-        )
-        .label("rn")
-    )
-    subq = (
-        select(ScoreSnapshot.id, row_num).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
-    ).subquery()
-    result = await session.execute(
-        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
-    )
+    brand_apps = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
+    stmt = select_latest_snapshots(brand_apps, partition_on=[ScoreSnapshot.app_id])
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 

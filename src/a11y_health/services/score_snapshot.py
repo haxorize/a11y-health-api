@@ -11,9 +11,8 @@ See `docs/architecture.md` ("The scoring & rollup model") for the full walk-thro
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
@@ -131,9 +130,8 @@ def build_snapshot(
     org_unit_id: int | None = None,
     brand_id: int | None = None,
 ) -> ScoreSnapshot:
-    owners = [id for id in (app_id, org_unit_id, brand_id) if id is not None]
-    if len(owners) != 1:
-        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
+    # guard only — raises unless exactly one owner id is set
+    _owner_criterion(app_id=app_id, org_unit_id=org_unit_id, brand_id=brand_id)
     if scan_run_id is not None and app_id is None:
         raise ValueError("scan_run_id requires app_id")
 
@@ -152,26 +150,6 @@ def build_snapshot(
         pct_pages_with_critical_violations=safe_ratio(pages_with_critical_violations, total_pages),
         snapshot_at=snapshot_at,
     )
-
-
-async def _latest_snapshots_by_partition(
-    session: AsyncSession,
-    partition_col: Any,
-    join_target: Any,
-    join_cond: Any,
-    filter_col: Any,
-    filter_val: int,
-) -> list[ScoreSnapshot]:
-    row_num = (
-        func.row_number()
-        .over(partition_by=partition_col, order_by=(ScoreSnapshot.snapshot_at.desc(), ScoreSnapshot.id.desc()))
-        .label("rn")
-    )
-    subq = (select(ScoreSnapshot.id, row_num).join(join_target, join_cond).where(filter_col == filter_val)).subquery()
-    result = await session.execute(
-        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
-    )
-    return list(result.scalars().all())
 
 
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
@@ -199,12 +177,22 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
     return list(result.scalars().all())
 
 
-def _owner_filter(*, org_unit_id: int | None = None, brand_id: int | None = None) -> Any:
-    if (org_unit_id is None) == (brand_id is None):
-        raise ValueError("Exactly one of org_unit_id, brand_id must be set")
-    if org_unit_id is not None:
-        return ScoreSnapshot.org_unit_id == org_unit_id
-    return ScoreSnapshot.brand_id == brand_id
+def _owner_criterion(
+    *, app_id: int | None = None, org_unit_id: int | None = None, brand_id: int | None = None
+) -> ColumnElement[bool]:
+    """The exactly-one-owner invariant, stated once: raises ValueError unless
+    exactly one owner id is set, and returns that owner's `column == id` filter
+    (callers guarding a write may discard it)."""
+    owners = [
+        (ScoreSnapshot.app_id, app_id),
+        (ScoreSnapshot.org_unit_id, org_unit_id),
+        (ScoreSnapshot.brand_id, brand_id),
+    ]
+    chosen = [(column, owner_id) for column, owner_id in owners if owner_id is not None]
+    if len(chosen) != 1:
+        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
+    column, owner_id = chosen[0]
+    return column == owner_id
 
 
 async def _aggregate_and_save(
@@ -220,7 +208,7 @@ async def _aggregate_and_save(
     snapshot_at = max(c.snapshot_at for c in children)
     await session.execute(
         delete(ScoreSnapshot).where(
-            _owner_filter(org_unit_id=org_unit_id, brand_id=brand_id),
+            _owner_criterion(org_unit_id=org_unit_id, brand_id=brand_id),
             ScoreSnapshot.snapshot_at > snapshot_at,
         )
     )
@@ -244,7 +232,7 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> Non
     if children:
         await _aggregate_and_save(session, children, org_unit_id=org_unit_id)
     else:
-        await session.execute(delete(ScoreSnapshot).where(_owner_filter(org_unit_id=org_unit_id)))
+        await session.execute(delete(ScoreSnapshot).where(_owner_criterion(org_unit_id=org_unit_id)))
 
     org_unit = await existence.get_by_pk(session, OrgUnit, org_unit_id)
     if org_unit.parent_id is not None:
@@ -252,9 +240,21 @@ async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> Non
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    return await _latest_snapshots_by_partition(
-        session, ScoreSnapshot.app_id, App, ScoreSnapshot.app_id == App.id, App.brand_id, brand_id
+    row_num = (
+        func.row_number()
+        .over(
+            partition_by=ScoreSnapshot.app_id,
+            order_by=(ScoreSnapshot.snapshot_at.desc(), ScoreSnapshot.id.desc()),
+        )
+        .label("rn")
     )
+    subq = (
+        select(ScoreSnapshot.id, row_num).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
+    ).subquery()
+    result = await session.execute(
+        select(ScoreSnapshot).join(subq, ScoreSnapshot.id == subq.c.id).where(subq.c.rn == 1)
+    )
+    return list(result.scalars().all())
 
 
 async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
@@ -262,4 +262,4 @@ async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
     if children:
         await _aggregate_and_save(session, children, brand_id=brand_id)
     else:
-        await session.execute(delete(ScoreSnapshot).where(_owner_filter(brand_id=brand_id)))
+        await session.execute(delete(ScoreSnapshot).where(_owner_criterion(brand_id=brand_id)))

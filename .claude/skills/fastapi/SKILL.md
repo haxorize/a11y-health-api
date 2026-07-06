@@ -72,7 +72,7 @@ src/a11y_health/
 ## Services
 
 - Accept `AsyncSession` as first parameter
-- Return ORM model instances (endpoint serializes via schema)
+- Return ORM model instances (endpoint serializes via schema). Exception: when a response is assembled from more than one query (e.g. `rule_finding.get_finding` merging a Rule Finding with its Node Findings), the service returns the assembled Read schema and the endpoint just returns it — assembly stays below the transport seam
 - Raise domain exceptions — the Error Contract's app-level handler translates them to HTTP
 - One service module per resource; group related operations. Import with alias: `from a11y_health.services import brand as brand_service`
 - Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations

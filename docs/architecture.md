@@ -271,10 +271,13 @@ order (see [Operating & debugging](#6-operating--debugging)).
 
 ## 4. Pagination
 
-Every list endpoint is **keyset (cursor) paginated** through one shared function,
-`paginate()` in `core/pagination.py` —
+Every **unbounded** list endpoint is **keyset (cursor) paginated** through one
+shared function, `paginate()` in `core/pagination.py` —
 [ADR 0017](adr/0017-keyset-pagination-deep-module.md). No list service hand-rolls
-its own paging.
+its own paging. Bounded reference collections — brand and org-unit listings and
+the ancestors/descendants traversals — deliberately return bare arrays instead;
+the boundary is the data's growth model, not its row count
+([ADR 0025](adr/0025-bounded-reference-lists-stay-bare-arrays.md)).
 
 What a caller does: pass a filtered query plus the **keyset** (the columns that
 order and tiebreak the results), and `paginate` handles the rest — applying the

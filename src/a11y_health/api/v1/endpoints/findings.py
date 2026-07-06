@@ -7,7 +7,7 @@ from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import Classification
-from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
+from a11y_health.schemas.rule_finding import RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 
 router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
@@ -45,9 +45,4 @@ async def get_finding(
     scan_run_id: int,
     finding_id: int,
 ) -> RuleFindingDetail:
-    result = await rule_finding_service.get_finding(db, scan_run_id, finding_id)
-    finding_data = RuleFindingRead.model_validate(result.finding)
-    return RuleFindingDetail(
-        **finding_data.model_dump(),
-        node_findings=[NodeFindingDetail.model_validate(nf) for nf in result.node_findings],
-    )
+    return await rule_finding_service.get_finding(db, scan_run_id, finding_id)

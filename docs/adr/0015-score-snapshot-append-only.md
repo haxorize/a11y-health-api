@@ -8,9 +8,11 @@ are built around this access pattern.
 
 Two exceptions, both delete + insert (never in-place update):
 
-- **Rebuild on cascade**: when a scan run is deleted, `on_scan_run_deleted`
-  deletes the orphaned App snapshot and recomputes from the next-newest run,
-  then triggers the rollup.
+- **Cascade on scan-run delete**: the App snapshot for a deleted scan run is
+  removed by the database FK cascade (`scan_run_id` carries
+  `ondelete="CASCADE"`), not by the handler — `on_scan_run_deleted` only
+  re-triggers the rollups, which aggregate from whatever snapshot is now the
+  App's latest.
 - **Forward-stale prune on rollup**: `_aggregate_and_save` derives
   `snapshot_at = max(child.snapshot_at)` and deletes any snapshots for the
   same owner whose `snapshot_at` is strictly past that max. When source data

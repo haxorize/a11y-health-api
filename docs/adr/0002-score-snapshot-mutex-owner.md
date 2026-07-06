@@ -15,5 +15,5 @@ Considered and rejected:
   foreign key.
 
 The mutex CHECK keeps the table polymorphic without losing referential integrity,
-and lets `latest_snapshot_per_owner` share one implementation across all three
-rollup paths.
+and lets the latest-snapshot-per-owner selection (`snapshot_at DESC, id DESC`)
+keep one shape across all three rollup paths.

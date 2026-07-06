@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +12,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas._tag_parsing import Classification, classification_to_tag
-
-
-@dataclass
-class FindingWithNodes:
-    finding: RuleFinding
-    node_findings: list[NodeFinding]
+from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
 
 
 async def list_findings(
@@ -61,7 +54,7 @@ async def get_finding(
     session: AsyncSession,
     scan_run_id: int,
     finding_id: int,
-) -> FindingWithNodes:
+) -> RuleFindingDetail:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
     stmt = (
@@ -78,6 +71,9 @@ async def get_finding(
         .order_by(NodeFinding.id)
     )
     nodes_result = await session.execute(nodes_stmt)
-    node_findings = list(nodes_result.scalars().all())
 
-    return FindingWithNodes(finding=finding, node_findings=node_findings)
+    finding_data = RuleFindingRead.model_validate(finding)
+    return RuleFindingDetail(
+        **finding_data.model_dump(),
+        node_findings=[NodeFindingDetail.model_validate(nf) for nf in nodes_result.scalars()],
+    )

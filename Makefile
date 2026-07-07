@@ -14,7 +14,7 @@ test-cov:
 
 lint:
 	uv run ruff check .
-	uv run ty check src/
+	uv run ty check
 
 format:
 	uv run ruff format .

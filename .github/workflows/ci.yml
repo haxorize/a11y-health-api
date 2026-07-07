@@ -20,6 +20,10 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run ty check
+      - name: Check openapi.json is not stale
+        run: |
+          uv run python scripts/export_openapi.py
+          git diff --exit-code openapi.json
 
   test:
     runs-on: ubuntu-latest

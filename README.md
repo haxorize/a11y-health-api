@@ -40,11 +40,21 @@ make lint
 # Format code
 make format
 
+# Regenerate openapi.json (commit it with any contract change)
+make openapi
+
+# Fail if openapi.json is stale relative to the code
+make openapi-check
+
 # Clean build artifacts
 make clean
 ```
 
 ## CLI
+
+The onboarding CLI (`uv run a11y`) drives the public API over HTTP — no direct
+database access. Four commands: `ingest`, `import`, `org-units list|create`,
+and `brands list`.
 
 Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by deriving its **Slug** from the `name` field in the axe DevTools JSON (lowercase ASCII, words joined by hyphens, accents folded — e.g. `My App (Prod)` → `my-app-prod`):
 
@@ -64,6 +74,14 @@ Pass `--name` to choose the App's display name at creation (identity is locked a
 
 ```sh
 uv run a11y import ./scans/humana.com --org-unit-id 1 --brand-id 1 --name "Humana.com"
+```
+
+Look up (or create) the ids that `import` needs without leaving the CLI:
+
+```sh
+uv run a11y org-units list                    # id, name, parent per org unit
+uv run a11y org-units create "Digital" --parent-id 1
+uv run a11y brands list                       # id, name per brand
 ```
 
 ## Migrations
@@ -97,17 +115,25 @@ Configuration is managed via environment variables or a `.env` file:
 ```
 src/a11y_health/
 ├── api/
-│   ├── deps.py          # Dependency injection
+│   ├── deps.py             # Dependency injection
 │   └── v1/
-│       ├── endpoints/   # Route handlers
-│       └── router.py    # API router
+│       ├── endpoints/      # Route handlers
+│       └── router.py       # API router
 ├── core/
-│   ├── database.py      # Database setup
-│   └── exceptions.py    # Domain exceptions
-├── models/              # SQLAlchemy models
-├── schemas/             # Pydantic schemas
-├── services/            # Business logic
-├── cli.py               # CLI upload tool
-├── config.py            # Settings
-└── main.py              # Application entrypoint
+│   ├── database.py         # Engine, session, ORM base classes
+│   ├── error_contract.py   # Error Contract: domain error → status + code table
+│   ├── exceptions.py       # Domain exceptions
+│   ├── existence.py        # Existence Guard (the only NotFoundError raise site)
+│   ├── pagination.py       # Keyset (cursor) pagination deep module
+│   └── slug.py             # The single App Slug derivation
+├── models/                 # SQLAlchemy models
+├── schemas/                # Pydantic schemas (incl. the axe payload boundary)
+├── services/               # Business logic (scoring, rollups, orchestration)
+├── cli.py                  # Onboarding CLI (ingest/import + lookups)
+├── config.py               # Settings
+└── main.py                 # Application entrypoint
 ```
+
+Cross-cutting behavior (layering, scoring/rollups, the scan-run lifecycle,
+pagination, the error contract) is narrated in `docs/architecture.md`; the
+domain glossary is `DOMAIN.md`; decisions live in `docs/adr/`.

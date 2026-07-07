@@ -75,11 +75,37 @@ async def test_ingest_name_mismatch_hard_fails_before_network_call(
     message = str(exc_info.value)
     assert "foo.com" in message
     assert "bar.com" in message
+    # Reported by slug — the unit that actually makes them distinct Apps.
+    assert "foo-com" in message
+    assert "bar-com" in message
 
     resp = await db_client.get("/api/v1/apps/slug/foo-com")
     assert resp.json()["id"]
     resp = await db_client.get(f"/api/v1/apps/{resp.json()['id']}/scan-runs")
     assert resp.json()["items"] == []
+
+
+async def test_ingest_same_slug_variants_resolve_one_app(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    test_app = await make_app_with_org_unit(db_session, slug="foo-com")
+
+    # Casing drift between pages of one scan; both names derive to foo-com.
+    a = make_axe_payload(name="FOO.COM", url="https://foo.com/a")
+    a["endTime"] = "2026-03-30T11:55:52-0400"
+    (tmp_path / "a.json").write_text(json.dumps(a))
+
+    b = make_axe_payload(name="foo.com", url="https://foo.com/b")
+    b["endTime"] = "2026-03-30T11:55:52-0400"
+    (tmp_path / "b.json").write_text(json.dumps(b))
+
+    result = await ingest(db_client, directory=tmp_path)
+
+    assert result.app_id == test_app.id
+    assert result.app_slug == "foo-com"
+
+    resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}/pages")
+    assert len(resp.json()) == 2
 
 
 async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClient, tmp_path: Path) -> None:

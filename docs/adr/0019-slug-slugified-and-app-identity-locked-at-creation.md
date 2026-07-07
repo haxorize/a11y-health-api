@@ -56,3 +56,26 @@ with both identity fields still fixed at creation and rename still impossible.
 This is not the "separately-decided display-name field" above: the override
 cannot vary from identity, only prettify within its derivation-equivalence
 class.
+
+**Amended 2026-07-07 (bug #83):** The onboarding CLI resolves an import/ingest
+directory's App by comparing *derived slugs*, not verbatim axe JSON `name`s. A
+directory whose scans carry names that differ only in presentation but share a
+slug (e.g. a scan tool that changes casing between runs — `"Foo.com"` then
+`"foo.com"`) resolves to one App instead of hard-failing; a genuine conflict is
+two or more *distinct* slugs, and `NameResolutionError` is keyed on the colliding
+slugs (keeping the source names as provenance in its message) — the slug is the
+unit of collision. When same-slug variants disagree, the display name at creation
+is cosmetic (every variant derives to the same identity), so the newest scan's
+variant wins — "newest" by `scanned_at`, the observation time the rest of the
+system already orders by (see Latest Score Snapshot), not the `YYYY-MM-DD`
+directory name. Unlike the Latest Score Snapshot, equal-`scanned_at` variants are
+not tie-broken by id — first seen wins, which is harmless here because the choice
+is purely cosmetic. An explicit
+`--name` override still takes precedence. Considered and rejected: **first-seen**
+(arbitrary, dependent on filesystem traversal order) and **requiring `--name` to
+disambiguate** (reintroduces the exact refusal this fixes, for a difference that
+carries no identity weight). `_resolve_app_name` keeps returning a single name —
+the newest — so `derive_slug(newest)` is the resolved identity and both entry
+points stay unchanged; `ingest` gains the same tolerance for free. This is the
+CLI catching up to the derivation-equivalence the 2026-07-05 amendment
+established at App creation.

@@ -243,6 +243,9 @@ async def test_import_name_mismatch_across_date_subdirs_hard_fails(
     assert "bar.com" in message
     assert "2026-03-30" in message
     assert "2026-04-01" in message
+    # The conflict is reported by slug — the unit that actually makes them distinct Apps.
+    assert "foo-com" in message
+    assert "bar-com" in message
 
     for slug in ("foo-com", "bar-com"):
         resp = await db_client.get(f"/api/v1/apps/slug/{slug}")
@@ -382,6 +385,69 @@ async def test_import_non_equivalent_name_creates_visible_sibling_app(
     assert len(resp.json()["items"]) == 2
 
 
+async def test_import_same_slug_variants_across_dates_create_one_app_with_newest_name(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    app_dir = tmp_path / "casing-drift"
+    app_dir.mkdir()
+
+    # The scan tool changed casing between runs; both names derive to foo-com.
+    (app_dir / "2026-03-01").mkdir()
+    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
+    older["endTime"] = "2026-03-01T12:00:00Z"
+    (app_dir / "2026-03-01" / "p.json").write_text(json.dumps(older))
+
+    (app_dir / "2026-04-01").mkdir()
+    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
+    newer["endTime"] = "2026-04-01T12:00:00Z"
+    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(newer))
+
+    result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
+
+    assert result.app_created is True
+    assert result.app_slug == "foo-com"
+    assert len(result.ingest_results) == 2
+
+    resp = await db_client.get(f"/api/v1/apps/{result.app_id}")
+    app = resp.json()
+    assert app["slug"] == "foo-com"
+    assert app["name"] == "foo.com"  # newest scan's variant wins, not the older "FOO.COM"
+
+    resp = await db_client.get("/api/v1/apps")
+    assert len(resp.json()["items"]) == 1
+
+
+async def test_import_name_override_wins_over_newest_same_slug_variant(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    app_dir = tmp_path / "override-vs-variants"
+    app_dir.mkdir()
+
+    (app_dir / "2026-03-01").mkdir()
+    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
+    older["endTime"] = "2026-03-01T12:00:00Z"
+    (app_dir / "2026-03-01" / "p.json").write_text(json.dumps(older))
+
+    (app_dir / "2026-04-01").mkdir()
+    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
+    newer["endTime"] = "2026-04-01T12:00:00Z"
+    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(newer))
+
+    result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Foo.com")
+
+    assert result.app_created is True
+    resp = await db_client.get(f"/api/v1/apps/{result.app_id}")
+    app = resp.json()
+    assert app["name"] == "Foo.com"  # explicit override beats the newest variant "foo.com"
+    assert app["slug"] == "foo-com"
+
+
 async def test_import_name_deriving_to_empty_slug_fails_loudly(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
@@ -400,3 +466,61 @@ async def test_import_name_deriving_to_empty_slug_fails_loudly(
 
     resp = await db_client.get("/api/v1/apps")
     assert resp.json()["items"] == []
+
+
+async def test_import_mixed_tz_scanned_at_resolves_and_picks_newest(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    app_dir = tmp_path / "tz-drift"
+    app_dir.mkdir()
+
+    # The older scan carries a tz-aware endTime; the newer scan's has no offset.
+    # Comparing them to pick the newest must not raise on the awareness mismatch.
+    (app_dir / "2026-04-01").mkdir()
+    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
+    older["endTime"] = "2026-04-01T12:00:00Z"
+    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(older))
+
+    (app_dir / "2026-05-01").mkdir()
+    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
+    newer["endTime"] = "2026-05-01T12:00:00"  # offset-less — assumed UTC
+    (app_dir / "2026-05-01" / "p.json").write_text(json.dumps(newer))
+
+    result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
+
+    assert result.app_created is True
+    assert result.app_slug == "foo-com"
+    assert len(result.ingest_results) == 2
+
+    resp = await db_client.get(f"/api/v1/apps/{result.app_id}")
+    assert resp.json()["name"] == "foo.com"  # the offset-less newer scan wins after UTC coercion
+
+
+async def test_import_missing_name_reported_even_alongside_unslugifiable_name(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    app_dir = tmp_path / "missing-and-unslugifiable"
+    app_dir.mkdir()
+
+    # One subdir's payload has no name; another's name is present but derives to an
+    # empty slug. The unslugifiable name must not pre-empt the structured report —
+    # the missing-name diagnostic has to survive rather than be lost to a raw ValueError.
+    (app_dir / "2026-03-30").mkdir()
+    nameless = make_axe_payload(name="foo.com", url="https://foo.com/")
+    del nameless["name"]
+    (app_dir / "2026-03-30" / "nameless.json").write_text(json.dumps(nameless))
+
+    (app_dir / "2026-04-01").mkdir()
+    symbols = make_axe_payload(name="!!!", url="https://foo.com/")
+    (app_dir / "2026-04-01" / "symbols.json").write_text(json.dumps(symbols))
+
+    with pytest.raises(NameResolutionError) as exc_info:
+        await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
+
+    assert "nameless.json" in str(exc_info.value)

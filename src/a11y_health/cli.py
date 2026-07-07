@@ -25,6 +25,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 
@@ -49,7 +50,10 @@ def _noop(_msg: str) -> None:
 def _parse_scanned_at(payloads: list[dict], directory: Path) -> datetime:
     for payload in payloads:
         if end_time := payload.get("endTime"):
-            return datetime.fromisoformat(end_time)
+            parsed = datetime.fromisoformat(end_time)
+            # An offset-less endTime is otherwise uncomparable against the UTC mtime
+            # fallback and against sibling scans (import orders scans by scanned_at) — assume UTC.
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     mtime = directory.stat().st_mtime
     return datetime.fromtimestamp(mtime, tz=UTC)
 
@@ -116,24 +120,33 @@ class NoDateDirsError(Exception):
         )
 
 
+class NameVariant(NamedTuple):
+    name: str
+    file: Path
+
+
 class NameResolutionError(Exception):
     def __init__(
         self,
         *,
         missing: list[Path] | None = None,
-        conflicts: dict[str, list[Path]] | None = None,
+        conflicts: dict[str, list[NameVariant]] | None = None,
     ) -> None:
         self.missing: list[Path] = missing or []
-        self.conflicts: dict[str, list[Path]] = conflicts or {}
+        # slug -> the name variants that derived to it — keyed on slug because the
+        # slug is the unit of collision; same-slug variants never reach here.
+        self.conflicts: dict[str, list[NameVariant]] = conflicts or {}
         parts: list[str] = []
         if self.missing:
             files = ", ".join(f.name for f in self.missing)
             parts.append(f"missing or empty 'name' in: {files}")
         if self.conflicts:
             detail = "; ".join(
-                f"{name!r} in [{', '.join(str(f) for f in files)}]" for name, files in self.conflicts.items()
+                f"{slug} from {', '.join(sorted({repr(v.name) for v in variants}))} "
+                f"in [{', '.join(str(v.file) for v in variants)}]"
+                for slug, variants in self.conflicts.items()
             )
-            parts.append(f"conflicting names: {detail}")
+            parts.append(f"conflicting slugs: {detail}")
         super().__init__("; ".join(parts) or "name resolution failed")
 
 
@@ -145,20 +158,40 @@ class ApiError(Exception):
 
 
 def _resolve_app_name(scans: list[LoadedScan]) -> str:
+    # Identity is the derived slug (ADR 0019), so names that differ only in
+    # presentation but derive to the same slug are the same App — not a conflict.
+    # A genuine conflict is two distinct slugs. Among same-slug variants the display
+    # name is cosmetic; the newest scan's variant (by observation time) wins — equal
+    # scanned_at ties fall to first-seen, harmless because the pick is cosmetic.
     missing: list[Path] = []
-    by_name: dict[str, list[Path]] = {}
+    by_slug: dict[str, list[NameVariant]] = {}
+    underivable: list[str] = []
+    newest_name: str | None = None
+    newest_at: datetime | None = None
     for scan in scans:
         for file, payload in zip(scan.files, scan.payloads, strict=True):
             name = payload.get("name")
             if not isinstance(name, str) or not name:
                 missing.append(file)
                 continue
-            by_name.setdefault(name, []).append(file)
+            try:
+                slug = derive_slug(name)
+            except ValueError:
+                # An unslugifiable name still fails loudly, but only after the
+                # structured missing/conflict report below — never pre-empting it.
+                underivable.append(name)
+                continue
+            by_slug.setdefault(slug, []).append(NameVariant(name, file))
+            if newest_at is None or scan.scanned_at > newest_at:
+                newest_at, newest_name = scan.scanned_at, name
 
-    conflicts = by_name if len(by_name) > 1 else {}
+    conflicts = by_slug if len(by_slug) > 1 else {}
     if missing or conflicts:
         raise NameResolutionError(missing=missing, conflicts=conflicts)
-    return next(iter(by_name))
+    if underivable:
+        derive_slug(underivable[0])  # re-raise the ValueError for the unslugifiable name
+    assert newest_name is not None  # exactly one slug ⇒ at least one present name
+    return newest_name
 
 
 @dataclass

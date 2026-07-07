@@ -2702,10 +2702,13 @@
                     "enum": [
                       "wcag2a",
                       "wcag2aa",
+                      "wcag2aaa",
                       "wcag21a",
                       "wcag21aa",
+                      "wcag21aaa",
                       "wcag22a",
                       "wcag22aa",
+                      "wcag22aaa",
                       "best-practice"
                     ],
                     "type": "string"

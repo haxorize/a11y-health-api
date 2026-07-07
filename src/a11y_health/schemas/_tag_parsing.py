@@ -1,9 +1,11 @@
 """Parsing axe's open tag vocabulary into our domain enums.
 
 Maps a rule's raw `tags` list onto a Category, its WCAG Criteria, and its
-Classifications (WCAG version/level pairs or best-practice). Private to the
-schemas layer (`axe_payload.py` is the only caller); unknown WCAG-shaped tags are
-dropped rather than rejected, since the axe tag set is open-ended.
+Classifications (WCAG version/level pairs or best-practice). `axe_payload.py`
+owns the ingest-side parsing; the findings filter (service and endpoint) reads
+the `Classification` vocabulary and `classification_to_tag` from here so query
+and storage can never disagree. Unknown WCAG-shaped tags are dropped rather
+than rejected, since the axe tag set is open-ended.
 
 See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
 """
@@ -19,10 +21,13 @@ _CAT_TAG = re.compile(r"^cat\.(.+)$")
 Classification = Literal[
     "wcag2a",
     "wcag2aa",
+    "wcag2aaa",
     "wcag21a",
     "wcag21aa",
+    "wcag21aaa",
     "wcag22a",
     "wcag22aa",
+    "wcag22aaa",
     "best-practice",
 ]
 
@@ -30,10 +35,13 @@ Classification = Literal[
 _CLASSIFICATION_TO_TAG: dict[str, dict[str, str]] = {
     "wcag2a": {"standard": "wcag", "version": "2.0", "level": "A"},
     "wcag2aa": {"standard": "wcag", "version": "2.0", "level": "AA"},
+    "wcag2aaa": {"standard": "wcag", "version": "2.0", "level": "AAA"},
     "wcag21a": {"standard": "wcag", "version": "2.1", "level": "A"},
     "wcag21aa": {"standard": "wcag", "version": "2.1", "level": "AA"},
+    "wcag21aaa": {"standard": "wcag", "version": "2.1", "level": "AAA"},
     "wcag22a": {"standard": "wcag", "version": "2.2", "level": "A"},
     "wcag22aa": {"standard": "wcag", "version": "2.2", "level": "AA"},
+    "wcag22aaa": {"standard": "wcag", "version": "2.2", "level": "AAA"},
     "best-practice": {"standard": "best-practice"},
 }
 

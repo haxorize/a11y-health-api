@@ -13,10 +13,13 @@ from a11y_health.schemas._tag_parsing import (
     [
         ("wcag2a", {"standard": "wcag", "version": "2.0", "level": "A"}),
         ("wcag2aa", {"standard": "wcag", "version": "2.0", "level": "AA"}),
+        ("wcag2aaa", {"standard": "wcag", "version": "2.0", "level": "AAA"}),
         ("wcag21a", {"standard": "wcag", "version": "2.1", "level": "A"}),
         ("wcag21aa", {"standard": "wcag", "version": "2.1", "level": "AA"}),
+        ("wcag21aaa", {"standard": "wcag", "version": "2.1", "level": "AAA"}),
         ("wcag22a", {"standard": "wcag", "version": "2.2", "level": "A"}),
         ("wcag22aa", {"standard": "wcag", "version": "2.2", "level": "AA"}),
+        ("wcag22aaa", {"standard": "wcag", "version": "2.2", "level": "AAA"}),
     ],
 )
 def test_classifications_wcag_version_and_level(tag: str, expected: dict[str, str]) -> None:
@@ -33,6 +36,14 @@ def test_classifications_multiple_standards() -> None:
     assert {"standard": "wcag", "version": "2.0", "level": "A"} in result
     assert {"standard": "wcag", "version": "2.1", "level": "A"} in result
     assert {"standard": "best-practice"} in result
+
+
+def test_classifications_aaa_only_rule() -> None:
+    # An AAA-only axe rule (e.g. color-contrast-enhanced: cat.color + wcag2aaa +
+    # the 1.4.6 criterion) carries its AAA Classification instead of dropping to [].
+    assert extract_classifications(["cat.color", "wcag2aaa", "wcag146"]) == [
+        {"standard": "wcag", "version": "2.0", "level": "AAA"}
+    ]
 
 
 def test_classifications_unrelated_tags_ignored() -> None:

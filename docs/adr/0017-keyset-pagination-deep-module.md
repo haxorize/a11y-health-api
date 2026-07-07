@@ -61,3 +61,14 @@ descending=True`. Direction is baked per-operation, not a request parameter (no
 new query param, no contract change); a client-facing `order` flag stays a future
 additive option. Trend lists (`list_app_scores`) stay ascending — correct for a
 left-to-right chart.
+
+The supporting index for this ordering is **deliberately deferred**, not
+overlooked. `scan_run` carries only `ix_scan_run_app_id (app_id)`, so a history
+page seeks to one app's rows on that index and then sorts them by `scanned_at`;
+no `(app_id, scanned_at, id)` composite backs the keyset walk. This is the same
+reactive-scale call the codebase makes elsewhere — composite read-path indexes
+are added when a path warrants them (cf. migration `c31f27959a81`, which added
+the page-result keyset composite), not pre-emptively. Per-app Scan Run counts
+accrue slowly and stay bounded, so the per-app sort is negligible now. Add
+`(app_id, scanned_at, id)` to `scan_run` if a high-volume app's history-page
+latency ever justifies it.

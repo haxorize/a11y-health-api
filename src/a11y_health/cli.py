@@ -90,7 +90,12 @@ def _load_scan(directory: Path) -> LoadedScan:
     return LoadedScan(directory=directory, files=files, payloads=payloads, scanned_at=scanned_at)
 
 
-class AppNotFoundError(Exception):
+class CliError(Exception):
+    """Base for expected, operator-facing CLI failures. `main()` prints these as
+    a single `ERROR:` line and exits non-zero instead of dumping a traceback."""
+
+
+class AppNotFoundError(CliError):
     def __init__(self, name: str, slug: str) -> None:
         self.name = name
         self.slug = slug
@@ -100,7 +105,7 @@ class AppNotFoundError(Exception):
         )
 
 
-class NameOverrideMismatchError(Exception):
+class NameOverrideMismatchError(CliError):
     def __init__(self, *, name: str, json_name: str) -> None:
         self.name = name
         self.json_name = json_name
@@ -111,7 +116,7 @@ class NameOverrideMismatchError(Exception):
         )
 
 
-class NoDateDirsError(Exception):
+class NoDateDirsError(CliError):
     def __init__(self, directory: Path) -> None:
         self.directory = directory
         super().__init__(
@@ -125,7 +130,7 @@ class NameVariant(NamedTuple):
     file: Path
 
 
-class NameResolutionError(Exception):
+class NameResolutionError(CliError):
     def __init__(
         self,
         *,
@@ -150,7 +155,7 @@ class NameResolutionError(Exception):
         super().__init__("; ".join(parts) or "name resolution failed")
 
 
-class ApiError(Exception):
+class ApiError(CliError):
     def __init__(self, *, code: str, message: str) -> None:
         self.code = code
         self.message = message
@@ -367,13 +372,15 @@ async def import_app(
 
 async def list_org_units(client: httpx.AsyncClient, *, api_prefix: str = "/api/v1") -> list[dict]:
     resp = await client.get(f"{api_prefix}/org-units")
-    resp.raise_for_status()
+    if not resp.is_success:
+        raise _api_error(resp)
     return resp.json()
 
 
 async def list_brands(client: httpx.AsyncClient, *, api_prefix: str = "/api/v1") -> list[dict]:
     resp = await client.get(f"{api_prefix}/brands")
-    resp.raise_for_status()
+    if not resp.is_success:
+        raise _api_error(resp)
     return resp.json()
 
 
@@ -449,19 +456,21 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "ingest":
-        try:
+    # Every operator-facing failure prints one clean `ERROR:` line and exits
+    # non-zero: coded API errors (ApiError) and local input errors alike — an
+    # unregistered app, a missing/empty scan dir, no date subdirs, a name
+    # conflict, or an unslugifiable name, which surface as CliError or (from
+    # `_load_scan`/`derive_slug`) ValueError. Only per-page upload failures are
+    # handled inline, since a partial ingest still returns a result to inspect.
+    try:
+        if args.command == "ingest":
             ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=print))
-        except ApiError as error:
-            print(f"  ERROR: {error}")
-            sys.exit(1)
-        if ingest_result.errors:
-            for error in ingest_result.errors:
-                print(f"  ERROR: {error}")
-            sys.exit(1)
+            if ingest_result.errors:
+                for error in ingest_result.errors:
+                    print(f"  ERROR: {error}")
+                sys.exit(1)
 
-    elif args.command == "import":
-        try:
+        elif args.command == "import":
             import_result = _run(
                 args.base_url,
                 lambda c: import_app(
@@ -473,25 +482,21 @@ def main() -> None:
                     on_progress=print,
                 ),
             )
-        except ApiError as error:
-            print(f"  ERROR: {error}")
-            sys.exit(1)
-        errors = [e for r in import_result.ingest_results for e in r.errors]
-        if errors:
-            for error in errors:
-                print(f"  ERROR: {error}")
-            sys.exit(1)
-
-    elif args.command == "org-units":
-        if args.subcommand == "list":
-            _print_table(_run(args.base_url, lambda c: list_org_units(c)), ["id", "name", "parent_id"])
-        elif args.subcommand == "create":
-            try:
-                new_id = _run(args.base_url, lambda c: create_org_unit(c, name=args.name, parent_id=args.parent_id))
-                print(f"Created org unit {new_id}")
-            except ApiError as error:
-                print(f"  ERROR: {error}")
+            errors = [e for r in import_result.ingest_results for e in r.errors]
+            if errors:
+                for error in errors:
+                    print(f"  ERROR: {error}")
                 sys.exit(1)
 
-    elif args.command == "brands":
-        _print_table(_run(args.base_url, lambda c: list_brands(c)), ["id", "name"])
+        elif args.command == "org-units":
+            if args.subcommand == "list":
+                _print_table(_run(args.base_url, lambda c: list_org_units(c)), ["id", "name", "parent_id"])
+            elif args.subcommand == "create":
+                new_id = _run(args.base_url, lambda c: create_org_unit(c, name=args.name, parent_id=args.parent_id))
+                print(f"Created org unit {new_id}")
+
+        elif args.command == "brands":
+            _print_table(_run(args.base_url, lambda c: list_brands(c)), ["id", "name"])
+    except (CliError, ValueError) as error:
+        print(f"  ERROR: {error}")
+        sys.exit(1)

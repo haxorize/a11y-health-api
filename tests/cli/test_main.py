@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from a11y_health import cli
-from a11y_health.cli import ApiError, ImportResult, IngestResult
+from a11y_health.cli import ApiError, AppNotFoundError, ImportResult, IngestResult
 
 
 def test_main_no_command_exits_with_argparse_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,3 +153,23 @@ def test_main_org_units_create_surfaces_coded_error_and_exits(
     out = capsys.readouterr().out
     assert "not_found" in out
     assert "parent 999 not found" in out
+
+
+def test_main_ingest_surfaces_domain_error_as_clean_line_and_exits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # A local, operator-facing failure (here: the app isn't registered) must print
+    # its guidance as a clean ERROR line and exit non-zero, not dump a traceback.
+    async def fake_ingest(_client, *, directory, on_progress):
+        raise AppNotFoundError("unknown.com", "unknown-com")
+
+    monkeypatch.setattr(cli, "ingest", fake_ingest)
+    monkeypatch.setattr(sys, "argv", ["a11y", "ingest", str(tmp_path)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "ERROR:" in out
+    assert "a11y import" in out  # the exception's onboarding guidance reached the operator

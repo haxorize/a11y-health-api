@@ -167,6 +167,12 @@ async def test_ingest_records_per_page_upload_failures(
     assert "b.json" in result.errors[0]
     assert "400" in result.errors[0]
 
+    # A partial run is left Pending (unscored), never completed over a subset.
+    resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
+    assert resp.json()["status"] == "pending"
+    summary = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}/summary")
+    assert summary.status_code == 404
+
 
 async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path

@@ -216,7 +216,8 @@ async def _upload_scan(
         f"{api_prefix}/apps/{app_id}/scan-runs",
         json={"scanned_at": scan.scanned_at.isoformat()},
     )
-    resp.raise_for_status()
+    if not resp.is_success:
+        raise _api_error(resp)
     scan_run_id = resp.json()["id"]
     on_progress(f"Created scan run {scan_run_id}")
 
@@ -234,12 +235,22 @@ async def _upload_scan(
             errors.append(f"{file.name}: {resp.status_code} {resp.text}")
             on_progress(f"Failed {file.name}: {resp.status_code}")
 
-    resp = await client.patch(
-        f"{api_prefix}/scan-runs/{scan_run_id}",
-        json={"status": ScanRunStatus.COMPLETED.value},
-    )
-    resp.raise_for_status()
-    on_progress(f"Scan run {scan_run_id} completed: {pages_uploaded} pages uploaded")
+    if errors:
+        # A partial run must not be scored: completing it would snapshot a score
+        # over whatever subset happened to upload. Leave it Pending (unscored),
+        # so the operator can fix the inputs and re-ingest, then delete it.
+        on_progress(
+            f"Scan run {scan_run_id} left pending: {len(errors)} of {len(scan.files)} pages failed — "
+            f"fix the inputs and re-ingest, then delete run {scan_run_id}"
+        )
+    else:
+        resp = await client.patch(
+            f"{api_prefix}/scan-runs/{scan_run_id}",
+            json={"status": ScanRunStatus.COMPLETED.value},
+        )
+        if not resp.is_success:
+            raise _api_error(resp)
+        on_progress(f"Scan run {scan_run_id} completed: {pages_uploaded} pages uploaded")
 
     return IngestResult(
         app_id=app_id,
@@ -266,7 +277,8 @@ async def ingest(
     resp = await client.get(f"{api_prefix}/apps/slug/{slug}")
     if resp.status_code == 404:
         raise AppNotFoundError(name, slug)
-    resp.raise_for_status()
+    if not resp.is_success:
+        raise _api_error(resp)
     app_id = resp.json()["id"]
     on_progress(f"Resolved app '{slug}' (id={app_id})")
 
@@ -318,12 +330,14 @@ async def import_app(
             f"{api_prefix}/apps",
             json={"name": name or json_name, "brand_id": brand_id, "org_unit_id": org_unit_id},
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            raise _api_error(resp)
         app_id = resp.json()["id"]
         app_created = True
         on_progress(f"Created app '{slug}' (id={app_id})")
     else:
-        resp.raise_for_status()
+        if not resp.is_success:
+            raise _api_error(resp)
         existing = resp.json()
         app_id = existing["id"]
         app_created = False
@@ -436,24 +450,32 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "ingest":
-        ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=print))
+        try:
+            ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=print))
+        except ApiError as error:
+            print(f"  ERROR: {error}")
+            sys.exit(1)
         if ingest_result.errors:
             for error in ingest_result.errors:
                 print(f"  ERROR: {error}")
             sys.exit(1)
 
     elif args.command == "import":
-        import_result = _run(
-            args.base_url,
-            lambda c: import_app(
-                c,
-                directory=args.directory,
-                org_unit_id=args.org_unit_id,
-                brand_id=args.brand_id,
-                name=args.name,
-                on_progress=print,
-            ),
-        )
+        try:
+            import_result = _run(
+                args.base_url,
+                lambda c: import_app(
+                    c,
+                    directory=args.directory,
+                    org_unit_id=args.org_unit_id,
+                    brand_id=args.brand_id,
+                    name=args.name,
+                    on_progress=print,
+                ),
+            )
+        except ApiError as error:
+            print(f"  ERROR: {error}")
+            sys.exit(1)
         errors = [e for r in import_result.ingest_results for e in r.errors]
         if errors:
             for error in errors:

@@ -367,7 +367,7 @@ Common CLI failures and what they mean:
 | --- | --- |
 | `AppNotFoundError` | `ingest` against an app that was never imported |
 | `NoDateDirsError` | `import` against a directory with no `YYYY-MM-DD/` subdirs |
-| `NameResolutionError` | JSON files missing a `name`, or disagreeing on it |
+| `NameResolutionError` | JSON files missing a `name`, or names that derive to different slugs (different Apps) — presentation-only differences that share a slug resolve to one App, newest scan's variant winning |
 | `NameOverrideMismatchError` | `import --name` that doesn't derive to the same slug as the JSON `name` |
 
 ### Tracing a request

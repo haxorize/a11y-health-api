@@ -76,6 +76,22 @@ async def test_paginate_composite_keyset_round_trip(db_session: AsyncSession) ->
     assert second.next_cursor is None
 
 
+async def test_paginate_descending_composite_keyset_round_trip(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    keyset = [ScoreSnapshot.snapshot_at, ScoreSnapshot.id]
+    times = [datetime(2026, 1, day, tzinfo=UTC) for day in (1, 2, 3)]
+    snaps = [await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=t) for t in times]
+
+    stmt = select(ScoreSnapshot)
+    first = await paginate(db_session, stmt, keyset=keyset, cursor=None, limit=2, descending=True)
+    second = await paginate(db_session, stmt, keyset=keyset, cursor=first.next_cursor, limit=2, descending=True)
+
+    # Newest first, and the cursor continues into older rows (reversed comparison).
+    assert [s.id for s in first.items] == [snaps[2].id, snaps[1].id]
+    assert [s.id for s in second.items] == [snaps[0].id]
+    assert second.next_cursor is None
+
+
 @pytest.mark.parametrize("bad_cursor", ["not-a-cursor", ""])
 async def test_paginate_rejects_invalid_cursor(db_session: AsyncSession, bad_cursor: str) -> None:
     with pytest.raises(InvalidCursorError):

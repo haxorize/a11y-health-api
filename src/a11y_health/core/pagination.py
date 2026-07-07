@@ -136,9 +136,13 @@ async def paginate[T](
     keyset: Sequence[InstrumentedAttribute],
     cursor: str | None,
     limit: int,
+    descending: bool = False,
     into: Callable[[Row], T] | None = None,
 ) -> CursorPage[T]:
     """Apply keyset pagination to `stmt`, returning one page and the next cursor.
+
+    `descending` reverses both the ORDER BY and the keyset comparison so paging
+    walks newest→oldest; cursor encoding stays direction-agnostic.
 
     Caller contract not captured by the types:
     - `keyset` columns must be NOT NULL — a NULL makes the row-value `>` comparison
@@ -150,14 +154,16 @@ async def paginate[T](
     Raises `InvalidCursorError` on a malformed cursor (handled as 400) and
     `UnsupportedKeysetTypeError` if a keyset column's type isn't int/datetime/str.
     """
+    order = [col.desc() for col in keyset] if descending else list(keyset)
     if cursor is not None:
         decoded = decode_cursor(cursor, expected=len(keyset))
         try:
             bound = tuple(_coerce(attr, raw) for attr, raw in zip(keyset, decoded, strict=True))
         except (ValueError, TypeError) as exc:
             raise InvalidCursorError from exc
-        stmt = stmt.where(tuple_(*keyset) > bound)
-    stmt = stmt.order_by(*keyset).limit(limit + 1)
+        keys = tuple_(*keyset)
+        stmt = stmt.where(keys < bound if descending else keys > bound)
+    stmt = stmt.order_by(*order).limit(limit + 1)
     rows = (await session.execute(stmt)).all()
     has_more = len(rows) > limit
     page_rows = rows[:limit]

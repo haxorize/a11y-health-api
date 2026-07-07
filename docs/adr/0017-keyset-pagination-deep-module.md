@@ -38,9 +38,9 @@ Considered and rejected:
   cursor field to an attribute every `into` must preserve, so an exotic transform
   silently breaks paging.
 
-Forward-only, ascending, `id`-tiebroken keysets only — reverse paging is out of
-scope. Cursor mechanics are tested once in a central `paginate` suite; per-endpoint
-tests keep only their own assertions. [ADR 0021](0021-domain-rules-test-once-at-the-service-seam.md)
+Forward-only, `id`-tiebroken keysets; ascending by default, with opt-in
+descending (see the 2026-07-07 addendum below). Cursor mechanics are tested once
+in a central `paginate` suite; per-endpoint tests keep only their own assertions. [ADR 0021](0021-domain-rules-test-once-at-the-service-seam.md)
 later extended this test-once precedent to the whole suite: filter semantics now
 live at the service seam, and per-endpoint tests keep only transport slots.
 
@@ -49,3 +49,15 @@ shared `PageParams` parameter definition (page-size bounds and default) and the
 suite-wide rule that any cursor-accepting operation declares the `invalid_cursor`
 mode. See `docs/architecture.md` ("Pagination") for that half, including why
 `PageParams` is a `Depends()` dependency rather than a `Query()` parameter model.
+
+**2026-07-07 — descending support added.** `paginate()` gained a
+`descending: bool = False` argument that reverses both the `ORDER BY` and the
+row-value keyset comparison (`< bound` instead of `> bound`); cursor encoding is
+unchanged and direction-agnostic. This revisits the "reverse paging is out of
+scope" line above. Motivation: history views render in server order (the UI does
+not sort client-side), so a Scan Run history table needs newest-first at the
+source — `list_scan_runs` now pages `keyset=[ScanRun.scanned_at, ScanRun.id],
+descending=True`. Direction is baked per-operation, not a request parameter (no
+new query param, no contract change); a client-facing `order` flag stays a future
+additive option. Trend lists (`list_app_scores`) stay ascending — correct for a
+left-to-right chart.

@@ -35,7 +35,9 @@ async def list_scan_runs(
 ) -> CursorPage[ScanRun]:
     await existence.get_by_pk(session, App, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
-    return await paginate(session, stmt, keyset=[ScanRun.id], cursor=cursor, limit=limit)
+    return await paginate(
+        session, stmt, keyset=[ScanRun.scanned_at, ScanRun.id], cursor=cursor, limit=limit, descending=True
+    )
 
 
 _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {

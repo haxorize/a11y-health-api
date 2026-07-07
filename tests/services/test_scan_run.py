@@ -61,15 +61,17 @@ async def test_get_scan_run_not_found(db_session: AsyncSession) -> None:
         await scan_run_service.get_scan_run(db_session, 999999)
 
 
-async def test_list_scan_runs(db_session: AsyncSession) -> None:
+async def test_list_scan_runs_newest_first(db_session: AsyncSession) -> None:
     app_a = await make_app_with_org_unit(db_session, slug="app-a")
     app_b = await make_app_with_org_unit(db_session, slug="app-b")
-    await make_scan_run(db_session, app_id=app_a.id)
-    await make_scan_run(db_session, app_id=app_a.id)
-    await make_scan_run(db_session, app_id=app_b.id)
+    older = await make_scan_run(db_session, app_id=app_a.id, scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
+    newer = await make_scan_run(db_session, app_id=app_a.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+    await make_scan_run(db_session, app_id=app_b.id, scanned_at=datetime(2026, 2, 1, tzinfo=UTC))
 
     page = await scan_run_service.list_scan_runs(db_session, app_a.id)
-    assert len(page.items) == 2
+
+    # Newest scanned_at first (history-table order), filtered to the app.
+    assert [r.id for r in page.items] == [newer.id, older.id]
     assert all(r.app_id == app_a.id for r in page.items)
 
 

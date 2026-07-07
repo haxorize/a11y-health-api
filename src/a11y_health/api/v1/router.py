@@ -6,7 +6,6 @@ from a11y_health.api.v1.endpoints import (
     findings,
     health,
     org_units,
-    pages,
     scan_runs,
     scores,
     scoring_vocabulary,
@@ -20,7 +19,7 @@ api_router.include_router(brands.router)
 api_router.include_router(apps.router)
 api_router.include_router(scan_runs.app_router)
 api_router.include_router(scan_runs.router)
-api_router.include_router(pages.router)
+api_router.include_router(scan_runs.pages_router)
 api_router.include_router(findings.router)
 api_router.include_router(scores.router)
 api_router.include_router(scoring_vocabulary.router)

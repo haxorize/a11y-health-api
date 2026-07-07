@@ -21,7 +21,7 @@ uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
 uv run uvicorn a11y_health.main:app --reload  # dev server
-uv run a11y --help               # data import/ingest commands (see cli.py module docstring)
+uv run a11y --help               # onboarding CLI: import/ingest + org-unit/brand lookups (see cli.py module docstring)
 ```
 
 ## Structure

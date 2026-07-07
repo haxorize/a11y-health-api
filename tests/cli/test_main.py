@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from a11y_health import cli
-from a11y_health.cli import ImportResult, IngestResult
+from a11y_health.cli import ApiError, ImportResult, IngestResult
 
 
 def test_main_no_command_exits_with_argparse_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,3 +80,76 @@ def test_main_import_exits_when_any_scan_has_errors(monkeypatch: pytest.MonkeyPa
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
     assert exc_info.value.code == 1
+
+
+def test_main_org_units_list_renders_id_name_and_parent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_list(_client):
+        return [
+            {"id": 1, "name": "Humana", "parent_id": None},
+            {"id": 2, "name": "CenterWell", "parent_id": 1},
+        ]
+
+    monkeypatch.setattr(cli, "list_org_units", fake_list)
+    monkeypatch.setattr(sys, "argv", ["a11y", "org-units", "list"])
+
+    cli.main()
+
+    out = capsys.readouterr().out
+    assert "Humana" in out
+    assert "CenterWell" in out
+    assert "-" in out  # root org unit renders its absent parent as a dash
+
+
+def test_main_brands_list_renders_id_and_name(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_list(_client):
+        return [{"id": 5, "name": "Humana"}]
+
+    monkeypatch.setattr(cli, "list_brands", fake_list)
+    monkeypatch.setattr(sys, "argv", ["a11y", "brands", "list"])
+
+    cli.main()
+
+    out = capsys.readouterr().out
+    assert "Humana" in out
+    assert "5" in out
+
+
+def test_main_org_units_create_dispatches_and_prints_id(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_create(_client, *, name, parent_id):
+        captured["name"] = name
+        captured["parent_id"] = parent_id
+        return 42
+
+    monkeypatch.setattr(cli, "create_org_unit", fake_create)
+    monkeypatch.setattr(sys, "argv", ["a11y", "org-units", "create", "Engineering", "--parent-id", "7"])
+
+    cli.main()
+
+    assert captured == {"name": "Engineering", "parent_id": 7}
+    assert "42" in capsys.readouterr().out
+
+
+def test_main_org_units_create_surfaces_coded_error_and_exits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_create(_client, *, name, parent_id):
+        raise ApiError(code="not_found", message="parent 999 not found")
+
+    monkeypatch.setattr(cli, "create_org_unit", fake_create)
+    monkeypatch.setattr(sys, "argv", ["a11y", "org-units", "create", "Orphan", "--parent-id", "999"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "not_found" in out
+    assert "parent 999 not found" in out

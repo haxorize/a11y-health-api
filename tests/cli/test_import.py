@@ -10,6 +10,14 @@ from a11y_health.models.enums import ScanRunStatus
 from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand, make_org_unit
 
 
+def _write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
+    date_dir = app_dir / date
+    date_dir.mkdir()
+    payload = make_axe_payload(name=name)
+    payload["endTime"] = end_time if end_time is not None else f"{date}T12:00:00Z"
+    (date_dir / "p.json").write_text(json.dumps(payload))
+
+
 async def test_import_creates_new_app_with_scan_run_per_date_subdir(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
@@ -19,11 +27,7 @@ async def test_import_creates_new_app_with_scan_run_per_date_subdir(
     app_dir = tmp_path / "any-directory-name"
     app_dir.mkdir()
     for date in ["2026-03-30", "2026-04-01"]:
-        date_dir = app_dir / date
-        date_dir.mkdir()
-        payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-        payload["endTime"] = f"{date}T12:00:00Z"
-        (date_dir / "page.json").write_text(json.dumps(payload))
+        _write_scan_dir(app_dir, date, name="foo.com")
 
     result = await import_app(
         db_client,
@@ -57,10 +61,7 @@ async def test_import_same_directory_twice_resolves_one_app(
 
     app_dir = tmp_path / "repeat"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     first = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
     second = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
@@ -89,10 +90,7 @@ async def test_import_matches_app_created_via_api_with_derivation_equivalent_nam
 
     app_dir = tmp_path / "equivalent"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -111,10 +109,7 @@ async def test_import_name_override_sets_app_name_at_creation(
 
     app_dir = tmp_path / "pretty"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="humana-com", url="https://humana.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     result = await import_app(
         db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Humana.com"
@@ -139,10 +134,7 @@ async def test_import_name_override_not_derivation_equivalent_hard_fails(
 
     app_dir = tmp_path / "mismatched-override"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="humana-com", url="https://humana.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     with pytest.raises(NameOverrideMismatchError) as exc_info:
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Other Site")
@@ -162,10 +154,7 @@ async def test_import_name_override_on_existing_app_warns_and_continues(
 
     app_dir = tmp_path / "already-onboarded"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="humana-com", url="https://humana.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     messages: list[str] = []
     result = await import_app(
@@ -219,16 +208,8 @@ async def test_import_name_mismatch_across_date_subdirs_hard_fails(
 
     app_dir = tmp_path / "mismatch"
     app_dir.mkdir()
-
-    (app_dir / "2026-03-30").mkdir()
-    foo = make_axe_payload(name="foo.com", url="https://foo.com/")
-    foo["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(foo))
-
-    (app_dir / "2026-04-01").mkdir()
-    bar = make_axe_payload(name="bar.com", url="https://bar.com/")
-    bar["endTime"] = "2026-04-01T12:00:00Z"
-    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(bar))
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    _write_scan_dir(app_dir, "2026-04-01", name="bar.com")
 
     with pytest.raises(NameResolutionError) as exc_info:
         await import_app(
@@ -260,11 +241,7 @@ async def test_import_warns_on_non_date_entries_and_continues(
 
     app_dir = tmp_path / "mixed"
     app_dir.mkdir()
-
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     (app_dir / "README.md").write_text("readme")
     (app_dir / "notes").mkdir()
@@ -296,11 +273,7 @@ async def test_import_reports_matched_app_and_scan_run_per_date(
     app_dir = tmp_path / "anything"
     app_dir.mkdir()
     for date in ["2026-03-30", "2026-04-01"]:
-        date_dir = app_dir / date
-        date_dir.mkdir()
-        payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-        payload["endTime"] = f"{date}T12:00:00Z"
-        (date_dir / "p.json").write_text(json.dumps(payload))
+        _write_scan_dir(app_dir, date, name="foo.com")
 
     messages: list[str] = []
     result = await import_app(
@@ -331,10 +304,7 @@ async def test_import_name_override_non_equivalent_on_existing_app_warns_and_con
 
     app_dir = tmp_path / "stale-override"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="humana-com", url="https://humana.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     messages: list[str] = []
     result = await import_app(
@@ -371,10 +341,7 @@ async def test_import_non_equivalent_name_creates_visible_sibling_app(
 
     app_dir = tmp_path / "sibling"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="foo.com", url="https://foo.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -395,15 +362,8 @@ async def test_import_same_slug_variants_across_dates_create_one_app_with_newest
     app_dir.mkdir()
 
     # The scan tool changed casing between runs; both names derive to foo-com.
-    (app_dir / "2026-03-01").mkdir()
-    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
-    older["endTime"] = "2026-03-01T12:00:00Z"
-    (app_dir / "2026-03-01" / "p.json").write_text(json.dumps(older))
-
-    (app_dir / "2026-04-01").mkdir()
-    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
-    newer["endTime"] = "2026-04-01T12:00:00Z"
-    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(newer))
+    _write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
+    _write_scan_dir(app_dir, "2026-04-01", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -429,15 +389,8 @@ async def test_import_name_override_wins_over_newest_same_slug_variant(
     app_dir = tmp_path / "override-vs-variants"
     app_dir.mkdir()
 
-    (app_dir / "2026-03-01").mkdir()
-    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
-    older["endTime"] = "2026-03-01T12:00:00Z"
-    (app_dir / "2026-03-01" / "p.json").write_text(json.dumps(older))
-
-    (app_dir / "2026-04-01").mkdir()
-    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
-    newer["endTime"] = "2026-04-01T12:00:00Z"
-    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(newer))
+    _write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
+    _write_scan_dir(app_dir, "2026-04-01", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Foo.com")
 
@@ -456,10 +409,7 @@ async def test_import_name_deriving_to_empty_slug_fails_loudly(
 
     app_dir = tmp_path / "symbols-only"
     app_dir.mkdir()
-    (app_dir / "2026-03-30").mkdir()
-    payload = make_axe_payload(name="!!!", url="https://example.com/")
-    payload["endTime"] = "2026-03-30T12:00:00Z"
-    (app_dir / "2026-03-30" / "p.json").write_text(json.dumps(payload))
+    _write_scan_dir(app_dir, "2026-03-30", name="!!!")
 
     with pytest.raises(ValueError, match="empty slug"):
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
@@ -479,15 +429,8 @@ async def test_import_mixed_tz_scanned_at_resolves_and_picks_newest(
 
     # The older scan carries a tz-aware endTime; the newer scan's has no offset.
     # Comparing them to pick the newest must not raise on the awareness mismatch.
-    (app_dir / "2026-04-01").mkdir()
-    older = make_axe_payload(name="FOO.COM", url="https://foo.com/")
-    older["endTime"] = "2026-04-01T12:00:00Z"
-    (app_dir / "2026-04-01" / "p.json").write_text(json.dumps(older))
-
-    (app_dir / "2026-05-01").mkdir()
-    newer = make_axe_payload(name="foo.com", url="https://foo.com/")
-    newer["endTime"] = "2026-05-01T12:00:00"  # offset-less — assumed UTC
-    (app_dir / "2026-05-01" / "p.json").write_text(json.dumps(newer))
+    _write_scan_dir(app_dir, "2026-04-01", name="FOO.COM", end_time="2026-04-01T12:00:00Z")
+    _write_scan_dir(app_dir, "2026-05-01", name="foo.com", end_time="2026-05-01T12:00:00")  # offset-less — assumed UTC
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 

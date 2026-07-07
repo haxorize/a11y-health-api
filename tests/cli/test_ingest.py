@@ -12,15 +12,19 @@ from a11y_health.models.enums import ScanRunStatus
 from tests.factories import make_app_with_org_unit, make_axe_payload
 
 
+def _write_scan_file(directory: Path, filename: str, *, name: str, url: str) -> None:
+    payload = make_axe_payload(name=name, url=url)
+    payload["endTime"] = "2026-03-30T11:55:52-0400"
+    (directory / filename).write_text(json.dumps(payload))
+
+
 async def test_ingest_creates_completed_scan_run_for_existing_app(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
     test_app = await make_app_with_org_unit(db_session, slug="foo-com")
 
     for i, url in enumerate(["https://example.com/page1", "https://example.com/page2"]):
-        payload = make_axe_payload(name="foo.com", url=url)
-        payload["endTime"] = "2026-03-30T11:55:52-0400"
-        (tmp_path / f"page{i}.json").write_text(json.dumps(payload))
+        _write_scan_file(tmp_path, f"page{i}.json", name="foo.com", url=url)
 
     result = await ingest(db_client, directory=tmp_path)
 
@@ -37,9 +41,7 @@ async def test_ingest_creates_completed_scan_run_for_existing_app(
 
 
 async def test_ingest_missing_or_empty_name_hard_fails(db_client: AsyncClient, tmp_path: Path) -> None:
-    good = make_axe_payload(name="foo.com", url="https://example.com/a")
-    good["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(good))
+    _write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
 
     no_name = make_axe_payload(url="https://example.com/b")
     del no_name["name"]
@@ -61,13 +63,8 @@ async def test_ingest_name_mismatch_hard_fails_before_network_call(
 ) -> None:
     await make_app_with_org_unit(db_session, slug="foo-com")
 
-    foo = make_axe_payload(name="foo.com", url="https://example.com/a")
-    foo["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(foo))
-
-    bar = make_axe_payload(name="bar.com", url="https://example.com/b")
-    bar["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "b.json").write_text(json.dumps(bar))
+    _write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
+    _write_scan_file(tmp_path, "b.json", name="bar.com", url="https://example.com/b")
 
     with pytest.raises(NameResolutionError) as exc_info:
         await ingest(db_client, directory=tmp_path)
@@ -91,13 +88,8 @@ async def test_ingest_same_slug_variants_resolve_one_app(
     test_app = await make_app_with_org_unit(db_session, slug="foo-com")
 
     # Casing drift between pages of one scan; both names derive to foo-com.
-    a = make_axe_payload(name="FOO.COM", url="https://foo.com/a")
-    a["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(a))
-
-    b = make_axe_payload(name="foo.com", url="https://foo.com/b")
-    b["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "b.json").write_text(json.dumps(b))
+    _write_scan_file(tmp_path, "a.json", name="FOO.COM", url="https://foo.com/a")
+    _write_scan_file(tmp_path, "b.json", name="foo.com", url="https://foo.com/b")
 
     result = await ingest(db_client, directory=tmp_path)
 
@@ -109,9 +101,7 @@ async def test_ingest_same_slug_variants_resolve_one_app(
 
 
 async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClient, tmp_path: Path) -> None:
-    payload = make_axe_payload(name="unknown.com", url="https://example.com/a")
-    payload["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(payload))
+    _write_scan_file(tmp_path, "a.json", name="unknown.com", url="https://example.com/a")
 
     with pytest.raises(AppNotFoundError) as exc_info:
         await ingest(db_client, directory=tmp_path)
@@ -122,9 +112,7 @@ async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClie
 
 
 async def test_ingest_name_deriving_to_empty_slug_fails_loudly(db_client: AsyncClient, tmp_path: Path) -> None:
-    payload = make_axe_payload(name="!!!", url="https://example.com/a")
-    payload["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(payload))
+    _write_scan_file(tmp_path, "a.json", name="!!!", url="https://example.com/a")
 
     with pytest.raises(ValueError, match="empty slug"):
         await ingest(db_client, directory=tmp_path)
@@ -167,9 +155,7 @@ async def test_ingest_records_per_page_upload_failures(
 ) -> None:
     await make_app_with_org_unit(db_session, slug="foo-com")
 
-    good = make_axe_payload(name="foo.com", url="https://example.com/a")
-    good["endTime"] = "2026-03-30T11:55:52-0400"
-    (tmp_path / "a.json").write_text(json.dumps(good))
+    _write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
 
     malformed = {"name": "foo.com", "endTime": "2026-03-30T11:55:52-0400"}
     (tmp_path / "b.json").write_text(json.dumps(malformed))
@@ -188,9 +174,7 @@ async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
     test_app = await make_app_with_org_unit(db_session, slug="foo-com")
 
     for i in range(2):
-        payload = make_axe_payload(name="foo.com", url=f"https://example.com/page{i}")
-        payload["endTime"] = "2026-03-30T11:55:52-0400"
-        (tmp_path / f"page{i}.json").write_text(json.dumps(payload))
+        _write_scan_file(tmp_path, f"page{i}.json", name="foo.com", url=f"https://example.com/page{i}")
 
     messages: list[str] = []
     result = await ingest(db_client, directory=tmp_path, on_progress=messages.append)

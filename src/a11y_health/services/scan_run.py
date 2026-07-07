@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
-from a11y_health.core.exceptions import InvalidStatusTransitionError, ScanRunCompletedError
+from a11y_health.core.exceptions import EmptyScanRunError, InvalidStatusTransitionError, ScanRunCompletedError
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
@@ -48,6 +48,14 @@ async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: 
     scan_run = await get_scan_run(session, scan_run_id)
     if data.status not in _VALID_TRANSITIONS[scan_run.status]:
         raise InvalidStatusTransitionError(_RESOURCE, scan_run_id, scan_run.status, data.status)
+    if data.status == ScanRunStatus.COMPLETED:
+        # A Scan Run has one or more Page Results (DOMAIN.md): an empty run must
+        # not complete — its snapshot would score "no data" as 0.0 and roll up.
+        page_count = await session.scalar(
+            select(func.count()).select_from(PageResult).where(PageResult.scan_run_id == scan_run_id)
+        )
+        if not page_count:
+            raise EmptyScanRunError(scan_run_id)
     scan_run.status = data.status
     await session.flush()
     await session.refresh(scan_run)

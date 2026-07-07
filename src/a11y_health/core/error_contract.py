@@ -21,6 +21,7 @@ from a11y_health.core.exceptions import (
     CircularReferenceError,
     DomainError,
     DuplicateSlugError,
+    EmptyScanRunError,
     HasDependentsError,
     InvalidAxePayloadError,
     InvalidStatusTransitionError,
@@ -36,6 +37,7 @@ class ErrorCode(enum.StrEnum):
     HAS_DEPENDENTS = enum.auto()
     INVALID_STATUS_TRANSITION = enum.auto()
     SCAN_RUN_COMPLETED = enum.auto()
+    EMPTY_SCAN_RUN = enum.auto()
     CIRCULAR_REFERENCE = enum.auto()
     INVALID_CURSOR = enum.auto()
     INVALID_AXE_PAYLOAD = enum.auto()
@@ -57,6 +59,7 @@ ERROR_MODES: dict[type[DomainError], _Mode] = {
     HasDependentsError: _Mode(409, ErrorCode.HAS_DEPENDENTS),
     InvalidStatusTransitionError: _Mode(409, ErrorCode.INVALID_STATUS_TRANSITION),
     ScanRunCompletedError: _Mode(409, ErrorCode.SCAN_RUN_COMPLETED),
+    EmptyScanRunError: _Mode(409, ErrorCode.EMPTY_SCAN_RUN),
     CircularReferenceError: _Mode(409, ErrorCode.CIRCULAR_REFERENCE),
     InvalidCursorError: _Mode(400, ErrorCode.INVALID_CURSOR),
     InvalidAxePayloadError: _Mode(400, ErrorCode.INVALID_AXE_PAYLOAD),

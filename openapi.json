@@ -160,6 +160,7 @@
           "has_dependents",
           "invalid_status_transition",
           "scan_run_completed",
+          "empty_scan_run",
           "circular_reference",
           "invalid_cursor",
           "invalid_axe_payload"
@@ -2578,8 +2579,9 @@
                 }
               }
             },
-            "description": "Domain error: invalid_status_transition",
+            "description": "Domain error: empty_scan_run | invalid_status_transition",
             "x-error-codes": [
+              "empty_scan_run",
               "invalid_status_transition"
             ]
           },

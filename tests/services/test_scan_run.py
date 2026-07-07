@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import (
+    EmptyScanRunError,
     InvalidStatusTransitionError,
     NotFoundError,
     ScanRunCompletedError,
@@ -79,11 +80,27 @@ async def test_list_scan_runs_invalid_app(db_session: AsyncSession) -> None:
 
 async def test_update_status_pending_to_completed(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
+    await create_page_result(db_session, scan_run.id, parse_axe_payload(make_axe_payload()))
 
     updated = await scan_run_service.update_scan_run_status(
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
     )
     assert updated.status == ScanRunStatus.COMPLETED
+
+
+async def test_complete_empty_run_rejected(db_session: AsyncSession) -> None:
+    # A Scan Run has one or more Page Results (DOMAIN.md): completing an empty
+    # run would mint a 0.0 snapshot that scores "no data" as "all critical".
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    with pytest.raises(EmptyScanRunError, match="no page results"):
+        await scan_run_service.update_scan_run_status(
+            db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
+        )
+
+    assert scan_run.status == ScanRunStatus.PENDING
+    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.scan_run_id == scan_run.id))
+    assert result.scalar_one_or_none() is None
 
 
 async def test_update_status_not_found(db_session: AsyncSession) -> None:

@@ -2,7 +2,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.enums import ScanRunStatus
-from tests.factories import make_scan_run, make_scan_run_with_parents
+from tests.factories import assert_error, make_page_result, make_scan_run, make_scan_run_with_parents
 
 
 async def test_create_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -63,6 +63,7 @@ async def test_get_scan_run_not_found(db_client: AsyncClient) -> None:
 
 async def test_update_scan_run_status(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
+    await make_page_result(db_session, scan_run_id=scan_run.id)
 
     response = await db_client.patch(
         f"/api/v1/scan-runs/{scan_run.id}",
@@ -70,6 +71,16 @@ async def test_update_scan_run_status(db_client: AsyncClient, db_session: AsyncS
     )
     assert response.status_code == 200
     assert response.json()["status"] == ScanRunStatus.COMPLETED.value
+
+
+async def test_complete_empty_scan_run_conflict(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+
+    response = await db_client.patch(
+        f"/api/v1/scan-runs/{scan_run.id}",
+        json={"status": ScanRunStatus.COMPLETED.value},
+    )
+    assert_error(response, 409, "empty_scan_run", message_contains="no page results")
 
 
 async def test_delete_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:

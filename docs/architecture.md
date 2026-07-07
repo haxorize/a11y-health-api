@@ -125,7 +125,7 @@ codes as `x-error-codes`).
 | Mode (exception → code) | Status |
 | --- | --- |
 | `NotFoundError` → `not_found` | 404 |
-| `CircularReferenceError` → `circular_reference`, `DuplicateSlugError` → `duplicate_slug`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
+| `CircularReferenceError` → `circular_reference`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
 | `InvalidCursorError` → `invalid_cursor`, `InvalidAxePayloadError` → `invalid_axe_payload` | 400 |
 | Pydantic `ValidationError` (request failed FastAPI's own shape validation) | 422 |
 
@@ -266,6 +266,9 @@ A **Scan Run** is a small state machine (`services/scan_run.py`):
 - The **only** legal transition is Pending → Completed
   (`_VALID_TRANSITIONS`). Anything else raises `InvalidStatusTransitionError` →
   409. Completed is terminal — there is no reopening.
+- Completing requires **at least one Page Result** — an empty run raises
+  `EmptyScanRunError` → 409, because its snapshot would score "no data" as 0.0
+  and roll that up into every ancestor mean.
 - The Pending → Completed transition is what **triggers scoring**: it calls
   `on_scan_run_completed`, which computes the app score and runs both rollups
   (see [The scoring & rollup model](#2-the-scoring--rollup-model)).

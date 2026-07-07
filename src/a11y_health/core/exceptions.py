@@ -45,6 +45,12 @@ class ScanRunCompletedError(DomainError):
         super().__init__(f"Scan run {scan_run_id} is completed and cannot accept new pages")
 
 
+class EmptyScanRunError(DomainError):
+    def __init__(self, scan_run_id: object) -> None:
+        self.scan_run_id = scan_run_id
+        super().__init__(f"Scan run {scan_run_id} has no page results and cannot be completed")
+
+
 class InvalidAxePayloadError(DomainError):
     def __init__(self, reason: str) -> None:
         self.reason = reason

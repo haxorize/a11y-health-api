@@ -14,7 +14,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Scan Run** | A single test execution across one or more pages of an **App**. The timestamp reflects when the scan was performed (from test data), not when it was uploaded. | Test run, scan, batch, execution, report |
-| **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending** (accepting **Page Results**) or **Completed** (finalized, triggers scoring). Only the forward transition Pending → Completed is valid. | State, phase, stage |
+| **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending** (accepting **Page Results**) or **Completed** (finalized, triggers scoring). Only the forward transition Pending → Completed is valid, and only once the run has at least one **Page Result** — an empty run refuses completion (`empty_scan_run`, 409) rather than scoring "no data" as zero. | State, phase, stage |
 | **Page Result** | The outcome of scanning a single URL within a **Scan Run**, including raw JSON, health category, and summary counts. | Page scan, page report, test result |
 | **Raw JSON** | The full axe DevTools JSON preserved as JSONB on a **Page Result** for reprocessing and debugging — stored exactly as uploaded (including fields the ingestion schema doesn't model) and never rewritten or re-serialized. | Payload (unqualified), source data |
 | **Axe Payload** | The axe DevTools JSON document uploaded for one page, validated at the ingest boundary by the `AxePayload` schema. A well-formed request whose axe payload fails that validation is the `invalid_axe_payload` error mode (400). Say **Axe Payload** for the document being validated, **Raw JSON** for the preserved copy; "payload" alone stays banned. | Payload (unqualified), upload, scan JSON |

@@ -1,19 +1,27 @@
-"""Data import / ingest CLI.
+"""App onboarding CLI.
 
-Pick by app state:
+Pick by task:
+- `a11y org-units list` / `a11y brands list` print id + name tables (org units also
+  show their parent) — use them to find the `--org-unit-id` / `--brand-id` that
+  `import` needs.
+- `a11y org-units create <name> [--parent-id <id>]` creates a missing org unit and
+  prints its id, so onboarding never has to leave the CLI.
 - `a11y import <dir> --org-unit-id <id> --brand-id <id>` onboards a new app from a
   directory of YYYY-MM-DD subdirectories. Creates the app if missing, reuses if not.
   `--name` sets the display name at creation (must be derivation-equivalent to the
   axe JSON name; identity is locked once created).
 - `a11y ingest <dir>` uploads a single scan to an existing app. Errors with a pointer
   to `import` if the app isn't registered.
+
+Other admin mutations (app move/rename/delete, org-unit reparent/delete) stay on
+Swagger `/docs`.
 """
 
 import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -127,6 +135,13 @@ class NameResolutionError(Exception):
             )
             parts.append(f"conflicting names: {detail}")
         super().__init__("; ".join(parts) or "name resolution failed")
+
+
+class ApiError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
 
 
 def _resolve_app_name(scans: list[LoadedScan]) -> str:
@@ -303,13 +318,62 @@ async def import_app(
     return ImportResult(app_id=app_id, app_slug=slug, app_created=app_created, ingest_results=ingest_results)
 
 
+async def list_org_units(client: httpx.AsyncClient, *, api_prefix: str = "/api/v1") -> list[dict]:
+    resp = await client.get(f"{api_prefix}/org-units")
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def list_brands(client: httpx.AsyncClient, *, api_prefix: str = "/api/v1") -> list[dict]:
+    resp = await client.get(f"{api_prefix}/brands")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _api_error(resp: httpx.Response) -> ApiError:
+    # Surface the Error Contract's coded body ({"code", "message"}); fall back to raw text for
+    # non-coded failures (e.g. a framework 422) so a caller still gets a message, not a traceback.
+    try:
+        body = resp.json()
+        return ApiError(code=body["code"], message=body["message"])
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return ApiError(code=str(resp.status_code), message=resp.text)
+
+
+async def create_org_unit(
+    client: httpx.AsyncClient, *, name: str, parent_id: int | None = None, api_prefix: str = "/api/v1"
+) -> int:
+    resp = await client.post(f"{api_prefix}/org-units", json={"name": name, "parent_id": parent_id})
+    if not resp.is_success:
+        raise _api_error(resp)
+    return resp.json()["id"]
+
+
+def _print_table(rows: list[dict], columns: list[str]) -> None:
+    print("\t".join(col.upper() for col in columns))
+    for row in rows:
+        print("\t".join("-" if row.get(col) is None else str(row[col]) for col in columns))
+
+
+def _add_base_url(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
+
+
+def _run[T](base_url: str, call: Callable[[httpx.AsyncClient], Awaitable[T]]) -> T:
+    async def _main() -> T:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            return await call(client)
+
+    return asyncio.run(_main())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upload axe DevTools scan results")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     ingest_parser = subparsers.add_parser("ingest", help="Upload a single scan directory")
     ingest_parser.add_argument("directory", type=Path, help="Directory containing axe JSON files")
-    ingest_parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
+    _add_base_url(ingest_parser)
 
     import_parser = subparsers.add_parser("import", help="Onboard an app from a directory of date subdirectories")
     import_parser.add_argument("directory", type=Path, help="App directory containing YYYY-MM-DD subdirectories")
@@ -320,38 +384,59 @@ def main() -> None:
         default=None,
         help="Display name for the app on first import; must derive to the same slug as the axe JSON name",
     )
-    import_parser.add_argument("--base-url", default="http://localhost:8000", help="API base URL")
+    _add_base_url(import_parser)
+
+    org_units_parser = subparsers.add_parser("org-units", help="List or create org units")
+    org_units_sub = org_units_parser.add_subparsers(dest="subcommand", required=True)
+    ou_list = org_units_sub.add_parser("list", help="List all org units (id, name, parent)")
+    _add_base_url(ou_list)
+    ou_create = org_units_sub.add_parser("create", help="Create an org unit and print its id")
+    ou_create.add_argument("name", help="Display name for the new org unit")
+    ou_create.add_argument("--parent-id", type=int, default=None, help="Parent org unit id (omit for a root)")
+    _add_base_url(ou_create)
+
+    brands_parser = subparsers.add_parser("brands", help="List brands")
+    brands_sub = brands_parser.add_subparsers(dest="subcommand", required=True)
+    brands_list = brands_sub.add_parser("list", help="List all brands (id, name)")
+    _add_base_url(brands_list)
 
     args = parser.parse_args()
 
     if args.command == "ingest":
-
-        async def _run_ingest() -> IngestResult:
-            async with httpx.AsyncClient(base_url=args.base_url) as client:
-                return await ingest(client, directory=args.directory, on_progress=print)
-
-        ingest_result = asyncio.run(_run_ingest())
+        ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=print))
         if ingest_result.errors:
             for error in ingest_result.errors:
                 print(f"  ERROR: {error}")
             sys.exit(1)
 
     elif args.command == "import":
-
-        async def _run_import() -> ImportResult:
-            async with httpx.AsyncClient(base_url=args.base_url) as client:
-                return await import_app(
-                    client,
-                    directory=args.directory,
-                    org_unit_id=args.org_unit_id,
-                    brand_id=args.brand_id,
-                    name=args.name,
-                    on_progress=print,
-                )
-
-        import_result = asyncio.run(_run_import())
+        import_result = _run(
+            args.base_url,
+            lambda c: import_app(
+                c,
+                directory=args.directory,
+                org_unit_id=args.org_unit_id,
+                brand_id=args.brand_id,
+                name=args.name,
+                on_progress=print,
+            ),
+        )
         errors = [e for r in import_result.ingest_results for e in r.errors]
         if errors:
             for error in errors:
                 print(f"  ERROR: {error}")
             sys.exit(1)
+
+    elif args.command == "org-units":
+        if args.subcommand == "list":
+            _print_table(_run(args.base_url, lambda c: list_org_units(c)), ["id", "name", "parent_id"])
+        elif args.subcommand == "create":
+            try:
+                new_id = _run(args.base_url, lambda c: create_org_unit(c, name=args.name, parent_id=args.parent_id))
+                print(f"Created org unit {new_id}")
+            except ApiError as error:
+                print(f"  ERROR: {error}")
+                sys.exit(1)
+
+    elif args.command == "brands":
+        _print_table(_run(args.base_url, lambda c: list_brands(c)), ["id", "name"])

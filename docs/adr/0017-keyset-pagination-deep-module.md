@@ -72,3 +72,15 @@ the page-result keyset composite), not pre-emptively. Per-app Scan Run counts
 accrue slowly and stay bounded, so the per-app sort is negligible now. Add
 `(app_id, scanned_at, id)` to `scan_run` if a high-volume app's history-page
 latency ever justifies it.
+
+**2026-07-11 — the client-facing `order` flag arrived (issue #90).** The three
+score-history listings (`/apps/{id}/scores`, `/org-units/{id}/scores`,
+`/brands/{id}/scores`) now take `order=asc|desc` (default `asc`, so existing
+consumers are untouched): the UI Overview reads the head of a newest-first page
+instead of walking to the tail, while the Score Trend chart keeps consuming
+ascending pages — two real directions on the same operations, which is what a
+parameter (rather than a per-operation bake) is for. The request-facing
+declaration follows the `PageParams` pattern: a shared `OrderParam` in
+`core/pagination.py` owns the vocabulary and default; endpoints translate to
+`paginate()`'s `descending` bool, which stays the service-seam language.
+Everything else keeps its baked direction.

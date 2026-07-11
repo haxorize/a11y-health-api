@@ -12,6 +12,7 @@ See `docs/architecture.md` ("Pagination") for the model and
 """
 
 import base64
+import enum
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -37,6 +38,28 @@ class InvalidCursorError(DomainError):
 class UnsupportedKeysetTypeError(Exception):
     def __init__(self, python_type: type) -> None:
         super().__init__(f"Unsupported keyset column type: {python_type.__name__}")
+
+
+# Request-facing vocabulary for listings that let the client choose paging
+# direction. Most listings bake their direction per-operation instead (ADR
+# 0017); an endpoint exposes this only when both directions have real
+# consumers.
+class SortOrder(enum.StrEnum):
+    ASC = "asc"
+    DESC = "desc"
+
+    @property
+    def descending(self) -> bool:
+        return self is SortOrder.DESC
+
+
+def _order_query(order: SortOrder = SortOrder.ASC) -> SortOrder:
+    return order
+
+
+# The shared declaration of the `order` query parameter, like `PageParams` for
+# `cursor`/`limit`: opt-in per endpoint, but the default lives only here.
+OrderParam = Annotated[SortOrder, Depends(_order_query)]
 
 
 _MAX_CURSOR_LENGTH = 512

@@ -1,7 +1,8 @@
 """Reading Score Snapshots back out — the read side of scoring.
 
-Paginated history listings for an App, Org Unit, or Brand, oldest first
-(ascending by `snapshot_at`), plus the cross-entity latest-per-owner read behind
+Paginated history listings for an App, Org Unit, or Brand — oldest first by
+default, newest first on request (`descending`, the endpoints' `order=desc`) —
+plus the cross-entity latest-per-owner read behind
 `/scores/latest` (selection shared with the rollups via `_latest_snapshot.py`).
 The computation that produces these snapshots lives in `score_snapshot.py`.
 
@@ -62,6 +63,7 @@ async def _list_scores(
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
+    descending: bool = False,
 ) -> CursorPage[ScoreSnapshot]:
     stmt = select(ScoreSnapshot).where(filter_col == filter_val)
     return await paginate(
@@ -70,25 +72,45 @@ async def _list_scores(
         keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id],
         cursor=cursor,
         limit=limit,
+        descending=descending,
     )
 
 
 async def list_app_scores(
-    session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+    session: AsyncSession,
+    app_id: int,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    descending: bool = False,
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, App, app_id)
-    return await _list_scores(session, ScoreSnapshot.app_id, app_id, cursor=cursor, limit=limit)
+    return await _list_scores(session, ScoreSnapshot.app_id, app_id, cursor=cursor, limit=limit, descending=descending)
 
 
 async def list_brand_scores(
-    session: AsyncSession, brand_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+    session: AsyncSession,
+    brand_id: int,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    descending: bool = False,
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, Brand, brand_id)
-    return await _list_scores(session, ScoreSnapshot.brand_id, brand_id, cursor=cursor, limit=limit)
+    return await _list_scores(
+        session, ScoreSnapshot.brand_id, brand_id, cursor=cursor, limit=limit, descending=descending
+    )
 
 
 async def list_org_unit_scores(
-    session: AsyncSession, org_unit_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+    session: AsyncSession,
+    org_unit_id: int,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    descending: bool = False,
 ) -> CursorPage[ScoreSnapshot]:
     await existence.get_by_pk(session, OrgUnit, org_unit_id)
-    return await _list_scores(session, ScoreSnapshot.org_unit_id, org_unit_id, cursor=cursor, limit=limit)
+    return await _list_scores(
+        session, ScoreSnapshot.org_unit_id, org_unit_id, cursor=cursor, limit=limit, descending=descending
+    )

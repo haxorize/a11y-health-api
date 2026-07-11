@@ -293,8 +293,11 @@ order and tiebreak the results), and `paginate` handles the rest — applying th
 cursor, ordering, fetching `limit + 1` rows to detect whether more exist, slicing,
 and encoding the `next_cursor`. A **cursor** is just the keyset values of the last
 row, base64-encoded; the client sends it back to get the next page. Paging is
-**forward-only and ascending**, tiebroken by `id` wherever the keyset isn't
-already unique.
+**forward-only**, tiebroken by `id` wherever the keyset isn't already unique.
+Direction is ascending unless the operation says otherwise: most listings bake
+their direction server-side (Scan Run history pages newest-first), and the three
+score-history listings let the client choose via an `order` query param
+(`asc`/`desc`, ascending by default).
 
 `paginate` returns the internal `CursorPage` (ORM items + cursor); the endpoint turns
 that into the public `Page` wire response with `Page.from_cursor_page(page, ItemRead.model_validate)`,
@@ -313,7 +316,9 @@ it via `PageParams` (no local re-declaration), and must declare the `invalid_cur
 error mode — so a new paginated route cannot forget either. `PageParams` is a
 `Depends()` dependency rather than a `Query()` parameter model because a `Query()`
 model silently stops flattening into its fields when the endpoint declares any other
-query parameter (all FastAPI versions through 0.139).
+query parameter (all FastAPI versions through 0.139). Endpoints that expose paging
+direction consume the shared `OrderParam` declaration the same way, so the `order`
+vocabulary and its `asc` default also live only in `core/pagination.py`.
 
 Two things to know if you touch it:
 

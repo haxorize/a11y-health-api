@@ -37,11 +37,11 @@ Project-local skills that carry this repo's conventions, organized by the layer 
 - **`fastapi`** — backend layer: endpoints, schemas, services, and app configuration.
 - **`testing`** — test layer: fixtures, factories, test layout, markers, and mocking.
 
-## Domain Language
+## Domain language
 
 See `DOMAIN.md` for canonical domain terms. Use those terms in code, comments, and conversation.
 
-## Architecture Decisions
+## Architecture decisions
 
 See `docs/adr/` for recorded architectural decisions and their rationale. Consult before making choices that touch the same areas; respect existing decisions unless the user explicitly wants to revisit one.
 

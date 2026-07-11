@@ -517,8 +517,9 @@ class TestBrandRollup:
 
     async def test_apps_across_different_org_units(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Go365")
-        ou_a = await make_org_unit(db_session, name="Division A")
-        ou_b = await make_org_unit(db_session, name="Division B")
+        top = await make_org_unit(db_session, name="Top")
+        ou_a = await make_org_unit(db_session, name="Division A", parent_id=top.id)
+        ou_b = await make_org_unit(db_session, name="Division B", parent_id=top.id)
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=ou_a.id, brand_id=brand.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=ou_b.id, brand_id=brand.id)
 

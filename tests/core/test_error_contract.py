@@ -6,6 +6,7 @@ from a11y_health.core.error_contract import ERROR_MODES, ErrorBody, ErrorCode, e
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     DomainError,
+    DuplicateRootError,
     DuplicateSlugError,
     EmptyScanRunError,
     HasDependentsError,
@@ -20,6 +21,7 @@ from a11y_health.models.enums import ScanRunStatus
 
 _MODE_EXAMPLES: list[DomainError] = [
     NotFoundError("App", 42),
+    DuplicateRootError("Org unit", 1),
     DuplicateSlugError("my-app"),
     HasDependentsError("Org unit", 7),
     InvalidStatusTransitionError("Scan run", 3, ScanRunStatus.COMPLETED, ScanRunStatus.PENDING),

@@ -1,8 +1,15 @@
 import pytest
 from pytest import approx
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError, NotFoundError
+from a11y_health.core.exceptions import (
+    CircularReferenceError,
+    DuplicateRootError,
+    HasDependentsError,
+    NotFoundError,
+)
+from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
@@ -21,14 +28,35 @@ async def test_create_org_unit_with_parent(db_session: AsyncSession) -> None:
     assert child.parent_id == parent.id
 
 
+async def test_create_second_root_org_unit_rejected(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    with pytest.raises(DuplicateRootError, match=f"Org unit {root.id} is already the top-level"):
+        await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Shadow Humana"))
+
+
+async def test_schema_rejects_second_root_bypassing_service(db_session: AsyncSession) -> None:
+    await make_org_unit(db_session, name="Humana")
+    db_session.add(OrgUnit(name="Shadow Humana", parent_id=None))
+    with pytest.raises(IntegrityError, match=UQ_ORG_UNIT_SINGLE_ROOT):
+        await db_session.flush()
+
+
+async def test_create_root_race_translates_integrity_error(db_session: AsyncSession, mocker) -> None:
+    await make_org_unit(db_session, name="Humana")
+    # Simulate losing the create/create race: the pre-check saw no root, but one landed before our flush.
+    mocker.patch.object(org_unit_service, "_check_no_other_root", new_callable=mocker.AsyncMock)
+    with pytest.raises(DuplicateRootError, match="A top-level org unit already exists"):
+        await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Shadow Humana"))
+
+
 async def test_create_org_unit_with_invalid_parent(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError, match="Org unit"):
         await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Orphan", parent_id=999999))
 
 
 async def test_list_org_units(db_session: AsyncSession) -> None:
-    await make_org_unit(db_session, name="Humana")
-    await make_org_unit(db_session, name="CenterWell")
+    root = await make_org_unit(db_session, name="Humana")
+    await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     result = await org_unit_service.list_org_units(db_session)
     assert len(result) == 2
 
@@ -56,6 +84,37 @@ async def test_update_org_unit_with_invalid_parent(db_session: AsyncSession) -> 
     created = await make_org_unit(db_session, name="Humana")
     with pytest.raises(NotFoundError, match="Org unit"):
         await org_unit_service.update_org_unit(db_session, created.id, OrgUnitUpdate(parent_id=999999))
+
+
+async def test_reparent_to_parentless_rejected_when_root_exists(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    with pytest.raises(DuplicateRootError, match=f"Org unit {root.id} is already the top-level"):
+        await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))
+
+
+async def test_reparent_race_translates_integrity_error(db_session: AsyncSession, mocker) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    # Simulate losing the reparent race: the pre-check passed, but a root landed before our flush.
+    mocker.patch.object(org_unit_service, "_check_no_other_root", new_callable=mocker.AsyncMock)
+    with pytest.raises(DuplicateRootError, match="A top-level org unit already exists"):
+        await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))
+
+
+async def test_flush_guard_reraises_unrelated_integrity_error(db_session: AsyncSession) -> None:
+    # A non-single-root violation must not be misreported as duplicate_root — even when the
+    # org-unit name contains the index name, which appears in str(exc)'s bound parameters but
+    # not in the driver's own constraint message. Here the parent FK fails, not the root index.
+    db_session.add(OrgUnit(name=UQ_ORG_UNIT_SINGLE_ROOT, parent_id=999999))
+    with pytest.raises(IntegrityError):
+        await org_unit_service._flush_guarding_root_race(db_session)
+
+
+async def test_update_root_with_null_parent_is_noop(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    updated = await org_unit_service.update_org_unit(db_session, root.id, OrgUnitUpdate(parent_id=None))
+    assert updated.parent_id is None
 
 
 async def test_update_org_unit_not_found(db_session: AsyncSession) -> None:
@@ -177,15 +236,6 @@ async def test_update_rejects_descendant_as_parent(db_session: AsyncSession) -> 
     grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
     with pytest.raises(CircularReferenceError):
         await org_unit_service.update_org_unit(db_session, root.id, OrgUnitUpdate(parent_id=grandchild.id))
-
-
-async def test_update_can_clear_parent_to_root(db_session: AsyncSession) -> None:
-    root = await make_org_unit(db_session, name="Humana")
-    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
-    updated = await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))
-    assert updated.parent_id is None
-    ancestors = await org_unit_service.get_ancestors(db_session, child.id)
-    assert ancestors == []
 
 
 async def test_reparent_updates_ancestor_path(db_session: AsyncSession) -> None:

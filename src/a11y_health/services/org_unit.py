@@ -6,20 +6,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from a11y_health.core import existence
-from a11y_health.core.exceptions import CircularReferenceError, HasDependentsError
-from a11y_health.models.org_unit import OrgUnit
+from a11y_health.core.exceptions import CircularReferenceError, DuplicateRootError, HasDependentsError
+from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
 
 _RESOURCE = existence.ENTITY_LABELS[OrgUnit]
 
 
+async def get_root_id(session: AsyncSession, *, exclude_id: int | None = None) -> int | None:
+    stmt = select(OrgUnit.id).where(OrgUnit.parent_id.is_(None))
+    if exclude_id is not None:
+        stmt = stmt.where(OrgUnit.id != exclude_id)
+    return (await session.execute(stmt.limit(1))).scalar_one_or_none()
+
+
+async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = None) -> None:
+    existing_root_id = await get_root_id(session, exclude_id=exclude_id)
+    if existing_root_id is not None:
+        raise DuplicateRootError(_RESOURCE, existing_root_id)
+
+
+async def _flush_guarding_root_race(session: AsyncSession) -> None:
+    """Flush, translating a single-root index violation. Only reachable when a
+    concurrent transaction won the root race after `_check_no_other_root` passed."""
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError as exc:
+        # Match the driver's own message, not str(exc): the latter appends the bound
+        # parameters (the org-unit name), so a name that contains the index name would
+        # misclassify an unrelated violation (e.g. a parent-FK race) as duplicate_root.
+        if UQ_ORG_UNIT_SINGLE_ROOT not in str(exc.orig):
+            raise
+        raise DuplicateRootError(_RESOURCE) from exc
+
+
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
     if data.parent_id is not None:
         await get_org_unit(session, data.parent_id)
+    else:
+        await _check_no_other_root(session)
     org_unit = OrgUnit(**data.model_dump())
     session.add(org_unit)
-    await session.flush()
+    await _flush_guarding_root_race(session)
     await session.refresh(org_unit)
     return org_unit
 
@@ -46,9 +76,11 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
             descendant_ids = {d.id for d in await get_descendants(session, org_unit_id)}
             if new_parent_id in descendant_ids:
                 raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
+        else:
+            await _check_no_other_root(session, exclude_id=org_unit_id)
     for field, value in updates.items():
         setattr(org_unit, field, value)
-    await session.flush()
+    await _flush_guarding_root_race(session)
     await session.refresh(org_unit)
     if "parent_id" in updates and org_unit.parent_id != old_parent_id:
         await scoring_orchestration.on_org_unit_reparented(session, org_unit_id, old_parent_id, org_unit.parent_id)

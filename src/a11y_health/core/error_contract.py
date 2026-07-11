@@ -20,6 +20,7 @@ from starlette.requests import Request
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     DomainError,
+    DuplicateRootError,
     DuplicateSlugError,
     EmptyScanRunError,
     HasDependentsError,
@@ -33,6 +34,7 @@ from a11y_health.core.pagination import InvalidCursorError
 
 class ErrorCode(enum.StrEnum):
     NOT_FOUND = enum.auto()
+    DUPLICATE_ROOT = enum.auto()
     DUPLICATE_SLUG = enum.auto()
     HAS_DEPENDENTS = enum.auto()
     INVALID_STATUS_TRANSITION = enum.auto()
@@ -55,6 +57,7 @@ class _Mode(NamedTuple):
 
 ERROR_MODES: dict[type[DomainError], _Mode] = {
     NotFoundError: _Mode(404, ErrorCode.NOT_FOUND),
+    DuplicateRootError: _Mode(409, ErrorCode.DUPLICATE_ROOT),
     DuplicateSlugError: _Mode(409, ErrorCode.DUPLICATE_SLUG),
     HasDependentsError: _Mode(409, ErrorCode.HAS_DEPENDENTS),
     InvalidStatusTransitionError: _Mode(409, ErrorCode.INVALID_STATUS_TRANSITION),

@@ -16,6 +16,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
+from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services.score_snapshot import build_snapshot
 
 
@@ -80,7 +81,10 @@ async def make_app_with_org_unit(
     slug: str = "test-app",
     brand_id: int | None = None,
 ) -> App:
-    org_unit = await make_org_unit(db, name=org_name)
+    # Nest under the existing root when one exists — a second parentless org unit
+    # would violate the single-root index (ADR 0026).
+    existing_root_id = await org_unit_service.get_root_id(db)
+    org_unit = await make_org_unit(db, name=org_name, parent_id=existing_root_id)
     if brand_id is None:
         brand = await make_brand(db)
         brand_id = brand.id

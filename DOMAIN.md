@@ -5,6 +5,7 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Org Unit** | A node in the organizational hierarchy (company, division, team, etc.) with an optional parent. | Organization, team, department, group, dimension |
+| **Root Org Unit** | The single parentless **Org Unit** at the apex of the hierarchy — the subject of portfolio-level views. The hierarchy is a tree, not a forest: a deployment has at most one (zero only before onboarding), and creating or reparenting a second parentless **Org Unit** is refused (`duplicate_root`, 409). | Root, top-level org, portfolio org, primary org |
 | **App** | A web application whose accessibility is tracked, owned by an **Org Unit**. | Property, site, project, product |
 | **Slug** | A unique, URL-friendly identifier for an **App**, derived server-side from the name at **App** creation — folded to lowercase ASCII with words joined by hyphens — never chosen by an operator and immutable thereafter. Distinct names that derive to the same **Slug** collide loudly at creation rather than silently sharing an **App**. | Key, code, handle |
 | **Brand** | A commercial brand (Humana, CenterWell, Go365, CarePlus, Reliance) that owns one or more **Apps**, stored as a first-class entity with its own table. | Label, product line |
@@ -63,7 +64,7 @@
 
 ## Relationships
 
-- An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**
+- An **Org Unit** has zero or one parent **Org Unit** and zero or more child **Org Units**; at most one **Org Unit** is parentless (the **Root Org Unit**)
 - An **Org Unit** owns zero or more **Apps**
 - A **Brand** has zero or more **Apps**
 - An **App** has exactly one **Brand** and one **Slug** (name and **Slug** immutable after creation)

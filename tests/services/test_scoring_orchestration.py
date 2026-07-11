@@ -304,7 +304,7 @@ class TestOnOrgUnitReparented:
 
     async def test_skips_none_parents(self, db_session: AsyncSession) -> None:
         new_parent = await make_org_unit(db_session, name="New Parent")
-        orphan = await make_org_unit(db_session, name="Orphan")
+        orphan = await make_org_unit(db_session, name="Orphan", parent_id=new_parent.id)
 
         app = await make_app(db_session, name="App", slug="app-orphan", org_unit_id=orphan.id)
         await make_score_snapshot(
@@ -326,17 +326,17 @@ class TestOnOrgUnitReparented:
             pages_with_critical_violations=0,
         )
 
-        orphan.parent_id = new_parent.id
-        await db_session.flush()
-
+        # old_parent_id=None can no longer arise through the org-unit service (single-root
+        # invariant), but the orchestration seam stays defensive; exercise the skip directly.
         await on_org_unit_reparented(db_session, orphan.id, None, new_parent.id)
 
         assert (await latest_ou_snapshot(db_session, new_parent.id)).score == approx(0.6)
 
     async def test_does_not_trigger_brand_rollup(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Go365")
-        branch_a = await make_org_unit(db_session, name="Branch A")
-        branch_b = await make_org_unit(db_session, name="Branch B")
+        top = await make_org_unit(db_session, name="Top")
+        branch_a = await make_org_unit(db_session, name="Branch A", parent_id=top.id)
+        branch_b = await make_org_unit(db_session, name="Branch B", parent_id=top.id)
 
         app = await make_app(db_session, name="App", slug="app-reparent", org_unit_id=branch_a.id, brand_id=brand.id)
         await make_score_snapshot(
@@ -480,8 +480,9 @@ class TestOnAppDeleted:
 
 class TestOnAppReassigned:
     async def test_recalculates_both_org_units(self, db_session: AsyncSession) -> None:
-        org_a = await make_org_unit(db_session, name="Org A")
-        org_b = await make_org_unit(db_session, name="Org B")
+        top = await make_org_unit(db_session, name="Top")
+        org_a = await make_org_unit(db_session, name="Org A", parent_id=top.id)
+        org_b = await make_org_unit(db_session, name="Org B", parent_id=top.id)
 
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_a.id)
         await make_score_snapshot(
@@ -527,9 +528,10 @@ class TestOnAppReassigned:
         assert new_snap.score == approx((1.0 + 0.4) / 2)
 
     async def test_propagates_parent_chains(self, db_session: AsyncSession) -> None:
-        root_a = await make_org_unit(db_session, name="Root A")
+        top = await make_org_unit(db_session, name="Top")
+        root_a = await make_org_unit(db_session, name="Root A", parent_id=top.id)
         leaf_a = await make_org_unit(db_session, name="Leaf A", parent_id=root_a.id)
-        root_b = await make_org_unit(db_session, name="Root B")
+        root_b = await make_org_unit(db_session, name="Root B", parent_id=top.id)
         leaf_b = await make_org_unit(db_session, name="Leaf B", parent_id=root_b.id)
 
         app = await make_app(db_session, name="App", slug="app-move", org_unit_id=leaf_a.id)
@@ -557,8 +559,9 @@ class TestOnAppReassigned:
 
     async def test_does_not_touch_brand(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Humana")
-        org_a = await make_org_unit(db_session, name="Org A")
-        org_b = await make_org_unit(db_session, name="Org B")
+        top = await make_org_unit(db_session, name="Top")
+        org_a = await make_org_unit(db_session, name="Org A", parent_id=top.id)
+        org_b = await make_org_unit(db_session, name="Org B", parent_id=top.id)
 
         app = await make_app(db_session, name="App", slug="app-brand-noop", org_unit_id=org_a.id, brand_id=brand.id)
         await make_score_snapshot(

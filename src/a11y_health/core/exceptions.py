@@ -22,6 +22,19 @@ class CircularReferenceError(DomainError):
         super().__init__(f"{resource} {resource_id} cannot have {parent_id} as parent: circular reference")
 
 
+class DuplicateRootError(DomainError):
+    def __init__(self, resource: str, existing_root_id: object | None = None) -> None:
+        self.resource = resource
+        self.existing_root_id = existing_root_id
+        # existing_root_id is None on the create/create race path, where the session
+        # cannot be queried after the failed flush to identify the winner.
+        if existing_root_id is None:
+            message = f"A top-level {resource.lower()} already exists: only one is allowed"
+        else:
+            message = f"{resource} {existing_root_id} is already the top-level {resource.lower()}: only one is allowed"
+        super().__init__(message)
+
+
 class DuplicateSlugError(DomainError):
     def __init__(self, slug: str) -> None:
         self.slug = slug

@@ -26,9 +26,15 @@ async def test_create_org_unit_with_invalid_parent(db_client: AsyncClient) -> No
     assert response.status_code == 404
 
 
-async def test_list_org_units(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_create_second_root_returns_409(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await make_org_unit(db_session, name="Humana")
-    await make_org_unit(db_session, name="CenterWell")
+    response = await db_client.post("/api/v1/org-units", json={"name": "Shadow Humana"})
+    assert_error(response, 409, "duplicate_root", message_contains="top-level")
+
+
+async def test_list_org_units(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
 
     response = await db_client.get("/api/v1/org-units")
     assert response.status_code == 200
@@ -129,6 +135,13 @@ async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session
         json={"parent_id": child.id},
     )
     assert response.status_code == 409
+
+
+async def test_reparent_to_parentless_returns_409(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    response = await db_client.patch(f"/api/v1/org-units/{child.id}", json={"parent_id": None})
+    assert_error(response, 409, "duplicate_root", message_contains="top-level")
 
 
 async def test_delete_org_unit_with_apps(db_client: AsyncClient, db_session: AsyncSession) -> None:

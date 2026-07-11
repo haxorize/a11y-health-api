@@ -156,6 +156,7 @@
       "ErrorCode": {
         "enum": [
           "not_found",
+          "duplicate_root",
           "duplicate_slug",
           "has_dependents",
           "invalid_status_transition",
@@ -2029,6 +2030,19 @@
               "not_found"
             ]
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: duplicate_root",
+            "x-error-codes": [
+              "duplicate_root"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2214,9 +2228,10 @@
                 }
               }
             },
-            "description": "Domain error: circular_reference",
+            "description": "Domain error: circular_reference | duplicate_root",
             "x-error-codes": [
-              "circular_reference"
+              "circular_reference",
+              "duplicate_root"
             ]
           },
           "422": {

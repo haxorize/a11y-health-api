@@ -49,7 +49,10 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
         async with session.begin_nested():
             await session.flush()
     except IntegrityError as exc:
-        if UQ_APP_SLUG in str(exc):
+        # Match the driver's own message, not str(exc): the latter appends the bound
+        # parameters (the app name), so a name that contains the constraint name would
+        # misclassify an unrelated violation (e.g. an org-unit-FK race) as duplicate_slug.
+        if UQ_APP_SLUG in str(exc.orig):
             raise DuplicateSlugError(slug) from exc
         raise
     await session.refresh(app)

@@ -109,8 +109,9 @@ async def test_list_apps_filter_by_multiple_brand_ids(db_client: AsyncClient, db
 # Pins org_unit_id query-parameter decoding; descendant-expansion semantics
 # live at the service seam (test_list_apps_filter_by_org_unit_id_with_descendants).
 async def test_list_apps_filter_by_org_unit_id(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    humana_ou = await make_org_unit(db_session, name="Humana")
-    other_ou = await make_org_unit(db_session, name="Other")
+    top = await make_org_unit(db_session, name="Top")
+    humana_ou = await make_org_unit(db_session, name="Humana", parent_id=top.id)
+    other_ou = await make_org_unit(db_session, name="Other", parent_id=top.id)
     brand = await make_brand(db_session)
     await make_app(db_session, slug="humana-app", brand_id=brand.id, org_unit_id=humana_ou.id)
     await make_app(db_session, slug="other-app", brand_id=brand.id, org_unit_id=other_ou.id)

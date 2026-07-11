@@ -11,7 +11,7 @@ from a11y_health.services import score as score_service
 router = APIRouter(prefix="/org-units", tags=["org-units"])
 
 
-@router.post("", status_code=201, responses=error_responses(ErrorCode.NOT_FOUND))
+@router.post("", status_code=201, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.DUPLICATE_ROOT))
 async def create_org_unit(db: DbSession, data: OrgUnitCreate) -> OrgUnitRead:
     org_unit = await org_unit_service.create_org_unit(db, data)
     return OrgUnitRead.model_validate(org_unit)
@@ -54,7 +54,10 @@ async def get_descendants(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
     return [OrgUnitRead.model_validate(d) for d in descendants]
 
 
-@router.patch("/{org_unit_id}", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CIRCULAR_REFERENCE))
+@router.patch(
+    "/{org_unit_id}",
+    responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CIRCULAR_REFERENCE, ErrorCode.DUPLICATE_ROOT),
+)
 async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnitRead:
     updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
     return OrgUnitRead.model_validate(updated)

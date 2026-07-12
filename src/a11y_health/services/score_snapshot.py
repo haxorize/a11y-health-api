@@ -184,7 +184,9 @@ def _owner_criterion(
 
 # Equality basis for the same-observation dedupe: every aggregate the snapshot
 # carries. A column-set canary test pins the model so adding a column forces a
-# decision on whether it joins this tuple.
+# decision on whether it joins this tuple. Deriving this from the mapper was
+# tried and reverted (6b721f1): the deny-list it needs drifts silently, and the
+# canary carries the drift-proofing instead.
 def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
     return (
         snapshot.score,

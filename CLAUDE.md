@@ -65,7 +65,7 @@ No ruff `D` rules enforce this; it's judgment, applied here.
 - Tracker: GitHub
 - Hierarchy: optional
 
-## Severity labels
+## Bug severity labels
 
 - critical → `sev:critical` — outage, data loss, security
 - high → `sev:high` — broken core flow, no workaround

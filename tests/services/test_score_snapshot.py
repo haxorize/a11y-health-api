@@ -192,6 +192,26 @@ class TestScoreSnapshotMetrics:
         assert snapshot.total_pages == 3
 
 
+def test_score_snapshot_column_set_is_pinned() -> None:
+    # Canary: a new column must decide whether it joins the same-observation
+    # equality basis in _aggregate_values — update the tuple there, then here.
+    assert {attr.key for attr in ScoreSnapshot.__mapper__.column_attrs} == {
+        "id",
+        "app_id",
+        "scan_run_id",
+        "org_unit_id",
+        "brand_id",
+        "score",
+        "total_violations",
+        "total_pages",
+        "pages_with_violations",
+        "pages_with_critical_violations",
+        "snapshot_at",
+        "created_at",
+        "updated_at",
+    }
+
+
 class TestComputeAppScoreCreatesSnapshot:
     async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)

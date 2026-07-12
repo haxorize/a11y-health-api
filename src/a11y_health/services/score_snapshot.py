@@ -183,18 +183,16 @@ def _owner_criterion(
 
 
 # Equality basis for the same-observation dedupe: every aggregate the snapshot
-# carries, derived from the mapper so a new aggregate column participates
-# automatically instead of silently short-circuiting the rewrite below.
-_NON_AGGREGATE_COLUMNS = frozenset(
-    {"id", "app_id", "scan_run_id", "org_unit_id", "brand_id", "snapshot_at", "created_at", "updated_at"}
-)
-_AGGREGATE_COLUMNS = tuple(
-    sorted(attr.key for attr in ScoreSnapshot.__mapper__.column_attrs if attr.key not in _NON_AGGREGATE_COLUMNS)
-)
-
-
-def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, ...]:
-    return tuple(getattr(snapshot, name) for name in _AGGREGATE_COLUMNS)
+# carries. A column-set canary test pins the model so adding a column forces a
+# decision on whether it joins this tuple.
+def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
+    return (
+        snapshot.score,
+        snapshot.total_violations,
+        snapshot.total_pages,
+        snapshot.pages_with_violations,
+        snapshot.pages_with_critical_violations,
+    )
 
 
 async def _aggregate_and_save(

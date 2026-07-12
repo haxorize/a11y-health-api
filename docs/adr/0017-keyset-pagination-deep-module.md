@@ -73,6 +73,16 @@ accrue slowly and stay bounded, so the per-app sort is negligible now. Add
 `(app_id, scanned_at, id)` to `scan_run` if a high-volume app's history-page
 latency ever justifies it.
 
+**2026-07-12 — the suite-wide rule re-anchored to the envelope (Story #94).** The
+conformance sweep in `tests/core/test_pagination.py` now derives its swept set from
+the `Page` response envelope rather than from cursor acceptance: serving the envelope
+mandates accepting a cursor, consuming `PageParams`, and declaring `invalid_cursor`,
+and an inverse check makes accepting a cursor imply serving the envelope. The
+Story #80 rule above ("any cursor-accepting operation declares `invalid_cursor`")
+still holds, but as a consequence of the two directions rather than as the discovery
+basis — under the old basis, an operation that lost its cursor dropped out of the
+sweep instead of failing it.
+
 **2026-07-11 — the client-facing `order` flag arrived (issue #90).** The three
 score-history listings (`/apps/{id}/scores`, `/org-units/{id}/scores`,
 `/brands/{id}/scores`) now take `order=asc|desc` (default `asc`, so existing

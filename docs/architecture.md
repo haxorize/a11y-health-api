@@ -318,10 +318,13 @@ The module also owns the **request-facing half**: a paginated endpoint declares 
 `pagination: PageParams` argument (a `PaginationParams` dependency from
 `core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the
 page-size bounds and default live only on that model and flow into every operation
-and the OpenAPI document together. Two contract tests in `tests/core/test_pagination.py`
-enforce the arrangement suite-wide: every operation that accepts a cursor must obtain
-it via `PageParams` (no local re-declaration), and must declare the `invalid_cursor`
-error mode — so a new paginated route cannot forget either. `PageParams` is a
+and the OpenAPI document together. Contract tests in `tests/core/test_pagination.py`
+enforce the arrangement suite-wide, discovering operations by their `Page` response
+envelope — so one that loses its cursor fails the sweep by name instead of dropping
+out of it. Every operation serving the envelope must accept a cursor, obtain it via
+`PageParams` (no re-declaration anywhere in its dependency tree), and declare the
+`invalid_cursor` error mode; an inverse check makes a cursor imply the envelope —
+so neither a forgetful new route nor a hand-rolled cursor slips past the module. `PageParams` is a
 `Depends()` dependency rather than a `Query()` parameter model because a `Query()`
 model silently stops flattening into its fields when the endpoint declares any other
 query parameter (all FastAPI versions through 0.139). Endpoints that expose paging

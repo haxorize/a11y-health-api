@@ -196,52 +196,96 @@ def _flat_dependants(dependant: Any) -> Iterator[Any]:
         yield from _flat_dependants(sub)
 
 
-# An operation "accepts a cursor" whether the parameter arrives hand-rolled on
-# the endpoint or through any dependency — both shapes are swept, so a
-# hand-rolled regression is still caught. iter_route_contexts is the traversal
-# FastAPI's own OpenAPI generation walks, so the sweep sees every served
-# operation, not just one router's.
-def _accepts_cursor(dependant: Any) -> bool:
-    return any(field.name == "cursor" for dep in _flat_dependants(dependant) for field in dep.query_params)
+# Discovery keys on the response envelope, not on "accepts a cursor": an
+# operation that loses its cursor must fail the sweep by name, not drop out of
+# the swept set (Story #94). Bounded reference lists return bare arrays
+# (ADR 0025), so the envelope excludes them naturally. iter_route_contexts is
+# the traversal FastAPI's own OpenAPI generation walks, so the sweep sees every
+# served operation, not just one router's.
+def _serves_pages(ctx: Any) -> bool:
+    # docs/spec routes are plain starlette Routes with no response_model
+    model = getattr(ctx, "response_model", None)
+    return isinstance(model, type) and issubclass(model, Page)
 
 
-def _cursor_operations() -> list[Any]:
-    operations = [
-        ctx
-        for ctx in iter_route_contexts(app.routes)
-        # docs/spec routes are plain starlette Routes with no dependant to sweep
-        if getattr(ctx, "dependant", None) is not None and _accepts_cursor(ctx.dependant)
-    ]
-    assert operations, "cursor-operation sweep found nothing — detection is broken"
+def _paginated_operations() -> list[Any]:
+    operations = [ctx for ctx in iter_route_contexts(app.routes) if _serves_pages(ctx)]
+    assert operations, "paginated-operation sweep found nothing — detection is broken"
     return operations
 
 
-def test_every_cursor_operation_uses_the_pagination_owned_definition() -> None:
-    for op in _cursor_operations():
-        own_params = {field.name for field in op.dependant.query_params}
+def _spec_parameters(spec: dict[str, Any], op: Any, method: str) -> list[dict[str, Any]]:
+    operation = spec["paths"].get(op.path_format, {}).get(method.lower())
+    assert operation is not None, (
+        f"{method} {op.path_format} serves the Page envelope but is missing from the "
+        f"OpenAPI document — paginated operations must publish their contract"
+    )
+    return operation.get("parameters", [])
+
+
+# Asserted against the published spec, not the dependant tree: the wire-level
+# `cursor` parameter is what clients rely on, and internal field names can
+# diverge from published ones (aliases, model-shaped query params).
+def test_every_operation_serving_the_page_envelope_accepts_a_cursor() -> None:
+    spec = app.openapi()
+    for op in _paginated_operations():
+        for method in op.methods:
+            assert "cursor" in {p["name"] for p in _spec_parameters(spec, op, method)}, (
+                f"{method} {op.path_format} serves the Page envelope but does not "
+                f"accept a cursor — consume PageParams from core.pagination"
+            )
+
+
+# The inverse guard: with envelope ⇒ cursor above and cursor ⇒ envelope here,
+# the swept set and the cursor-accepting set stay equal — a hand-rolled cursor
+# on a bare-array operation fails by name instead of escaping the sweep.
+def test_every_operation_accepting_a_cursor_serves_the_page_envelope() -> None:
+    paginated = {(op.path_format, method.lower()) for op in _paginated_operations() for method in op.methods}
+    spec = app.openapi()
+    for path, operations in spec["paths"].items():
+        for method, operation in operations.items():
+            if any(param["name"] == "cursor" for param in operation.get("parameters", [])):
+                assert (path, method) in paginated, (
+                    f"{method.upper()} {path} accepts a cursor but does not serve the Page "
+                    f"envelope — unbounded list operations return Page[...] (ADR 0025 keeps "
+                    f"bounded reference lists bare and cursor-free)"
+                )
+
+
+def test_every_paginated_operation_uses_the_pagination_owned_definition() -> None:
+    for op in _paginated_operations():
+        # swept across sub-dependencies too: a shared dependency growing its own
+        # limit would publish conflicting schemas for the same wire parameter
+        own_params = {
+            field.name
+            for dep in _flat_dependants(op.dependant)
+            if dep.call is not PaginationParams
+            for field in dep.query_params
+        }
         assert "cursor" not in own_params and "limit" not in own_params, (
-            f"{sorted(op.methods)} {op.path_format} re-declares pagination parameters "
-            f"locally — consume PageParams from core.pagination instead"
+            f"{sorted(op.methods)} {op.path_format} declares pagination parameters outside "
+            f"PageParams — consume PageParams from core.pagination instead"
         )
         assert any(dep.call is PaginationParams for dep in _flat_dependants(op.dependant)), (
-            f"{sorted(op.methods)} {op.path_format} accepts a cursor but not via PageParams from core.pagination"
+            f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not "
+            f"consume PageParams from core.pagination"
         )
 
 
-def test_every_cursor_operation_declares_the_invalid_cursor_mode() -> None:
-    for op in _cursor_operations():
+def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
+    for op in _paginated_operations():
         declared_codes = {code for entry in op.responses.values() for code in entry.get("x-error-codes", [])}
         assert ErrorCode.INVALID_CURSOR in declared_codes, (
-            f"{sorted(op.methods)} {op.path_format} accepts a cursor but does not declare "
+            f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not declare "
             f"the invalid-cursor error mode — add ErrorCode.INVALID_CURSOR to its error_responses()"
         )
 
 
 def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> None:
     spec = app.openapi()
-    for op in _cursor_operations():
+    for op in _paginated_operations():
         for method in op.methods:
-            params = {p["name"]: p for p in spec["paths"][op.path_format][method.lower()]["parameters"]}
+            params = {p["name"]: p for p in _spec_parameters(spec, op, method)}
             limit_schema = params["limit"]["schema"]
             assert limit_schema["minimum"] == 1, f"{method} {op.path_format}"
             assert limit_schema["maximum"] == MAX_PAGE_SIZE, f"{method} {op.path_format}"

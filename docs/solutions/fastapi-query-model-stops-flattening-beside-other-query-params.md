@@ -48,7 +48,8 @@ parameters on the endpoint.
 - Why-comment on `PageParams` in `src/a11y_health/core/pagination.py` records
   the Depends-not-Query rationale at the point of temptation.
 - `test_openapi_page_size_bounds_and_default_propagate_from_the_module`
-  (`tests/core/test_pagination.py`) sweeps every cursor operation — including
+  (`tests/core/test_pagination.py`) sweeps every operation serving the `Page`
+  envelope — including
   ones with sibling query filters — and asserts `limit` still surfaces as a
   flat query param with the module's bounds/default, so a revert to `Query()`
   fails the suite instead of shipping 422s.

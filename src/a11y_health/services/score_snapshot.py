@@ -185,6 +185,18 @@ def _owner_criterion(
     return column == owner_id
 
 
+# Equality basis for the same-observation dedupe: the derived avg_*/pct_* fields
+# are functions of these, so equality here is equality of the whole aggregate.
+def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
+    return (
+        snapshot.score,
+        snapshot.total_violations,
+        snapshot.total_pages,
+        snapshot.pages_with_violations,
+        snapshot.pages_with_critical_violations,
+    )
+
+
 async def _aggregate_and_save(
     session: AsyncSession,
     children: list[ScoreSnapshot],
@@ -192,16 +204,15 @@ async def _aggregate_and_save(
     org_unit_id: int | None = None,
     brand_id: int | None = None,
 ) -> None:
+    owner = _owner_criterion(org_unit_id=org_unit_id, brand_id=brand_id)
     # score is the unweighted arithmetic mean of children's scores per DOMAIN.md;
     # the pct_* / avg_* fields are recomputed from summed totals, so the two lenses can diverge.
     # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)
-    await session.execute(
-        delete(ScoreSnapshot).where(
-            _owner_criterion(org_unit_id=org_unit_id, brand_id=brand_id),
-            ScoreSnapshot.snapshot_at > snapshot_at,
-        )
-    )
+    await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at > snapshot_at))
+    # Float summation is order-sensitive and the latest-child query has no ORDER BY;
+    # sort so recomputes are bitwise-reproducible and the no-change skip below holds.
+    children = sorted(children, key=lambda c: c.id)
     count = len(children)
     snapshot = build_snapshot(
         score=sum(c.score for c in children) / count,
@@ -213,6 +224,23 @@ async def _aggregate_and_save(
         org_unit_id=org_unit_id,
         brand_id=brand_id,
     )
+    # One snapshot per distinct observation, not one per trigger (#95, ADR 0015).
+    # A newer observation time always appends — even with unchanged values — so
+    # the latest snapshot never claims an observation whose source data is gone.
+    # id-max pick: legacy rows may still share this time; compare against the one
+    # the Latest Score Snapshot selection would win.
+    existing = (
+        await session.execute(
+            select(ScoreSnapshot)
+            .where(owner, ScoreSnapshot.snapshot_at == snapshot_at)
+            .order_by(ScoreSnapshot.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        if _aggregate_values(existing) == _aggregate_values(snapshot):
+            return
+        await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at == snapshot_at))
     session.add(snapshot)
     await session.flush()
 

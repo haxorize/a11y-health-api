@@ -234,6 +234,14 @@ legitimately diverge.
 > data that has since been deleted — is now orphaned (the numbers behind it are
 > gone), so the rollup deletes those forward rows before inserting. If a node
 > ends up with no children at all, its snapshots are deleted outright.
+>
+> **One snapshot per distinct observation.** A rollup trigger is not itself an
+> observation (#95): when the recomputed aggregate lands on the observation time
+> the owner's latest snapshot already holds, identical values record nothing,
+> and changed values replace the rows sharing that time (delete + insert, never
+> update). Only a newer observation time appends — even when the values didn't
+> move, so the latest snapshot never claims an observation whose source data has
+> since been deleted.
 
 ### What triggers a rollup
 

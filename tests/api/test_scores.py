@@ -21,6 +21,9 @@ async def test_list_app_scores_ordered_chronologically(db_client: AsyncClient, d
     assert len(items) == 3
     scores = [s["score"] for s in items]
     assert scores == approx([0.9, 0.75, 0.6])
+    assert "avg_violations_per_page" not in items[0]
+    assert "pct_pages_with_violations" not in items[0]
+    assert "pct_pages_with_critical_violations" not in items[0]
 
 
 async def test_list_org_unit_scores_ordered_chronologically(db_client: AsyncClient, db_session: AsyncSession) -> None:

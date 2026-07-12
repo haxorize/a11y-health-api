@@ -26,10 +26,10 @@ async def test_get_scan_run_summary(db_client: AsyncClient, db_session: AsyncSes
     assert data["pages_with_violations"] == 3
     assert data["pages_with_critical_violations"] == 1
     assert data["total_pages"] == 5
-    assert data["avg_violations_per_page"] == approx(2.0)
-    assert data["pct_pages_with_violations"] == approx(0.6)
-    assert data["pct_pages_with_critical_violations"] == approx(0.2)
     assert data["score"] == approx(0.8)
+    assert "avg_violations_per_page" not in data
+    assert "pct_pages_with_violations" not in data
+    assert "pct_pages_with_critical_violations" not in data
 
 
 async def test_get_scan_run_summary_pending_returns_404(

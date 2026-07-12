@@ -37,7 +37,4 @@ class ScoreSnapshot(TimestampMixin, Base):
     pages_with_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     pages_with_critical_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     total_pages: Mapped[int] = mapped_column(Integer, nullable=False)
-    avg_violations_per_page: Mapped[float] = mapped_column(Float, nullable=False)
-    pct_pages_with_violations: Mapped[float] = mapped_column(Float, nullable=False)
-    pct_pages_with_critical_violations: Mapped[float] = mapped_column(Float, nullable=False)
     snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

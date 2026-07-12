@@ -13,9 +13,6 @@ class ScoreMetrics(BaseModel):
     pages_with_violations: int
     pages_with_critical_violations: int
     total_pages: int
-    avg_violations_per_page: float
-    pct_pages_with_violations: float
-    pct_pages_with_critical_violations: float
 
 
 class ScoreSnapshotRead(ScoreMetrics):

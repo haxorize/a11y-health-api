@@ -836,10 +836,6 @@
       },
       "ScanRunSummaryRead": {
         "properties": {
-          "avg_violations_per_page": {
-            "title": "Avg Violations Per Page",
-            "type": "number"
-          },
           "pages_with_critical_violations": {
             "title": "Pages With Critical Violations",
             "type": "integer"
@@ -847,14 +843,6 @@
           "pages_with_violations": {
             "title": "Pages With Violations",
             "type": "integer"
-          },
-          "pct_pages_with_critical_violations": {
-            "title": "Pct Pages With Critical Violations",
-            "type": "number"
-          },
-          "pct_pages_with_violations": {
-            "title": "Pct Pages With Violations",
-            "type": "number"
           },
           "score": {
             "title": "Score",
@@ -874,10 +862,7 @@
           "total_violations",
           "pages_with_violations",
           "pages_with_critical_violations",
-          "total_pages",
-          "avg_violations_per_page",
-          "pct_pages_with_violations",
-          "pct_pages_with_critical_violations"
+          "total_pages"
         ],
         "title": "ScanRunSummaryRead",
         "type": "object"
@@ -903,10 +888,6 @@
               }
             ],
             "title": "App Id"
-          },
-          "avg_violations_per_page": {
-            "title": "Avg Violations Per Page",
-            "type": "number"
           },
           "brand_id": {
             "anyOf": [
@@ -946,14 +927,6 @@
           "pages_with_violations": {
             "title": "Pages With Violations",
             "type": "integer"
-          },
-          "pct_pages_with_critical_violations": {
-            "title": "Pct Pages With Critical Violations",
-            "type": "number"
-          },
-          "pct_pages_with_violations": {
-            "title": "Pct Pages With Violations",
-            "type": "number"
           },
           "scan_run_id": {
             "anyOf": [
@@ -995,9 +968,6 @@
           "pages_with_violations",
           "pages_with_critical_violations",
           "total_pages",
-          "avg_violations_per_page",
-          "pct_pages_with_violations",
-          "pct_pages_with_critical_violations",
           "id",
           "app_id",
           "scan_run_id",

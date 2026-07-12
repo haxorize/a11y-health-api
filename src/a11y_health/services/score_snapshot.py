@@ -146,9 +146,6 @@ def build_snapshot(
         total_pages=total_pages,
         pages_with_violations=pages_with_violations,
         pages_with_critical_violations=pages_with_critical_violations,
-        avg_violations_per_page=safe_ratio(total_violations, total_pages),
-        pct_pages_with_violations=safe_ratio(pages_with_violations, total_pages),
-        pct_pages_with_critical_violations=safe_ratio(pages_with_critical_violations, total_pages),
         snapshot_at=snapshot_at,
     )
 
@@ -185,16 +182,19 @@ def _owner_criterion(
     return column == owner_id
 
 
-# Equality basis for the same-observation dedupe: the derived avg_*/pct_* fields
-# are functions of these, so equality here is equality of the whole aggregate.
-def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
-    return (
-        snapshot.score,
-        snapshot.total_violations,
-        snapshot.total_pages,
-        snapshot.pages_with_violations,
-        snapshot.pages_with_critical_violations,
-    )
+# Equality basis for the same-observation dedupe: every aggregate the snapshot
+# carries, derived from the mapper so a new aggregate column participates
+# automatically instead of silently short-circuiting the rewrite below.
+_NON_AGGREGATE_COLUMNS = frozenset(
+    {"id", "app_id", "scan_run_id", "org_unit_id", "brand_id", "snapshot_at", "created_at", "updated_at"}
+)
+_AGGREGATE_COLUMNS = tuple(
+    sorted(attr.key for attr in ScoreSnapshot.__mapper__.column_attrs if attr.key not in _NON_AGGREGATE_COLUMNS)
+)
+
+
+def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, ...]:
+    return tuple(getattr(snapshot, name) for name in _AGGREGATE_COLUMNS)
 
 
 async def _aggregate_and_save(
@@ -205,8 +205,7 @@ async def _aggregate_and_save(
     brand_id: int | None = None,
 ) -> None:
     owner = _owner_criterion(org_unit_id=org_unit_id, brand_id=brand_id)
-    # score is the unweighted arithmetic mean of children's scores per DOMAIN.md;
-    # the pct_* / avg_* fields are recomputed from summed totals, so the two lenses can diverge.
+    # score is the unweighted arithmetic mean of children's scores per DOMAIN.md.
     # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)
     await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at > snapshot_at))

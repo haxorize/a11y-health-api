@@ -172,7 +172,7 @@ class TestComputeAppScoreResult:
 
 
 class TestScoreSnapshotMetrics:
-    async def test_all_metrics_computed(self, db_session: AsyncSession) -> None:
+    async def test_snapshot_stores_counts_and_score(self, db_session: AsyncSession) -> None:
         _, snapshot = await _setup_and_score(
             db_session,
             make_axe_payload(
@@ -190,9 +190,6 @@ class TestScoreSnapshotMetrics:
         assert snapshot.pages_with_violations == 2
         assert snapshot.pages_with_critical_violations == 1
         assert snapshot.total_pages == 3
-        assert snapshot.avg_violations_per_page == approx(1.0)
-        assert snapshot.pct_pages_with_violations == approx(2 / 3)
-        assert snapshot.pct_pages_with_critical_violations == approx(1 / 3)
 
 
 class TestComputeAppScoreCreatesSnapshot:
@@ -312,9 +309,6 @@ class TestOrgUnitRollup:
         assert ou_snapshot.total_pages == app_snapshot.total_pages
         assert ou_snapshot.pages_with_violations == app_snapshot.pages_with_violations
         assert ou_snapshot.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
-        assert ou_snapshot.avg_violations_per_page == approx(app_snapshot.avg_violations_per_page)
-        assert ou_snapshot.pct_pages_with_violations == approx(app_snapshot.pct_pages_with_violations)
-        assert ou_snapshot.pct_pages_with_critical_violations == approx(app_snapshot.pct_pages_with_critical_violations)
 
     async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Parent Org")
@@ -341,9 +335,6 @@ class TestOrgUnitRollup:
         assert ou_snapshot.total_pages == 2
         assert ou_snapshot.pages_with_violations == 1
         assert ou_snapshot.pages_with_critical_violations == 0
-        assert ou_snapshot.avg_violations_per_page == approx(0.5)
-        assert ou_snapshot.pct_pages_with_violations == approx(0.5)
-        assert ou_snapshot.pct_pages_with_critical_violations == approx(0.0)
 
     async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession) -> None:
         root = await make_org_unit(db_session, name="Root")
@@ -589,9 +580,6 @@ class TestBrandRollup:
         assert brand_snap.total_pages == app_snapshot.total_pages
         assert brand_snap.pages_with_violations == app_snapshot.pages_with_violations
         assert brand_snap.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
-        assert brand_snap.avg_violations_per_page == approx(app_snapshot.avg_violations_per_page)
-        assert brand_snap.pct_pages_with_violations == approx(app_snapshot.pct_pages_with_violations)
-        assert brand_snap.pct_pages_with_critical_violations == approx(app_snapshot.pct_pages_with_critical_violations)
 
     async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="CenterWell")
@@ -620,9 +608,6 @@ class TestBrandRollup:
         assert brand_snap.total_pages == 2
         assert brand_snap.pages_with_violations == 1
         assert brand_snap.pages_with_critical_violations == 0
-        assert brand_snap.avg_violations_per_page == approx(0.5)
-        assert brand_snap.pct_pages_with_violations == approx(0.5)
-        assert brand_snap.pct_pages_with_critical_violations == approx(0.0)
 
     async def test_apps_across_different_org_units(self, db_session: AsyncSession) -> None:
         brand = await make_brand(db_session, name="Go365")

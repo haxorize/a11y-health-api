@@ -223,9 +223,9 @@ as "latest" can never disagree with what rollups aggregate.
 
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.
-Note a subtlety captured in the code: the `pct_*` / `avg_*` metrics on a rollup
-are recomputed from *summed totals*, so the headline score and those ratios can
-legitimately diverge.
+The count columns, by contrast, are *summed totals* — so a share or average a
+consumer derives from a rollup's counts is page-weighted and can legitimately
+diverge from the headline score.
 
 > **Why snapshots get pruned during a rollup.** Snapshots are append-only
 > ([ADR 0015](adr/0015-score-snapshot-append-only.md)), so a rollup writes a new

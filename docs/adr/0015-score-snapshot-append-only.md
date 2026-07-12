@@ -6,7 +6,20 @@ for an owner (App, Org Unit, Brand) is always "the latest row by `snapshot_at`,
 tiebreak on `id`" (see `c31ab92`). The rollup queries in `services/score_snapshot.py`
 are built around this access pattern.
 
-Two exceptions, both delete + insert (never in-place update):
+One new row per scoring event, refined (#95): one new row per **distinct
+observation**. A rollup trigger whose recomputed aggregate lands on the
+observation time the owner's latest snapshot already holds is not a new
+observation — `_aggregate_and_save` records nothing when the values are also
+identical, and replaces the rows sharing that `snapshot_at` when they differ.
+Without this, every deletion/reparent trigger and every completion of an older
+scan appended a row identical to the latest (same `snapshot_at`, same values),
+making within-time ordering id-dependent and rendering phantom trend movement.
+A strictly newer `snapshot_at` always appends, even with unchanged values — a
+flat trend is still made of real observations, and skipping one would leave
+the latest snapshot claiming an observation time whose source scan may later
+be deleted.
+
+Three exceptions, all delete + insert or skip (never in-place update):
 
 - **Cascade on scan-run delete**: the App snapshot for a deleted scan run is
   removed by the database FK cascade (`scan_run_id` carries
@@ -20,9 +33,13 @@ Two exceptions, both delete + insert (never in-place update):
   later observation times are orphaned claims — the data behind them is
   gone — and would otherwise win `order by snapshot_at desc` queries against
   a derived score that no source can reproduce.
+- **Same-observation skip/replace on rollup** (#95, above): nothing recorded
+  when the aggregate is identical to the latest snapshot; delete + insert of
+  the rows sharing the derived `snapshot_at` when the values changed.
 
 Trend history for normal forward progress is preserved: each new scan
-adds a rollup at a strictly newer `snapshot_at`, so the prune is a no-op.
+adds a rollup at a strictly newer `snapshot_at`, so the prune and the
+same-observation dedupe are no-ops.
 
 Considered and rejected:
 - **Upsert one row per (owner, owner_id)**: simpler storage, but loses score

@@ -222,6 +222,23 @@ async def latest_brand_snapshot(db: AsyncSession, brand_id: int) -> ScoreSnapsho
     return await _latest_snapshot(db, ScoreSnapshot.brand_id, brand_id)
 
 
+async def _all_snapshots(db: AsyncSession, filter_col: Any, filter_val: int) -> list[ScoreSnapshot]:
+    # Ordered like Latest Score Snapshot selection (snapshot_at, then id), so
+    # tests can read [-1] as the latest.
+    result = await db.execute(
+        select(ScoreSnapshot).where(filter_col == filter_val).order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id)
+    )
+    return list(result.scalars().all())
+
+
+async def ou_snapshots(db: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
+    return await _all_snapshots(db, ScoreSnapshot.org_unit_id, org_unit_id)
+
+
+async def brand_snapshots(db: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
+    return await _all_snapshots(db, ScoreSnapshot.brand_id, brand_id)
+
+
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
     return {
         "id": rule_id,

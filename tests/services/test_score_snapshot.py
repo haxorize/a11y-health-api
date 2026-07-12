@@ -25,6 +25,7 @@ from a11y_health.services.score_snapshot import (
     rollup_org_unit_scores,
 )
 from tests.factories import (
+    brand_snapshots,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -36,6 +37,7 @@ from tests.factories import (
     make_scan_run_with_parents,
     make_score_snapshot,
     make_violation,
+    ou_snapshots,
 )
 
 
@@ -451,6 +453,113 @@ class TestOrgUnitRollup:
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.8)
 
 
+class TestRollupNoChangeRecompute:
+    # History keeps one Score Snapshot per distinct observation, not one per trigger (#95).
+
+    async def test_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-nochange", org_unit_id=org_unit.id)
+        await _complete_and_score(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+
+        # deletion and reparent triggers re-run the rollup with unchanged children
+        await rollup_org_unit_scores(db_session, org_unit.id)
+        await rollup_org_unit_scores(db_session, org_unit.id)
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.4)
+
+    async def test_changed_aggregate_at_same_observation_time_replaces(self, db_session: AsyncSession) -> None:
+        scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        org_unit = await make_org_unit(db_session, name="Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app_a.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=scanned_at,
+        )
+        await _complete_and_score(
+            db_session,
+            app_b.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=scanned_at,
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.7)
+        assert snapshots[0].snapshot_at == scanned_at
+
+    async def test_older_scan_completion_reproducing_aggregate_records_nothing_new(
+        self, db_session: AsyncSession
+    ) -> None:
+        # An older scan that doesn't displace the app's latest snapshot leaves the
+        # aggregate — values and observation time — unchanged.
+        latest_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-same-mean", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=latest_scanned_at,
+        )
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].snapshot_at == latest_scanned_at
+
+    async def test_newer_observation_with_unchanged_values_appends(self, db_session: AsyncSession) -> None:
+        # A distinct observation is history even when the value didn't move —
+        # skipping it would leave the latest snapshot claiming an observation
+        # time whose scan may later be deleted.
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-flat-trend", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        second_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=second_scanned_at,
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 2
+        assert snapshots[-1].snapshot_at == second_scanned_at
+
+    async def test_brand_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-brand", org_unit_id=org_unit.id, brand_id=brand.id)
+        await _complete_score_and_rollup_brand(
+            db_session, app.id, brand.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        await rollup_brand_scores(db_session, brand.id)
+        await rollup_brand_scores(db_session, brand.id)
+
+        snapshots = await brand_snapshots(db_session, brand.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.4)
+
+
 async def _complete_score_and_rollup_brand(
     db_session: AsyncSession,
     app_id: int,
@@ -573,5 +682,4 @@ class TestBrandRollup:
 
         await rollup_brand_scores(db_session, brand.id)
 
-        result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
-        assert result.scalar_one_or_none() is None
+        assert await brand_snapshots(db_session, brand.id) == []

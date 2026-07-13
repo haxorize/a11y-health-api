@@ -239,6 +239,10 @@ async def brand_snapshots(db: AsyncSession, brand_id: int) -> list[ScoreSnapshot
     return await _all_snapshots(db, ScoreSnapshot.brand_id, brand_id)
 
 
+async def app_snapshots(db: AsyncSession, app_id: int) -> list[ScoreSnapshot]:
+    return await _all_snapshots(db, ScoreSnapshot.app_id, app_id)
+
+
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
     return {
         "id": rule_id,

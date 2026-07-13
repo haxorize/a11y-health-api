@@ -7,33 +7,17 @@ the org structure.
 
 The test engine creates `uq_org_unit_single_root` from model metadata, so each
 test first drops it (inside the rolled-back transaction, ADR 0011) to simulate
-a pre-migration database. Harness mechanics follow test_rederive_app_slugs.py.
+a pre-migration database. Harness mechanics live in tests/migrations/harness.py.
 """
 
-import importlib.util
-from pathlib import Path
-
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories import make_org_unit
+from tests.migrations.harness import load_migration, run_upgrade
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "migrations" / "versions" / "8fe96135b4ba_add_single_root_org_unit_index.py"
-)
-_spec = importlib.util.spec_from_file_location("migration_8fe96135b4ba", _MIGRATION_PATH)
-assert _spec is not None and _spec.loader is not None
-migration = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(migration)
-
-
-def _run_upgrade(sync_conn: Connection) -> None:
-    with Operations.context(MigrationContext.configure(connection=sync_conn)):
-        migration.upgrade()
+migration = load_migration("8fe96135b4ba_add_single_root_org_unit_index.py")
 
 
 async def _drop_index_to_simulate_pre_migration_db(db_session: AsyncSession) -> None:
@@ -46,7 +30,7 @@ async def test_migration_aborts_naming_offenders_when_multiple_roots_exist(db_se
     root_b = await make_org_unit(db_session, name="Stray Root")
 
     with pytest.raises(RuntimeError, match=rf"(?s)ids \[{root_a.id}, {root_b.id}\].*[Rr]eparent"):
-        await (await db_session.connection()).run_sync(_run_upgrade)
+        await run_upgrade(db_session, migration)
 
 
 async def test_migration_creates_index_when_single_root(db_session: AsyncSession) -> None:
@@ -54,7 +38,7 @@ async def test_migration_creates_index_when_single_root(db_session: AsyncSession
     root = await make_org_unit(db_session, name="Humana")
     await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
 
-    await (await db_session.connection()).run_sync(_run_upgrade)
+    await run_upgrade(db_session, migration)
 
     indexes = (
         await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'org_unit'"))

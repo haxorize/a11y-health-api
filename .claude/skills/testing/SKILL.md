@@ -26,7 +26,7 @@ tests/
   cli/
     test_<command>.py       # CLI tool tests (e.g., test_ingest.py, test_import.py)
   migrations/
-    test_<revision>.py      # migration-body tests: run a shipped upgrade() bound to db_session (see test_rederive_app_slugs.py)
+    test_<revision>.py      # migration-body tests: run a shipped upgrade() bound to db_session (harness.py; usage: test_rederive_app_slugs.py)
 ```
 
 ## Fixtures (from conftest.py)

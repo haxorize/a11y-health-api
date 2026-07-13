@@ -37,6 +37,11 @@ Three exceptions, all delete + insert or skip (never in-place update):
   when the aggregate is identical to the latest snapshot; delete + insert of
   the rows sharing the derived `snapshot_at` when the values changed.
 
+Those three are the complete runtime census. Beyond runtime, a one-time repair
+migration may delete rows to converge history written before a rule existed —
+first: `b362121027a0` (#97), removing pre-#95 duplicate rollup rows in favor of
+the row the latest-selection tiebreak already serves.
+
 Trend history for normal forward progress is preserved: each new scan
 adds a rollup at a strictly newer `snapshot_at`, so the prune and the
 same-observation dedupe are no-ops.

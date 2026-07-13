@@ -138,6 +138,17 @@ failure escaping the domain is a bug and surfaces as a 500, never a disguised
 client error. See
 [ADR 0022](adr/0022-error-contract-single-table-400-vs-422.md).
 
+When the *database* is the rule's enforcer (a constraint backing a domain
+invariant, like the single **Root Org Unit**, the unique **Slug**, or the
+**Dependents Guard**'s RESTRICT FKs), services don't inspect `IntegrityError`
+themselves: they declare a constraint→error mapping and `core/integrity.py`'s
+`guard` — the **Integrity Guard** — translates a recognized violation into its
+mapped domain error with the surrounding transaction still usable, re-raising
+anything unrecognized. How violations are identified, and the SQLAlchemy
+subtlety that forces the guarded mutation *inside* the `guard` block, live in
+the module's docstrings; [ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)
+records the decisions.
+
 So: to add a new failure mode, subclass `DomainError`, add its row to
 `ERROR_MODES`, and list its code in `error_responses(...)` on the operations
 that can produce it. An exhaustiveness test fails if a `DomainError` subclass

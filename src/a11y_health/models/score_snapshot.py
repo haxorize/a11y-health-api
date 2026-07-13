@@ -7,6 +7,8 @@ from a11y_health.core.database import Base, TimestampMixin
 
 UQ_SCORE_SNAPSHOT_SCAN_RUN_ID = "uq_score_snapshot_scan_run_id"
 CK_SCORE_SNAPSHOT_OWNER = "ck_score_snapshot_owner"
+FK_SCORE_SNAPSHOT_ORG_UNIT_ID = "fk_score_snapshot_org_unit_id"
+FK_SCORE_SNAPSHOT_BRAND_ID = "fk_score_snapshot_brand_id"
 
 
 class ScoreSnapshot(TimestampMixin, Base):
@@ -29,9 +31,11 @@ class ScoreSnapshot(TimestampMixin, Base):
         BigInteger, ForeignKey("scan_run.id", ondelete="CASCADE"), nullable=True
     )
     org_unit_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT", name=FK_SCORE_SNAPSHOT_ORG_UNIT_ID), nullable=True
     )
-    brand_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("brand.id", ondelete="RESTRICT"), nullable=True)
+    brand_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("brand.id", ondelete="RESTRICT", name=FK_SCORE_SNAPSHOT_BRAND_ID), nullable=True
+    )
     score: Mapped[float] = mapped_column(Float, nullable=False)
     total_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     pages_with_violations: Mapped[int] = mapped_column(Integer, nullable=False)

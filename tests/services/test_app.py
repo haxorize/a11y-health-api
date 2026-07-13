@@ -1,10 +1,8 @@
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
-from a11y_health.models.app import UQ_APP_SLUG
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.app import AppCreate, AppUpdate
@@ -42,18 +40,6 @@ async def test_create_app_invalid_org_unit(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     with pytest.raises(NotFoundError, match="Org unit"):
         await app_service.create_app(db_session, AppCreate(name="MyApp", brand_id=brand.id, org_unit_id=999999))
-
-
-async def test_create_app_reraises_unrelated_integrity_error(db_session: AsyncSession, mocker) -> None:
-    # A non-slug violation must not be misreported as duplicate_slug — even when the app name
-    # contains the constraint name, which appears in str(exc)'s bound parameters but not in the
-    # driver's own message. Existence checks are stubbed so the org-unit FK fails, not the slug.
-    brand = await make_brand(db_session)
-    mocker.patch.object(app_service.existence, "get_by_pk", new_callable=mocker.AsyncMock)
-    with pytest.raises(IntegrityError):
-        await app_service.create_app(
-            db_session, AppCreate(name=f"spoof {UQ_APP_SLUG}", brand_id=brand.id, org_unit_id=999999)
-        )
 
 
 async def test_create_app_distinct_names_colliding_slug_conflict(db_session: AsyncSession) -> None:

@@ -102,15 +102,6 @@ async def test_reparent_race_translates_integrity_error(db_session: AsyncSession
         await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))
 
 
-async def test_flush_guard_reraises_unrelated_integrity_error(db_session: AsyncSession) -> None:
-    # A non-single-root violation must not be misreported as duplicate_root — even when the
-    # org-unit name contains the index name, which appears in str(exc)'s bound parameters but
-    # not in the driver's own constraint message. Here the parent FK fails, not the root index.
-    db_session.add(OrgUnit(name=UQ_ORG_UNIT_SINGLE_ROOT, parent_id=999999))
-    with pytest.raises(IntegrityError):
-        await org_unit_service._flush_guarding_root_race(db_session)
-
-
 async def test_update_root_with_null_parent_is_noop(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     updated = await org_unit_service.update_org_unit(db_session, root.id, OrgUnitUpdate(parent_id=None))
@@ -153,6 +144,19 @@ async def test_delete_org_unit_with_children_rejected(db_session: AsyncSession) 
     await make_org_unit(db_session, name="CenterWell", parent_id=parent.id)
     with pytest.raises(HasDependentsError, match="dependent"):
         await org_unit_service.delete_org_unit(db_session, parent.id)
+
+
+async def test_delete_refusal_leaves_transaction_usable(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    app = await make_app(db_session, slug="blocker-app", org_unit_id=org_unit.id)
+    with pytest.raises(HasDependentsError):
+        await org_unit_service.delete_org_unit(db_session, org_unit.id)
+    # Clearing the dependent and retrying in the same transaction succeeds.
+    await db_session.delete(app)
+    await db_session.flush()
+    await org_unit_service.delete_org_unit(db_session, org_unit.id)
+    with pytest.raises(NotFoundError):
+        await org_unit_service.get_org_unit(db_session, org_unit.id)
 
 
 async def test_get_ancestors_returns_path_to_root(db_session: AsyncSession) -> None:

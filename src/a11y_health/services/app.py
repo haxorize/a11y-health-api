@@ -1,8 +1,7 @@
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core import existence
+from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import DuplicateSlugError
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.core.slug import derive_slug
@@ -44,17 +43,8 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     await existence.get_by_pk(session, OrgUnit, data.org_unit_id)
     slug = derive_slug(data.name)
     app = App(**data.model_dump(), slug=slug)
-    session.add(app)
-    try:
-        async with session.begin_nested():
-            await session.flush()
-    except IntegrityError as exc:
-        # Match the driver's own message, not str(exc): the latter appends the bound
-        # parameters (the app name), so a name that contains the constraint name would
-        # misclassify an unrelated violation (e.g. an org-unit-FK race) as duplicate_slug.
-        if UQ_APP_SLUG in str(exc.orig):
-            raise DuplicateSlugError(slug) from exc
-        raise
+    async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
+        session.add(app)
     await session.refresh(app)
     return app
 

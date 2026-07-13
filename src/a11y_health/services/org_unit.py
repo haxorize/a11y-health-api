@@ -1,13 +1,15 @@
 from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 
 from sqlalchemy import literal, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from a11y_health.core import existence
+from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import CircularReferenceError, DuplicateRootError, HasDependentsError
-from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
+from a11y_health.models.app import FK_APP_ORG_UNIT_ID
+from a11y_health.models.org_unit import FK_ORG_UNIT_PARENT_ID, UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
+from a11y_health.models.score_snapshot import FK_SCORE_SNAPSHOT_ORG_UNIT_ID
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
 
@@ -27,19 +29,10 @@ async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = N
         raise DuplicateRootError(_RESOURCE, existing_root_id)
 
 
-async def _flush_guarding_root_race(session: AsyncSession) -> None:
-    """Flush, translating a single-root index violation. Only reachable when a
-    concurrent transaction won the root race after `_check_no_other_root` passed."""
-    try:
-        async with session.begin_nested():
-            await session.flush()
-    except IntegrityError as exc:
-        # Match the driver's own message, not str(exc): the latter appends the bound
-        # parameters (the org-unit name), so a name that contains the index name would
-        # misclassify an unrelated violation (e.g. a parent-FK race) as duplicate_root.
-        if UQ_ORG_UNIT_SINGLE_ROOT not in str(exc.orig):
-            raise
-        raise DuplicateRootError(_RESOURCE) from exc
+def _root_race_guard(session: AsyncSession) -> AbstractAsyncContextManager[None]:
+    """The single-root violation is only reachable when a concurrent transaction
+    won the root race after `_check_no_other_root` passed."""
+    return integrity.guard(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(_RESOURCE)})
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
@@ -48,8 +41,8 @@ async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit
     else:
         await _check_no_other_root(session)
     org_unit = OrgUnit(**data.model_dump())
-    session.add(org_unit)
-    await _flush_guarding_root_race(session)
+    async with _root_race_guard(session):
+        session.add(org_unit)
     await session.refresh(org_unit)
     return org_unit
 
@@ -78,9 +71,9 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
                 raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
         else:
             await _check_no_other_root(session, exclude_id=org_unit_id)
-    for field, value in updates.items():
-        setattr(org_unit, field, value)
-    await _flush_guarding_root_race(session)
+    async with _root_race_guard(session):
+        for field, value in updates.items():
+            setattr(org_unit, field, value)
     await session.refresh(org_unit)
     if "parent_id" in updates and org_unit.parent_id != old_parent_id:
         await scoring_orchestration.on_org_unit_reparented(session, org_unit_id, old_parent_id, org_unit.parent_id)
@@ -120,8 +113,14 @@ async def get_descendant_ids(session: AsyncSession, org_unit_ids: list[int]) -> 
 
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
-    try:
+    # One instance for all three dependent FKs: guard raises at most once per call.
+    dependents = HasDependentsError(_RESOURCE, org_unit_id)
+    async with integrity.guard(
+        session,
+        {
+            FK_ORG_UNIT_PARENT_ID: dependents,
+            FK_APP_ORG_UNIT_ID: dependents,
+            FK_SCORE_SNAPSHOT_ORG_UNIT_ID: dependents,
+        },
+    ):
         await session.delete(org_unit)
-        await session.flush()
-    except IntegrityError as exc:
-        raise HasDependentsError(_RESOURCE, org_unit_id) from exc

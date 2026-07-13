@@ -80,17 +80,13 @@ src/a11y_health/
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
 - Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages. For derived resource labels, use f-string composition: `f"{_RESOURCE} summary"`
-- Catch `IntegrityError` on flush, match against exported constraint name constants, and raise a domain exception. Use `begin_nested()` to create a savepoint so only the failed flush is rolled back (not the entire transaction):
+- Writes guarded by a named constraint use `core/integrity.py`'s `guard` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard` docstring for why):
   ```python
-  try:
-      async with session.begin_nested():
-          await session.flush()
-  except IntegrityError as exc:
-      if UQ_APP_SLUG in str(exc):
-          raise DuplicateSlugError(data.slug) from exc
-      raise
+  async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
+      session.add(app)
   await session.refresh(app)
   ```
+  On a recognized violation `guard` raises the mapped domain error with the transaction still usable; anything else re-raises unchanged. Classification rules and the single-use-mapping invariant live in `guard`'s docstrings; ADR 0028 records the decisions.
 
 ## Orchestration
 

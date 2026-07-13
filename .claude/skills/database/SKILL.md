@@ -75,7 +75,7 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 - **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs). Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
 - **UNIQUE**: use `NULLS NOT DISTINCT` (PG15+) unless multiple NULLs are intentional
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
-- **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`). Export constraint names as module-level constants (e.g., `UQ_APP_SLUG`, `CK_ORG_UNIT_NAME_LENGTH`) for matching in `IntegrityError` handlers
+- **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`, `fk_<table>_<col>`). Export constraint names as module-level constants (e.g., `UQ_APP_SLUG`, `FK_APP_ORG_UNIT_ID`) for the constraint→error mappings passed to `integrity.guard` (see the fastapi skill's Services section)
 
 ## Indexes
 

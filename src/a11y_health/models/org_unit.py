@@ -5,6 +5,7 @@ from a11y_health.core.database import Base, TimestampMixin
 
 CK_ORG_UNIT_NAME_LENGTH = "ck_org_unit_name_length"
 UQ_ORG_UNIT_SINGLE_ROOT = "uq_org_unit_single_root"
+FK_ORG_UNIT_PARENT_ID = "fk_org_unit_parent_id"
 
 
 class OrgUnit(TimestampMixin, Base):
@@ -24,5 +25,5 @@ class OrgUnit(TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
     parent_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT", name=FK_ORG_UNIT_PARENT_ID), nullable=True
     )

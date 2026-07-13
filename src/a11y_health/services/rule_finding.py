@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -26,11 +26,21 @@ async def list_findings(
     classification: list[Classification] | None = None,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
-) -> CursorPage[RuleFinding]:
+) -> CursorPage[RuleFindingRead]:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
+    # Correlated subquery, not outerjoin + GROUP BY: the count then runs only for
+    # the limit+1 rows the page returns (an index probe each), instead of
+    # aggregating every Node Finding in the scan run before LIMIT applies.
+    node_finding_count = (
+        select(func.count())
+        .where(NodeFinding.rule_finding_id == RuleFinding.id)
+        .correlate(RuleFinding)
+        .scalar_subquery()
+        .label("node_finding_count")
+    )
     stmt = (
-        select(RuleFinding)
+        select(RuleFinding, node_finding_count)
         .join(PageResult, RuleFinding.page_result_id == PageResult.id)
         .where(PageResult.scan_run_id == scan_run_id)
     )
@@ -47,7 +57,14 @@ async def list_findings(
         targets = [classification_to_tag(c) for c in classification]
         stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
 
-    return await paginate(session, stmt, keyset=[RuleFinding.id], cursor=cursor, limit=limit)
+    return await paginate(
+        session,
+        stmt,
+        keyset=[RuleFinding.id],
+        cursor=cursor,
+        limit=limit,
+        into=lambda r: RuleFindingRead.from_finding(r.RuleFinding, node_finding_count=r.node_finding_count),
+    )
 
 
 async def get_finding(
@@ -72,8 +89,7 @@ async def get_finding(
     )
     nodes_result = await session.execute(nodes_stmt)
 
-    finding_data = RuleFindingRead.model_validate(finding)
-    return RuleFindingDetail(
-        **finding_data.model_dump(),
+    return RuleFindingDetail.from_finding(
+        finding,
         node_findings=[NodeFindingDetail.model_validate(nf) for nf in nodes_result.scalars()],
     )

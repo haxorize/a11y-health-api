@@ -35,7 +35,7 @@ async def list_findings(
         cursor=pagination.cursor,
         limit=pagination.limit,
     )
-    return Page.from_cursor_page(page, RuleFindingRead.model_validate)
+    return Page.from_cursor_page(page)
 
 
 @router.get("/{finding_id}", responses=error_responses(ErrorCode.NOT_FOUND))

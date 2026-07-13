@@ -14,9 +14,9 @@ one interface, so the implicit `expected=1`/`expected=2` cursor contract disappe
 Two shape decisions are deliberate:
 
 - **An optional `into: Callable[[Row], T]` row→item transform.** Four list sites
-  return ORM scalars (default passthrough); `list_page_metrics` returns aggregate
-  `Row` tuples it maps into `PageMetricsRead`. Both shapes are real (4 vs 1), so the
-  callback is a genuine seam, not speculative indirection.
+  return ORM scalars (default passthrough); `list_page_metrics` and `list_findings`
+  return aggregate `Row` tuples they map into their Read models. Both shapes are
+  real (4 vs 2), so the callback is a genuine seam, not speculative indirection.
 - **Cursor values are recovered from the SQL row, not the returned item.** The
   keyset drives the cursor; `into` only shapes items. This keeps paging correct
   regardless of what `into` produces, instead of coupling the cursor to an `id`

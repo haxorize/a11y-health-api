@@ -718,6 +718,10 @@
           "impact": {
             "$ref": "#/components/schemas/Impact"
           },
+          "node_finding_count": {
+            "title": "Node Finding Count",
+            "type": "integer"
+          },
           "page_result_id": {
             "title": "Page Result Id",
             "type": "integer"
@@ -756,7 +760,8 @@
           "category",
           "wcag_criteria",
           "classifications",
-          "tags"
+          "tags",
+          "node_finding_count"
         ],
         "title": "RuleFindingRead",
         "type": "object"

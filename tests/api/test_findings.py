@@ -13,7 +13,8 @@ from tests.factories import (
 async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page_result.id)
+    rule_finding = await make_rule_finding(db_session, page_result_id=page_result.id)
+    await make_node_finding(db_session, rule_finding_id=rule_finding.id)
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings")
 
@@ -26,6 +27,7 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["category"] == "color"
     assert finding["wcag_criteria"] == ["1.4.3"]
     assert finding["classifications"] == [{"standard": "wcag", "version": "2.0", "level": "AA"}]
+    assert finding["node_finding_count"] == 1
 
 
 async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSession) -> None:

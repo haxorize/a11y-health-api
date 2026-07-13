@@ -351,8 +351,8 @@ Two things to know if you touch it:
   silently drops rows). Current keysets are primary keys, NOT NULL columns, or —
   for `/scores/latest` — the owner FK the query already filters to non-NULL.
 - An optional `into` callback maps each result row into a response object. Most
-  lists return ORM objects directly; `list_page_metrics` uses `into` to shape
-  aggregate query rows into `PageMetricsRead`.
+  lists return ORM objects directly; `list_page_metrics` and `list_findings` use
+  `into` to shape aggregate query rows into their Read models.
 
 ---
 

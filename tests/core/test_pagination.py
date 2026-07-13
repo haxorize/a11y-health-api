@@ -22,7 +22,7 @@ from a11y_health.core.pagination import (
 from a11y_health.main import app
 from a11y_health.models.brand import Brand
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from tests.factories import make_brand, make_score_snapshot
+from tests.factories import make_app_with_org_unit, make_brand, make_score_snapshot
 
 
 async def test_paginate_single_keyset_first_page(db_session: AsyncSession) -> None:
@@ -144,10 +144,12 @@ async def test_paginate_decodable_cursor_with_wrong_typed_value_is_rejected(
 
 
 async def test_paginate_composite_keyset_breaks_ties_on_id(db_session: AsyncSession) -> None:
-    brand = await make_brand(db_session)
+    # App-owned snapshots: the one owner where equal snapshot_at rows are legal
+    # (rollup owners are unique per observation time since #98).
+    app = await make_app_with_org_unit(db_session)
     keyset = [ScoreSnapshot.snapshot_at, ScoreSnapshot.id]
     tied = datetime(2026, 1, 1, tzinfo=UTC)
-    snaps = [await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=tied) for _ in range(3)]
+    snaps = [await make_score_snapshot(db_session, app_id=app.id, snapshot_at=tied) for _ in range(3)]
     ordered = sorted(s.id for s in snaps)
 
     stmt = select(ScoreSnapshot)

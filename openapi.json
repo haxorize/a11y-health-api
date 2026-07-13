@@ -163,6 +163,7 @@
           "scan_run_completed",
           "empty_scan_run",
           "circular_reference",
+          "concurrent_rollup",
           "invalid_cursor",
           "invalid_axe_payload"
         ],

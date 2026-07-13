@@ -15,6 +15,7 @@ from types import ModuleType
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,3 +37,11 @@ async def run_upgrade(db_session: AsyncSession, migration: ModuleType) -> None:
             migration.upgrade()
 
     await (await db_session.connection()).run_sync(_run)
+
+
+async def drop_indexes_to_simulate_pre_migration_db(db_session: AsyncSession, *index_names: str) -> None:
+    # The test engine creates every index from model metadata; a migration test
+    # seeding rows a later index forbids must first restore the world its
+    # migration ran in (inside the rolled-back transaction, ADR 0011).
+    for index_name in index_names:
+        await db_session.execute(text(f"DROP INDEX {index_name}"))

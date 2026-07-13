@@ -70,6 +70,15 @@ class InvalidAxePayloadError(DomainError):
         super().__init__(f"Invalid axe payload: {reason}")
 
 
+class ConcurrentRollupError(DomainError):
+    def __init__(self, resource: str, resource_id: object) -> None:
+        self.resource = resource
+        self.resource_id = resource_id
+        super().__init__(
+            f"{resource} {resource_id} score was updated by another request at the same time; retry the request"
+        )
+
+
 class HasDependentsError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource

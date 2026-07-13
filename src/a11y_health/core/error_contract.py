@@ -19,6 +19,7 @@ from starlette.requests import Request
 
 from a11y_health.core.exceptions import (
     CircularReferenceError,
+    ConcurrentRollupError,
     DomainError,
     DuplicateRootError,
     DuplicateSlugError,
@@ -41,6 +42,7 @@ class ErrorCode(enum.StrEnum):
     SCAN_RUN_COMPLETED = enum.auto()
     EMPTY_SCAN_RUN = enum.auto()
     CIRCULAR_REFERENCE = enum.auto()
+    CONCURRENT_ROLLUP = enum.auto()
     INVALID_CURSOR = enum.auto()
     INVALID_AXE_PAYLOAD = enum.auto()
 
@@ -64,6 +66,7 @@ ERROR_MODES: dict[type[DomainError], _Mode] = {
     ScanRunCompletedError: _Mode(409, ErrorCode.SCAN_RUN_COMPLETED),
     EmptyScanRunError: _Mode(409, ErrorCode.EMPTY_SCAN_RUN),
     CircularReferenceError: _Mode(409, ErrorCode.CIRCULAR_REFERENCE),
+    ConcurrentRollupError: _Mode(409, ErrorCode.CONCURRENT_ROLLUP),
     InvalidCursorError: _Mode(400, ErrorCode.INVALID_CURSOR),
     InvalidAxePayloadError: _Mode(400, ErrorCode.INVALID_AXE_PAYLOAD),
 }

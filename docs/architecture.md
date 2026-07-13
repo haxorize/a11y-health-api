@@ -125,7 +125,7 @@ codes as `x-error-codes`).
 | Mode (exception → code) | Status |
 | --- | --- |
 | `NotFoundError` → `not_found` | 404 |
-| `CircularReferenceError` → `circular_reference`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
+| `CircularReferenceError` → `circular_reference`, `ConcurrentRollupError` → `concurrent_rollup`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
 | `InvalidCursorError` → `invalid_cursor`, `InvalidAxePayloadError` → `invalid_axe_payload` | 400 |
 | Pydantic `ValidationError` (request failed FastAPI's own shape validation) | 422 |
 
@@ -252,7 +252,10 @@ diverge from the headline score.
 > and changed values replace the rows sharing that time (delete + insert, never
 > update). Only a newer observation time appends — even when the values didn't
 > move, so the latest snapshot never claims an observation whose source data has
-> since been deleted.
+> since been deleted. Since #98 the database enforces this for rollup owners:
+> partial unique indexes on (owner, `snapshot_at`) decide same-observation write
+> races, the losing rollup failing as `ConcurrentRollupError` (409, retryable). App snapshots stay
+> unconstrained — two Scan Runs may share an observation time (ADR 0015).
 
 ### What triggers a rollup
 

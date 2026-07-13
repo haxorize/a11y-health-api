@@ -40,7 +40,22 @@ Three exceptions, all delete + insert or skip (never in-place update):
 Those three are the complete runtime census. Beyond runtime, a one-time repair
 migration may delete rows to converge history written before a rule existed —
 first: `b362121027a0` (#97), removing pre-#95 duplicate rollup rows in favor of
-the row the latest-selection tiebreak already serves.
+the row the latest-selection tiebreak already serves; `8b3a1162eb95` (#98)
+re-runs that dedupe before creating its indexes, so duplicates raced in between
+the two deploys cannot fail enforcement.
+
+Database-enforced since #98: partial unique indexes
+(`uq_score_snapshot_org_unit_snapshot_at`, `uq_score_snapshot_brand_snapshot_at`)
+make one rollup snapshot per owner and observation time impossible to violate,
+not merely unviolated. The read-check dedupe above stays the primary path; the
+indexes only decide same-observation write races, where the losing rollup's
+transaction fails as `ConcurrentRollupError` (409, retryable) via the integrity
+guard (ADR 0028). The mode lives in the `ERROR_MODES` table only — deliberately
+undeclared in per-operation `error_responses(...)`, since rollups run behind
+most mutating operations and a per-operation census would smear it across the
+contract.
+App snapshots stay unconstrained — two Scan Runs may legitimately share an
+observation time, with latest selection breaking the tie on id.
 
 Trend history for normal forward progress is preserved: each new scan
 adds a rollup at a strictly newer `snapshot_at`, so the prune and the

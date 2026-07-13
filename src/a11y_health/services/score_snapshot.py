@@ -15,14 +15,20 @@ from datetime import datetime
 from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core import existence
+from a11y_health.core import existence, integrity
+from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.app import App
+from a11y_health.models.brand import Brand
 from a11y_health.models.enums import FindingType, Impact, PageHealth
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.models.score_snapshot import (
+    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
+    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+    ScoreSnapshot,
+)
 from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
 from a11y_health.services._latest_snapshot import select_latest_snapshots
 
@@ -197,6 +203,21 @@ def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, in
     )
 
 
+# The #98 indexes allow at most one match; the id-desc pick mirrors the Latest
+# Score Snapshot tie-break as a belt for pre-enforcement databases.
+async def _snapshot_recorded_at_observation(
+    session: AsyncSession, owner: ColumnElement[bool], snapshot_at: datetime
+) -> ScoreSnapshot | None:
+    return (
+        await session.execute(
+            select(ScoreSnapshot)
+            .where(owner, ScoreSnapshot.snapshot_at == snapshot_at)
+            .order_by(ScoreSnapshot.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def _aggregate_and_save(
     session: AsyncSession,
     children: list[ScoreSnapshot],
@@ -226,22 +247,19 @@ async def _aggregate_and_save(
     # One snapshot per distinct observation, not one per trigger (#95, ADR 0015).
     # A newer observation time always appends — even with unchanged values — so
     # the latest snapshot never claims an observation whose source data is gone.
-    # id-max pick: legacy rows may still share this time; compare against the one
-    # the Latest Score Snapshot selection would win.
-    existing = (
-        await session.execute(
-            select(ScoreSnapshot)
-            .where(owner, ScoreSnapshot.snapshot_at == snapshot_at)
-            .order_by(ScoreSnapshot.id.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    existing = await _snapshot_recorded_at_observation(session, owner, snapshot_at)
     if existing is not None:
         if _aggregate_values(existing) == _aggregate_values(snapshot):
             return
         await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at == snapshot_at))
-    session.add(snapshot)
-    await session.flush()
+    # The unique indexes (#98) only decide races: a concurrent rollup landing
+    # between the read above and this insert makes the flush a violation.
+    if org_unit_id is not None:
+        index, entity, owner_id = UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, OrgUnit, org_unit_id
+    else:
+        index, entity, owner_id = UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, Brand, brand_id
+    async with integrity.guard(session, {index: ConcurrentRollupError(existence.ENTITY_LABELS[entity], owner_id)}):
+        session.add(snapshot)
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:

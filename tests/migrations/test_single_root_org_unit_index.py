@@ -14,18 +14,15 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT
 from tests.factories import make_org_unit
-from tests.migrations.harness import load_migration, run_upgrade
+from tests.migrations.harness import drop_indexes_to_simulate_pre_migration_db, load_migration, run_upgrade
 
 migration = load_migration("8fe96135b4ba_add_single_root_org_unit_index.py")
 
 
-async def _drop_index_to_simulate_pre_migration_db(db_session: AsyncSession) -> None:
-    await db_session.execute(text("DROP INDEX uq_org_unit_single_root"))
-
-
 async def test_migration_aborts_naming_offenders_when_multiple_roots_exist(db_session: AsyncSession) -> None:
-    await _drop_index_to_simulate_pre_migration_db(db_session)
+    await drop_indexes_to_simulate_pre_migration_db(db_session, UQ_ORG_UNIT_SINGLE_ROOT)
     root_a = await make_org_unit(db_session, name="Humana")
     root_b = await make_org_unit(db_session, name="Stray Root")
 
@@ -34,7 +31,7 @@ async def test_migration_aborts_naming_offenders_when_multiple_roots_exist(db_se
 
 
 async def test_migration_creates_index_when_single_root(db_session: AsyncSession) -> None:
-    await _drop_index_to_simulate_pre_migration_db(db_session)
+    await drop_indexes_to_simulate_pre_migration_db(db_session, UQ_ORG_UNIT_SINGLE_ROOT)
     root = await make_org_unit(db_session, name="Humana")
     await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
 

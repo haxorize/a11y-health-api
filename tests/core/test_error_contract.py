@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from a11y_health.core.error_contract import ERROR_MODES, ErrorBody, ErrorCode, error_responses, response_for
 from a11y_health.core.exceptions import (
     CircularReferenceError,
+    ConcurrentRollupError,
     DomainError,
     DuplicateRootError,
     DuplicateSlugError,
@@ -28,6 +29,7 @@ _MODE_EXAMPLES: list[DomainError] = [
     ScanRunCompletedError(3),
     EmptyScanRunError(3),
     CircularReferenceError("Org unit", 1, 2),
+    ConcurrentRollupError("Org unit", 1),
     InvalidCursorError(),
     InvalidAxePayloadError("findings: Field required"),
 ]

@@ -7,13 +7,20 @@ from types import ModuleType
 import pytest
 from pytest import approx
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import Impact, PageHealth, ScanRunStatus
 from a11y_health.models.page_result import PageResult
-from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.models.score_snapshot import (
+    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
+    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+    ScoreSnapshot,
+)
 from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.services import app as app_service
+from a11y_health.services import score_snapshot as score_snapshot_service
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.score_snapshot import (
@@ -29,6 +36,7 @@ from tests.factories import (
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
+    make_app_with_org_unit,
     make_axe_payload,
     make_brand,
     make_org_unit,
@@ -688,3 +696,62 @@ class TestBrandRollup:
         await rollup_brand_scores(db_session, brand.id)
 
         assert await brand_snapshots(db_session, brand.id) == []
+
+
+def _bypass_dedupe_check_to_lose_the_race(mocker) -> None:
+    # The race the constraint decides: the dedupe read saw nothing, but a
+    # concurrent rollup's row lands before our write.
+    mocker.patch.object(
+        score_snapshot_service, "_snapshot_recorded_at_observation", new_callable=mocker.AsyncMock, return_value=None
+    )
+
+
+class TestRollupSnapshotUniqueness:
+    async def test_schema_rejects_duplicate_org_unit_snapshot_at_one_observation_time(
+        self, db_session: AsyncSession
+    ) -> None:
+        org_unit = await make_org_unit(db_session)
+        await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=_SNAPSHOT_AT)
+        db_session.add(_snapshot(org_unit_id=org_unit.id))
+        with pytest.raises(IntegrityError, match=UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT):
+            await db_session.flush()
+
+    async def test_schema_rejects_duplicate_brand_snapshot_at_one_observation_time(
+        self, db_session: AsyncSession
+    ) -> None:
+        brand = await make_brand(db_session)
+        await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=_SNAPSHOT_AT)
+        db_session.add(_snapshot(brand_id=brand.id))
+        with pytest.raises(IntegrityError, match=UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT):
+            await db_session.flush()
+
+    async def test_app_snapshots_stay_unconstrained_per_observation_time(self, db_session: AsyncSession) -> None:
+        # Two Scan Runs for one App may share scanned_at; latest selection breaks
+        # the tie. Proven by the second flush not raising.
+        app = await make_app_with_org_unit(db_session)
+        first = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=_SNAPSHOT_AT)
+        second = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=_SNAPSHOT_AT)
+        assert first.id != second.id
+
+    async def test_org_unit_rollup_losing_the_race_raises_concurrent_rollup_error(
+        self, db_session: AsyncSession, mocker
+    ) -> None:
+        org_unit = await make_org_unit(db_session)
+        app = await make_app(db_session, name="Race App", slug="race-app", org_unit_id=org_unit.id)
+        await make_score_snapshot(db_session, app_id=app.id, snapshot_at=_SNAPSHOT_AT)
+        # The winner's row: landed between our dedupe check and our write.
+        await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=_SNAPSHOT_AT)
+        _bypass_dedupe_check_to_lose_the_race(mocker)
+        with pytest.raises(ConcurrentRollupError, match="Org unit.*updated by another request"):
+            await rollup_org_unit_scores(db_session, org_unit.id)
+
+    async def test_brand_rollup_losing_the_race_raises_concurrent_rollup_error(
+        self, db_session: AsyncSession, mocker
+    ) -> None:
+        brand = await make_brand(db_session)
+        app = await make_app_with_org_unit(db_session, brand_id=brand.id)
+        await make_score_snapshot(db_session, app_id=app.id, snapshot_at=_SNAPSHOT_AT)
+        await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=_SNAPSHOT_AT)
+        _bypass_dedupe_check_to_lose_the_race(mocker)
+        with pytest.raises(ConcurrentRollupError, match="Brand.*updated by another request"):
+            await rollup_brand_scores(db_session, brand.id)

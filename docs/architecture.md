@@ -105,6 +105,13 @@ transaction: **commit on success, roll back on any exception**. Services and
 endpoints therefore never call `commit()` themselves — they just `flush()` when
 they need a generated id mid-request. One request is one atomic unit of work.
 
+The dependency is declared `Depends(get_db, scope="function")` (`api/deps.py`)
+so the commit lands **before the response is sent**. FastAPI's default
+`"request"` scope runs yield-dependency teardown after the response, which
+races a sequential client: it can receive a 201, immediately GET the new
+resource, and 404 because the creating request hasn't committed yet (observed
+as e2e seed flake in a11y-health-ui CI).
+
 A session is *not* safe to share across concurrent tasks — see
 [ADR 0007](adr/0007-async-session-not-concurrency-safe.md). Tests rely on the
 rollback behavior for isolation — [ADR 0011](adr/0011-transactional-rollback-test-isolation.md).

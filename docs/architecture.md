@@ -263,6 +263,21 @@ diverge from the headline score.
 > partial unique indexes on (owner, `snapshot_at`) decide same-observation write
 > races, the losing rollup failing as `ConcurrentRollupError` (409, retryable). App snapshots stay
 > unconstrained — two Scan Runs may share an observation time (ADR 0015).
+>
+> **Concurrency model.** Recomputes for one owner are serialized by a
+> transaction-scoped advisory lock acquired as the rollup's first statement —
+> before the children read — so a rollup deriving an older observation can
+> never prune or displace a newer one committed concurrently: the two
+> different-observation rows never collide, which puts that interleaving beyond
+> what the #98 indexes can decide
+> ([ADR 0029](adr/0029-per-owner-advisory-lock-rollup-serialization.md), #101).
+> Locks are per owner (org unit or brand), acquired leaf-to-root along the
+> cascade. The two-subtree triggers — app reassignment and org-unit
+> reparenting — break that single order (the second subtree's locks are taken
+> after the root is already held) and can deadlock with any concurrent rollup;
+> Postgres detects the cycle and fails one transaction (ADR 0029, mapping the
+> loser to the retryable contract is #104). The indexes stay the backstop for
+> same-observation races, unchanged.
 
 ### What triggers a rollup
 

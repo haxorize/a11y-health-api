@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence, integrity
@@ -31,6 +32,12 @@ from a11y_health.models.score_snapshot import (
 )
 from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
 from a11y_health.services._latest_snapshot import select_latest_snapshots
+
+_DEADLOCK_SQLSTATE = "40P01"
+
+# Exhaustive over the owners that take rollup locks — an APP owner reaching the
+# lock would be a bug, and a KeyError here beats a mislabeled error.
+_LOCKED_OWNER_ENTITY = {ScoreSnapshotOwnerType.ORG_UNIT: OrgUnit, ScoreSnapshotOwnerType.BRAND: Brand}
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -269,7 +276,15 @@ async def _aggregate_and_save(
 # owner ids; a collision merely over-serializes.
 async def _acquire_rollup_lock(session: AsyncSession, owner: ScoreSnapshotOwnerType, owner_id: int) -> None:
     key = func.hashtextextended(f"rollup:{owner.value}:{owner_id}", 0)
-    await session.execute(select(func.pg_advisory_xact_lock(key)))
+    try:
+        await session.execute(select(func.pg_advisory_xact_lock(key)))
+    except DBAPIError as exc:
+        # A deadlock victim's 40P01 lands on the statement that was waiting —
+        # this one (ADR 0029) — and the loser is semantically a concurrent-rollup
+        # loser (#104). Anything else propagates unchanged, as in ADR 0028.
+        if getattr(exc.orig, "sqlstate", None) != _DEADLOCK_SQLSTATE:
+            raise
+        raise ConcurrentRollupError(existence.ENTITY_LABELS[_LOCKED_OWNER_ENTITY[owner]], owner_id) from exc
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:

@@ -275,9 +275,11 @@ diverge from the headline score.
 > cascade. The two-subtree triggers — app reassignment and org-unit
 > reparenting — break that single order (the second subtree's locks are taken
 > after the root is already held) and can deadlock with any concurrent rollup;
-> Postgres detects the cycle and fails one transaction (ADR 0029, mapping the
-> loser to the retryable contract is #104). The indexes stay the backstop for
-> same-observation races, unchanged.
+> Postgres detects the cycle and fails one transaction (ADR 0029). The loser's
+> `40P01` is translated at the lock acquisition into the retryable
+> `concurrent_rollup` 409 (#104), declared on every rollup-triggering
+> operation. The indexes stay the backstop for same-observation races,
+> unchanged.
 
 ### What triggers a rollup
 

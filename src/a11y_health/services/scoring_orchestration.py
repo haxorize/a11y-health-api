@@ -5,6 +5,9 @@ deleted or reassigned, org unit reparented) to the score computation and rollups
 it must trigger. The actual computation lives in `score_snapshot.py`.
 
 See `docs/architecture.md` ("What triggers a rollup") for the event-to-rollup table.
+
+Operations calling in here must declare the retryable `concurrent_rollup` mode —
+the pinned list lives in `tests/core/test_error_contract.py`.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession

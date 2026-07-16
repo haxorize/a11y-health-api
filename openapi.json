@@ -1343,6 +1343,19 @@
               "not_found"
             ]
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: concurrent_rollup",
+            "x-error-codes": [
+              "concurrent_rollup"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1457,6 +1470,19 @@
             "description": "Domain error: not_found",
             "x-error-codes": [
               "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: concurrent_rollup",
+            "x-error-codes": [
+              "concurrent_rollup"
             ]
           },
           "422": {
@@ -2204,9 +2230,10 @@
                 }
               }
             },
-            "description": "Domain error: circular_reference | duplicate_root",
+            "description": "Domain error: circular_reference | concurrent_rollup | duplicate_root",
             "x-error-codes": [
               "circular_reference",
+              "concurrent_rollup",
               "duplicate_root"
             ]
           },
@@ -2481,6 +2508,19 @@
               "not_found"
             ]
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: concurrent_rollup",
+            "x-error-codes": [
+              "concurrent_rollup"
+            ]
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2605,8 +2645,9 @@
                 }
               }
             },
-            "description": "Domain error: empty_scan_run | invalid_status_transition",
+            "description": "Domain error: concurrent_rollup | empty_scan_run | invalid_status_transition",
             "x-error-codes": [
+              "concurrent_rollup",
               "empty_scan_run",
               "invalid_status_transition"
             ]

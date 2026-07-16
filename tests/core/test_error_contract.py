@@ -83,6 +83,27 @@ def test_response_carries_declared_status_and_code(exc: DomainError) -> None:
     assert body.message == str(exc)
 
 
+# Every operation that triggers a Rollup can lose one of its races — the #98
+# same-observation constraint or a #104 advisory-lock deadlock — so each must
+# declare the retryable concurrent_rollup mode. The honesty shim can't catch a
+# gap here (race 409s never fire organically in endpoint tests), so this list
+# is pinned by hand: it grows with scoring_orchestration's callers.
+_ROLLUP_TRIGGERING_OPERATIONS = [
+    ("patch", "/api/v1/org-units/{org_unit_id}"),
+    ("patch", "/api/v1/apps/{app_id}"),
+    ("delete", "/api/v1/apps/{app_id}"),
+    ("patch", "/api/v1/scan-runs/{scan_run_id}"),
+    ("delete", "/api/v1/scan-runs/{scan_run_id}"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), _ROLLUP_TRIGGERING_OPERATIONS)
+def test_rollup_triggering_operations_declare_the_retryable_concurrent_rollup_mode(method: str, path: str) -> None:
+    declared = app.openapi()["paths"][path][method]["responses"]
+    assert "409" in declared
+    assert "concurrent_rollup" in declared["409"]["x-error-codes"]
+
+
 async def test_missing_app_produces_declared_coded_not_found(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/apps/999999")
     assert response.status_code == 404

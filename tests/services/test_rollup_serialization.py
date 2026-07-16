@@ -1,8 +1,9 @@
 """Two-session coverage for per-owner Rollup serialization (#101, ADR 0029).
 
-Each test drives real sessions on separate connections with real commits
+Most tests drive real sessions on separate connections with real commits
 (`committed_session_factory`), reproducing the stale-children-view
-interleaving the #98 uniqueness indexes structurally cannot see.
+interleaving the #98 uniqueness indexes structurally cannot see; the
+deadlock test crosses two plain uncommitted sessions instead.
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from a11y_health.core.database import Base
+from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
@@ -198,6 +200,36 @@ async def test_stale_brand_rollup_cannot_regress_a_newer_committed_observation(
     latest = await latest_brand_snapshot(setup, brand_id)
     assert latest.snapshot_at == _NEWER_AT
     assert latest.score == approx(1.0)
+
+
+async def test_a_deadlock_loser_surfaces_as_the_retryable_concurrent_rollup_error(engine: AsyncEngine) -> None:
+    # Plain sessions, not committed_session_factory: nothing writes a row —
+    # advisory xact locks vanish with the sessions — so the factory's
+    # all-tables TRUNCATE teardown would be pure waste.
+    session_a = AsyncSession(bind=engine)
+    session_b = AsyncSession(bind=engine)
+    try:
+        await score_snapshot_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 1)
+        await score_snapshot_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 2)
+
+        # Cross acquisitions form the ADR 0029 cycle: each session waits on the lock
+        # the other holds, and Postgres fails exactly one transaction (40P01).
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                score_snapshot_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 2),
+                score_snapshot_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 1),
+                return_exceptions=True,
+            ),
+            timeout=_DEADLINE * 2,
+        )
+    finally:
+        await session_a.close()
+        await session_b.close()
+
+    errors = [result for result in results if isinstance(result, BaseException)]
+    assert len(errors) == 1, f"exactly one session must lose the deadlock, got {results!r}"
+    assert isinstance(errors[0], ConcurrentRollupError)
+    assert "retry the request" in str(errors[0])
 
 
 async def test_rollups_for_different_owners_do_not_serialize_each_other(

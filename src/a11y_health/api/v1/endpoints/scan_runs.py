@@ -71,14 +71,21 @@ async def get_scan_run_summary(db: DbSession, scan_run_id: int) -> ScanRunSummar
     return ScanRunSummaryRead.model_validate(snapshot)
 
 
-@router.delete("/{scan_run_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND))
+@router.delete(
+    "/{scan_run_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CONCURRENT_ROLLUP)
+)
 async def delete_scan_run(db: DbSession, scan_run_id: int) -> None:
     await scan_run_service.delete_scan_run(db, scan_run_id)
 
 
 @router.patch(
     "/{scan_run_id}",
-    responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_STATUS_TRANSITION, ErrorCode.EMPTY_SCAN_RUN),
+    responses=error_responses(
+        ErrorCode.NOT_FOUND,
+        ErrorCode.INVALID_STATUS_TRANSITION,
+        ErrorCode.EMPTY_SCAN_RUN,
+        ErrorCode.CONCURRENT_ROLLUP,
+    ),
 )
 async def update_scan_run_status(db: DbSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRunRead:
     scan_run = await scan_run_service.update_scan_run_status(db, scan_run_id, data)

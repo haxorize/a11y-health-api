@@ -44,7 +44,7 @@ async def get_app(db: DbSession, app_id: int) -> AppRead:
     return AppRead.model_validate(app)
 
 
-@router.patch("/{app_id}", responses=error_responses(ErrorCode.NOT_FOUND))
+@router.patch("/{app_id}", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CONCURRENT_ROLLUP))
 async def update_app(db: DbSession, app_id: int, data: AppUpdate) -> AppRead:
     app = await app_service.update_app(db, app_id, data)
     return AppRead.model_validate(app)
@@ -63,6 +63,8 @@ async def list_app_scores(
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 
 
-@router.delete("/{app_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND))
+@router.delete(
+    "/{app_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CONCURRENT_ROLLUP)
+)
 async def delete_app(db: DbSession, app_id: int) -> None:
     await app_service.delete_app(db, app_id)

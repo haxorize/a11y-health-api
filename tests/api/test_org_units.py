@@ -1,6 +1,8 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import ConcurrentRollupError
+from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
 
 
@@ -142,6 +144,23 @@ async def test_reparent_to_parentless_returns_409(db_client: AsyncClient, db_ses
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     response = await db_client.patch(f"/api/v1/org-units/{child.id}", json={"parent_id": None})
     assert_error(response, 409, "duplicate_root", message_contains="top-level")
+
+
+async def test_reparent_losing_a_concurrent_rollup_returns_retryable_409(
+    db_client: AsyncClient, db_session: AsyncSession, mocker
+) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+
+    mocker.patch.object(
+        score_snapshot_service,
+        "_acquire_rollup_lock",
+        side_effect=ConcurrentRollupError("Org unit", child.id),
+    )
+
+    response = await db_client.patch(f"/api/v1/org-units/{grandchild.id}", json={"parent_id": root.id})
+    assert_error(response, 409, "concurrent_rollup", message_contains="retry")
 
 
 async def test_delete_org_unit_with_apps(db_client: AsyncClient, db_session: AsyncSession) -> None:

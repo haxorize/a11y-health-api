@@ -56,7 +56,9 @@ async def get_descendants(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
 
 @router.patch(
     "/{org_unit_id}",
-    responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CIRCULAR_REFERENCE, ErrorCode.DUPLICATE_ROOT),
+    responses=error_responses(
+        ErrorCode.NOT_FOUND, ErrorCode.CIRCULAR_REFERENCE, ErrorCode.DUPLICATE_ROOT, ErrorCode.CONCURRENT_ROLLUP
+    ),
 )
 async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnitRead:
     updated = await org_unit_service.update_org_unit(db, org_unit_id, data)

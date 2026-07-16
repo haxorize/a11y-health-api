@@ -1,21 +1,28 @@
-"""Harness for migration-body tests: run a shipped `upgrade()` against the
-test database.
+"""Harness for migration-body tests: run a shipped `upgrade()` or
+`downgrade()` against the test database.
 
 `load_migration` imports a revision module by filename (the leading digit means
-it can't be imported by name). `run_upgrade` binds Alembic's module-level `op`
+it can't be imported by name). The runners bind Alembic's module-level `op`
 proxy to the test's own connection via `Operations.context`, so `op.get_bind()`
 resolves without standing up a full env.py run or touching the alembic_version
 table. Everything runs inside the standard rolled-back `db_session`
 transaction (ADR 0011).
+
+The test engine builds the *current* schema from model metadata; a test that
+needs the pre-migration world restores it with `run_downgrade`, so the baseline
+comes from the shipped downgrade rather than a hand-maintained copy. A
+single-step restore is faithful only while no revision after the one being
+downgraded touches the schema the test exercises; once one lands, chain
+`run_downgrade` calls newest-first to reach the intended baseline.
 """
 
 import importlib.util
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,17 +38,17 @@ def load_migration(filename: str) -> ModuleType:
     return module
 
 
-async def run_upgrade(db_session: AsyncSession, migration: ModuleType) -> None:
+async def _run_bound(db_session: AsyncSession, migration_fn: Callable[[], None]) -> None:
     def _run(sync_conn: Connection) -> None:
         with Operations.context(MigrationContext.configure(connection=sync_conn)):
-            migration.upgrade()
+            migration_fn()
 
     await (await db_session.connection()).run_sync(_run)
 
 
-async def drop_indexes_to_simulate_pre_migration_db(db_session: AsyncSession, *index_names: str) -> None:
-    # The test engine creates every index from model metadata; a migration test
-    # seeding rows a later index forbids must first restore the world its
-    # migration ran in (inside the rolled-back transaction, ADR 0011).
-    for index_name in index_names:
-        await db_session.execute(text(f"DROP INDEX {index_name}"))
+async def run_upgrade(db_session: AsyncSession, migration: ModuleType) -> None:
+    await _run_bound(db_session, migration.upgrade)
+
+
+async def run_downgrade(db_session: AsyncSession, migration: ModuleType) -> None:
+    await _run_bound(db_session, migration.downgrade)

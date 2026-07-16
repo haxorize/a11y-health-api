@@ -19,7 +19,7 @@ from a11y_health.models.score_snapshot import (
     UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
 )
 from tests.factories import make_brand, make_org_unit, make_score_snapshot
-from tests.migrations.harness import drop_indexes_to_simulate_pre_migration_db, load_migration, run_upgrade
+from tests.migrations.harness import load_migration, run_downgrade, run_upgrade
 
 cleanup = load_migration("b362121027a0_remove_legacy_duplicate_rollup_snapshots.py")
 enforcement = load_migration("8b3a1162eb95_add_per_owner_rollup_snapshot_uniqueness_indexes.py")
@@ -30,16 +30,8 @@ _INDEXES = (UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, UQ_SCORE_SNAPSHOT_BRAND_SNAP
 _SUBSUMED_INDEXES = ("ix_score_snapshot_org_unit_id", "ix_score_snapshot_brand_id")
 
 
-async def _restore_pre_migration_schema(db_session: AsyncSession) -> None:
-    # The pre-#98 schema had single-column owner indexes (the upgrade drops
-    # them as subsumed) and no partial unique indexes.
-    await drop_indexes_to_simulate_pre_migration_db(db_session, *_INDEXES)
-    await db_session.execute(text("CREATE INDEX ix_score_snapshot_org_unit_id ON score_snapshot (org_unit_id)"))
-    await db_session.execute(text("CREATE INDEX ix_score_snapshot_brand_id ON score_snapshot (brand_id)"))
-
-
 async def test_enforcement_applies_cleanly_after_cleanup_on_legacy_duplicates(db_session: AsyncSession) -> None:
-    await _restore_pre_migration_schema(db_session)
+    await run_downgrade(db_session, enforcement)
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
     for _ in range(2):
@@ -61,7 +53,7 @@ async def test_enforcement_applies_cleanly_after_cleanup_on_legacy_duplicates(db
 async def test_enforcement_alone_collapses_duplicates_raced_in_after_cleanup(db_session: AsyncSession) -> None:
     # The #97→#98 deploy window: cleanup already ran, pre-#98 code raced a
     # duplicate in. Index creation must not fail on it.
-    await _restore_pre_migration_schema(db_session)
+    await run_downgrade(db_session, enforcement)
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
     await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=_OBSERVED_AT)

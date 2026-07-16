@@ -26,7 +26,7 @@ tests/
   cli/
     test_<command>.py       # CLI tool tests (e.g., test_ingest.py, test_import.py)
   migrations/
-    test_<revision>.py      # migration-body tests: run a shipped upgrade() bound to db_session (harness.py; usage: test_rederive_app_slugs.py)
+    test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)
 ```
 
 ## Fixtures (from conftest.py)

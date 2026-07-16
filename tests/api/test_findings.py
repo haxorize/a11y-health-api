@@ -46,6 +46,29 @@ async def test_list_findings_scan_run_not_found(db_client: AsyncClient) -> None:
     assert response.status_code == 404
 
 
+async def test_filter_options_round_trip(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3", "1.1.1"])
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/filter-options")
+
+    assert response.status_code == 200
+    assert response.json() == {"wcag_criteria": ["1.1.1", "1.4.3"]}
+
+    # Every enumerated option is accepted by the findings filter it feeds.
+    for criterion in response.json()["wcag_criteria"]:
+        listing = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"wcag_criterion": criterion})
+        assert listing.status_code == 200
+        assert listing.json()["items"], f"enumerated criterion {criterion} matched no findings"
+
+
+async def test_filter_options_scan_run_not_found(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/scan-runs/999/findings/filter-options")
+
+    assert response.status_code == 404
+
+
 async def test_filter_by_type(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)

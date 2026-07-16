@@ -7,7 +7,17 @@ from a11y_health.models.enums import Category, FindingType, Impact
 if TYPE_CHECKING:
     from a11y_health.models.rule_finding import RuleFinding
 
-__all__ = ["NodeFindingDetail", "NodeFindingRead", "RuleFindingDetail", "RuleFindingRead"]
+__all__ = [
+    "FindingFilterOptionsRead",
+    "NodeFindingDetail",
+    "NodeFindingRead",
+    "RuleFindingDetail",
+    "RuleFindingRead",
+]
+
+
+class FindingFilterOptionsRead(BaseModel):
+    wcag_criteria: list[str]
 
 
 class _RuleFindingBase(BaseModel):

@@ -1,4 +1,6 @@
-from sqlalchemy import func, or_, select
+from typing import Any
+
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -11,8 +13,19 @@ from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.schemas._tag_parsing import Classification, classification_to_tag
-from a11y_health.schemas.rule_finding import NodeFindingDetail, RuleFindingDetail, RuleFindingRead
+from a11y_health.schemas._tag_parsing import Classification, classification_to_tag, wcag_criterion_sort_key
+from a11y_health.schemas.rule_finding import (
+    FindingFilterOptionsRead,
+    NodeFindingDetail,
+    RuleFindingDetail,
+    RuleFindingRead,
+)
+
+
+def _scoped_to_run[SelectT: Select[Any]](stmt: SelectT, scan_run_id: int) -> SelectT:
+    return stmt.join(PageResult, RuleFinding.page_result_id == PageResult.id).where(
+        PageResult.scan_run_id == scan_run_id
+    )
 
 
 async def list_findings(
@@ -39,11 +52,7 @@ async def list_findings(
         .scalar_subquery()
         .label("node_finding_count")
     )
-    stmt = (
-        select(RuleFinding, node_finding_count)
-        .join(PageResult, RuleFinding.page_result_id == PageResult.id)
-        .where(PageResult.scan_run_id == scan_run_id)
-    )
+    stmt = _scoped_to_run(select(RuleFinding, node_finding_count), scan_run_id)
 
     if finding_type:
         stmt = stmt.where(RuleFinding.type.in_(finding_type))
@@ -67,6 +76,15 @@ async def list_findings(
     )
 
 
+async def list_filter_options(session: AsyncSession, scan_run_id: int) -> FindingFilterOptionsRead:
+    await existence.get_by_pk(session, ScanRun, scan_run_id)
+
+    stmt = _scoped_to_run(select(RuleFinding.wcag_criteria), scan_run_id)
+    rows = (await session.execute(stmt)).scalars().all()
+    distinct = {criterion for row in rows for criterion in row}
+    return FindingFilterOptionsRead(wcag_criteria=sorted(distinct, key=wcag_criterion_sort_key))
+
+
 async def get_finding(
     session: AsyncSession,
     scan_run_id: int,
@@ -74,11 +92,7 @@ async def get_finding(
 ) -> RuleFindingDetail:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
-    stmt = (
-        select(RuleFinding)
-        .join(PageResult, RuleFinding.page_result_id == PageResult.id)
-        .where(PageResult.scan_run_id == scan_run_id, RuleFinding.id == finding_id)
-    )
+    stmt = _scoped_to_run(select(RuleFinding), scan_run_id).where(RuleFinding.id == finding_id)
     finding = await existence.get_by_query(session, RuleFinding, stmt, finding_id)
 
     nodes_stmt = (

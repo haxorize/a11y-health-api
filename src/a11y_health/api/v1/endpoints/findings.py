@@ -7,7 +7,7 @@ from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page, PageParams
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import Classification
-from a11y_health.schemas.rule_finding import RuleFindingDetail, RuleFindingRead
+from a11y_health.schemas.rule_finding import FindingFilterOptionsRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 
 router = APIRouter(prefix="/scan-runs/{scan_run_id}/findings", tags=["findings"])
@@ -36,6 +36,12 @@ async def list_findings(
         limit=pagination.limit,
     )
     return Page.from_cursor_page(page)
+
+
+# Registered before /{finding_id} so the static segment isn't parsed as a finding id.
+@router.get("/filter-options", responses=error_responses(ErrorCode.NOT_FOUND))
+async def list_finding_filter_options(db: DbSession, scan_run_id: int) -> FindingFilterOptionsRead:
+    return await rule_finding_service.list_filter_options(db, scan_run_id)
 
 
 @router.get("/{finding_id}", responses=error_responses(ErrorCode.NOT_FOUND))

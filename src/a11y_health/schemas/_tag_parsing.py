@@ -4,8 +4,10 @@ Maps a rule's raw `tags` list onto a Category, its WCAG Criteria, and its
 Classifications (WCAG version/level pairs or best-practice). `axe_payload.py`
 owns the ingest-side parsing; the findings filter (service and endpoint) reads
 the `Classification` vocabulary and `classification_to_tag` from here so query
-and storage can never disagree. Unknown WCAG-shaped tags are dropped rather
-than rejected, since the axe tag set is open-ended.
+and storage can never disagree, and the filter-options enumeration reads
+`wcag_criterion_sort_key` so response ordering stays with the code that mints
+the criterion format. Unknown WCAG-shaped tags are dropped rather than
+rejected, since the axe tag set is open-ended.
 
 See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
 """
@@ -61,6 +63,18 @@ def extract_wcag_criteria(tags: list[str]) -> list[str]:
         if m:
             results.append(f"{m.group(1)}.{m.group(2)}.{m.group(3)}")
     return results
+
+
+def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
+    """Numeric segment order, so 1.4.13 sorts between 1.4.3 and 1.10.1.
+
+    The column carries no format constraint (ADR 0014), so an out-of-shape
+    value sorts last instead of failing the read that sorts it.
+    """
+    parts = criterion.split(".")
+    if all(part.isdigit() for part in parts):
+        return (0, tuple(int(part) for part in parts), "")
+    return (1, (), criterion)
 
 
 _CATEGORY_LOOKUP = {c.value: c for c in Category}

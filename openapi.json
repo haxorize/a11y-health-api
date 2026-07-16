@@ -170,6 +170,22 @@
         "title": "ErrorCode",
         "type": "string"
       },
+      "FindingFilterOptionsRead": {
+        "properties": {
+          "wcag_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Wcag Criteria",
+            "type": "array"
+          }
+        },
+        "required": [
+          "wcag_criteria"
+        ],
+        "title": "FindingFilterOptionsRead",
+        "type": "object"
+      },
       "FindingType": {
         "enum": [
           "violation",
@@ -2867,6 +2883,61 @@
           }
         },
         "summary": "List Findings",
+        "tags": [
+          "findings"
+        ]
+      }
+    },
+    "/api/v1/scan-runs/{scan_run_id}/findings/filter-options": {
+      "get": {
+        "operationId": "list_finding_filter_options",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_run_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingFilterOptionsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Finding Filter Options",
         "tags": [
           "findings"
         ]

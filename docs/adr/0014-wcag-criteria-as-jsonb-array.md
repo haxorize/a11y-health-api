@@ -22,3 +22,14 @@ Considered and rejected:
 
 The GIN index makes containment filters cheap, and storing criteria with the
 finding keeps reads single-row.
+
+---
+
+**Amended 2026-07-16 (#105):** the read patterns have evolved past the text
+above; the decision — JSONB array over a join or reference table — stands.
+The findings filter accepts several criteria and matches with the any-key
+operator (`wcag_criteria ?| array[...]`, SQLAlchemy `has_any`) rather than
+`@>` containment, since a multi-value filter needs OR semantics; the default
+GIN opclass serves it. And the Filter Options enumeration reads the arrays of
+one run's findings and dedupes in application code (ADR 0030) — a run-bounded
+scan that uses no JSONB operator at all.

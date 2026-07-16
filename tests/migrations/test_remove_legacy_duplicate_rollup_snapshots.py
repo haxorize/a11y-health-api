@@ -12,10 +12,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.score_snapshot import (
-    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
-    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
-)
 from tests.factories import (
     app_snapshots,
     brand_snapshots,
@@ -24,20 +20,20 @@ from tests.factories import (
     make_score_snapshot,
     ou_snapshots,
 )
-from tests.migrations.harness import drop_indexes_to_simulate_pre_migration_db, load_migration, run_upgrade
+from tests.migrations.harness import load_migration, run_downgrade, run_upgrade
 
 migration = load_migration("b362121027a0_remove_legacy_duplicate_rollup_snapshots.py")
+enforcement = load_migration("8b3a1162eb95_add_per_owner_rollup_snapshot_uniqueness_indexes.py")
 
 _OBSERVED_AT = datetime(2026, 3, 1, 9, 0, 0, tzinfo=UTC)
 
 
-# The cleanup ran before #98's uniqueness enforcement existed; restore that
-# world or the legacy duplicates seeded here would violate the new indexes.
+# The cleanup ran before #98's uniqueness enforcement existed; step the schema
+# back through the shipped #98 downgrade or the legacy duplicates seeded here
+# would violate the new indexes.
 @pytest.fixture(autouse=True)
 async def _pre_enforcement_db(db_session: AsyncSession) -> None:
-    await drop_indexes_to_simulate_pre_migration_db(
-        db_session, UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT
-    )
+    await run_downgrade(db_session, enforcement)
 
 
 async def test_identical_org_unit_duplicates_collapse_to_max_id_row(db_session: AsyncSession) -> None:

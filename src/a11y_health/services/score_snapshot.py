@@ -12,14 +12,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, delete, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
-from a11y_health.models.enums import FindingType, Impact, PageHealth
+from a11y_health.models.enums import FindingType, Impact, PageHealth, ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -262,7 +262,18 @@ async def _aggregate_and_save(
         session.add(snapshot)
 
 
+# Different-observation interleavings never collide on a row, so serializing
+# them takes a lock, not a constraint — transaction-scoped, acquired as the
+# rollup's first statement so the children read and the writes sit under one
+# serialization (ADR 0029). Hashing the key avoids int4 overflow on BIGINT
+# owner ids; a collision merely over-serializes.
+async def _acquire_rollup_lock(session: AsyncSession, owner: ScoreSnapshotOwnerType, owner_id: int) -> None:
+    key = func.hashtextextended(f"rollup:{owner.value}:{owner_id}", 0)
+    await session.execute(select(func.pg_advisory_xact_lock(key)))
+
+
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
+    await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
     children = await _latest_child_snapshots(session, org_unit_id)
     if children:
         await _aggregate_and_save(session, children, org_unit_id=org_unit_id)
@@ -282,6 +293,7 @@ async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> l
 
 
 async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
+    await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.BRAND, brand_id)
     children = await _latest_brand_app_snapshots(session, brand_id)
     if children:
         await _aggregate_and_save(session, children, brand_id=brand_id)

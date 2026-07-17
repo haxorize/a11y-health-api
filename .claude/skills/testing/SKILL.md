@@ -33,7 +33,7 @@ tests/
 
 Six fixtures, layered:
 
-- **`engine`** (session scope) — creates a test `AsyncEngine`, drops and recreates all tables once per session
+- **`engine`** (session scope) — creates a test `AsyncEngine`, drops and recreates all tables once per session. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test (raise it per session only to steer which backend is the victim, as `test_rollup_deadlock.py` does). The GUC is superuser-set: dev and CI connect as superuser, and because it rides the connection startup packet, a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter` — the escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB

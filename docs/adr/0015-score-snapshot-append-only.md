@@ -9,7 +9,7 @@ are built around this access pattern.
 One new row per scoring event, refined (#95): one new row per **distinct
 observation**. A rollup trigger whose recomputed aggregate lands on the
 observation time the owner's latest snapshot already holds is not a new
-observation — `_aggregate_and_save` records nothing when the values are also
+observation — `_apply_rollup` records nothing when the values are also
 identical, and replaces the rows sharing that `snapshot_at` when they differ.
 Without this, every deletion/reparent trigger and every completion of an older
 scan appended a row identical to the latest (same `snapshot_at`, same values),
@@ -19,14 +19,14 @@ flat trend is still made of real observations, and skipping one would leave
 the latest snapshot claiming an observation time whose source scan may later
 be deleted.
 
-Three exceptions, all delete + insert or skip (never in-place update):
+Four exceptions, all delete + insert or skip (never in-place update):
 
 - **Cascade on scan-run delete**: the App snapshot for a deleted scan run is
   removed by the database FK cascade (`scan_run_id` carries
   `ondelete="CASCADE"`), not by the handler — `on_scan_run_deleted` only
   re-triggers the rollups, which aggregate from whatever snapshot is now the
   App's latest.
-- **Forward-stale prune on rollup**: `_aggregate_and_save` derives
+- **Forward-stale prune on rollup**: `_apply_rollup` derives
   `snapshot_at = max(child.snapshot_at)` and deletes any snapshots for the
   same owner whose `snapshot_at` is strictly past that max. When source data
   shrinks (deletion, reassignment, reparenting), prior rollup rows stamped at
@@ -36,8 +36,13 @@ Three exceptions, all delete + insert or skip (never in-place update):
 - **Same-observation skip/replace on rollup** (#95, above): nothing recorded
   when the aggregate is identical to the latest snapshot; delete + insert of
   the rows sharing the derived `snapshot_at` when the values changed.
+- **Childless-owner wipe on rollup**: a rollup owner left with no child
+  snapshots at all (its Apps deleted or moved away) has nothing to aggregate —
+  `_apply_rollup` deletes every snapshot the owner has, the one runtime delete
+  with no accompanying insert. The forward-stale rationale taken to its
+  extreme: with no children, every prior row is an orphaned claim.
 
-Those three are the complete runtime census. Beyond runtime, a one-time repair
+Those four are the complete runtime census. Beyond runtime, a one-time repair
 migration may delete rows to converge history written before a rule existed —
 first: `b362121027a0` (#97), removing pre-#95 duplicate rollup rows in favor of
 the row the latest-selection tiebreak already serves; `8b3a1162eb95` (#98)

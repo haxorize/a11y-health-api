@@ -11,10 +11,12 @@ See `docs/architecture.md` ("The scoring & rollup model") for the full walk-thro
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import ConcurrentRollupError
@@ -26,6 +28,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import (
+    OWNER_ID_COLUMNS,
     UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
     UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
     ScoreSnapshot,
@@ -35,9 +38,30 @@ from a11y_health.services._latest_snapshot import select_latest_snapshots
 
 _DEADLOCK_SQLSTATE = "40P01"
 
-# Exhaustive over the owners that take rollup locks — an APP owner reaching the
-# lock would be a bug, and a KeyError here beats a mislabeled error.
-_LOCKED_OWNER_ENTITY = {ScoreSnapshotOwnerType.ORG_UNIT: OrgUnit, ScoreSnapshotOwnerType.BRAND: Brand}
+
+class _RollupOwnerSpec(NamedTuple):
+    label: str
+    unique_index: str
+    snapshot_column: InstrumentedAttribute[int | None]
+
+    def concurrent_rollup_error(self, owner_id: int) -> ConcurrentRollupError:
+        return ConcurrentRollupError(self.label, owner_id)
+
+
+# Exhaustive over the owners that roll up — an APP owner reaching a rollup path
+# would be a bug, and a KeyError here beats a mislabeled error.
+_ROLLUP_OWNERS = {
+    ScoreSnapshotOwnerType.ORG_UNIT: _RollupOwnerSpec(
+        existence.ENTITY_LABELS[OrgUnit],
+        UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+        OWNER_ID_COLUMNS[ScoreSnapshotOwnerType.ORG_UNIT],
+    ),
+    ScoreSnapshotOwnerType.BRAND: _RollupOwnerSpec(
+        existence.ENTITY_LABELS[Brand],
+        UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
+        OWNER_ID_COLUMNS[ScoreSnapshotOwnerType.BRAND],
+    ),
+}
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -144,8 +168,7 @@ def build_snapshot(
     org_unit_id: int | None = None,
     brand_id: int | None = None,
 ) -> ScoreSnapshot:
-    # guard only — raises unless exactly one owner id is set
-    _owner_criterion(app_id=app_id, org_unit_id=org_unit_id, brand_id=brand_id)
+    _require_exactly_one_owner(app_id=app_id, org_unit_id=org_unit_id, brand_id=brand_id)
     if scan_run_id is not None and app_id is None:
         raise ValueError("scan_run_id requires app_id")
 
@@ -177,22 +200,9 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
     return list(result.scalars().all())
 
 
-def _owner_criterion(
-    *, app_id: int | None = None, org_unit_id: int | None = None, brand_id: int | None = None
-) -> ColumnElement[bool]:
-    """The exactly-one-owner invariant, stated once: raises ValueError unless
-    exactly one owner id is set, and returns that owner's `column == id` filter
-    (callers guarding a write may discard it)."""
-    owners = [
-        (ScoreSnapshot.app_id, app_id),
-        (ScoreSnapshot.org_unit_id, org_unit_id),
-        (ScoreSnapshot.brand_id, brand_id),
-    ]
-    chosen = [(column, owner_id) for column, owner_id in owners if owner_id is not None]
-    if len(chosen) != 1:
+def _require_exactly_one_owner(*, app_id: int | None, org_unit_id: int | None, brand_id: int | None) -> None:
+    if sum(owner_id is not None for owner_id in (app_id, org_unit_id, brand_id)) != 1:
         raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
-    column, owner_id = chosen[0]
-    return column == owner_id
 
 
 # Equality basis for the same-observation dedupe: every aggregate the snapshot
@@ -225,18 +235,22 @@ async def _snapshot_recorded_at_observation(
     ).scalar_one_or_none()
 
 
-async def _aggregate_and_save(
+async def _apply_rollup(
     session: AsyncSession,
     children: list[ScoreSnapshot],
-    *,
-    org_unit_id: int | None = None,
-    brand_id: int | None = None,
+    owner: ScoreSnapshotOwnerType,
+    owner_id: int,
 ) -> None:
-    owner = _owner_criterion(org_unit_id=org_unit_id, brand_id=brand_id)
+    spec = _ROLLUP_OWNERS[owner]
+    criterion = spec.snapshot_column == owner_id
+    # No children → nothing to aggregate; every snapshot the owner has is orphaned.
+    if not children:
+        await session.execute(delete(ScoreSnapshot).where(criterion))
+        return
     # score is the unweighted arithmetic mean of children's scores per DOMAIN.md.
     # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)
-    await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at > snapshot_at))
+    await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at > snapshot_at))
     # Float summation is order-sensitive and the latest-child query has no ORDER BY;
     # sort so recomputes are bitwise-reproducible and the no-change skip below holds.
     children = sorted(children, key=lambda c: c.id)
@@ -248,24 +262,19 @@ async def _aggregate_and_save(
         pages_with_violations=sum(c.pages_with_violations for c in children),
         pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
         snapshot_at=snapshot_at,
-        org_unit_id=org_unit_id,
-        brand_id=brand_id,
+        **{spec.snapshot_column.key: owner_id},
     )
     # One snapshot per distinct observation, not one per trigger (#95, ADR 0015).
     # A newer observation time always appends — even with unchanged values — so
     # the latest snapshot never claims an observation whose source data is gone.
-    existing = await _snapshot_recorded_at_observation(session, owner, snapshot_at)
+    existing = await _snapshot_recorded_at_observation(session, criterion, snapshot_at)
     if existing is not None:
         if _aggregate_values(existing) == _aggregate_values(snapshot):
             return
-        await session.execute(delete(ScoreSnapshot).where(owner, ScoreSnapshot.snapshot_at == snapshot_at))
+        await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at == snapshot_at))
     # The unique indexes (#98) only decide races: a concurrent rollup landing
     # between the read above and this insert makes the flush a violation.
-    if org_unit_id is not None:
-        index, entity, owner_id = UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, OrgUnit, org_unit_id
-    else:
-        index, entity, owner_id = UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, Brand, brand_id
-    async with integrity.guard(session, {index: ConcurrentRollupError(existence.ENTITY_LABELS[entity], owner_id)}):
+    async with integrity.guard(session, {spec.unique_index: spec.concurrent_rollup_error(owner_id)}):
         session.add(snapshot)
 
 
@@ -284,16 +293,13 @@ async def _acquire_rollup_lock(session: AsyncSession, owner: ScoreSnapshotOwnerT
         # loser (#104). Anything else propagates unchanged, as in ADR 0028.
         if getattr(exc.orig, "sqlstate", None) != _DEADLOCK_SQLSTATE:
             raise
-        raise ConcurrentRollupError(existence.ENTITY_LABELS[_LOCKED_OWNER_ENTITY[owner]], owner_id) from exc
+        raise _ROLLUP_OWNERS[owner].concurrent_rollup_error(owner_id) from exc
 
 
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
     await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
     children = await _latest_child_snapshots(session, org_unit_id)
-    if children:
-        await _aggregate_and_save(session, children, org_unit_id=org_unit_id)
-    else:
-        await session.execute(delete(ScoreSnapshot).where(_owner_criterion(org_unit_id=org_unit_id)))
+    await _apply_rollup(session, children, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
 
     org_unit = await existence.get_by_pk(session, OrgUnit, org_unit_id)
     if org_unit.parent_id is not None:
@@ -310,7 +316,4 @@ async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> l
 async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
     await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.BRAND, brand_id)
     children = await _latest_brand_app_snapshots(session, brand_id)
-    if children:
-        await _aggregate_and_save(session, children, brand_id=brand_id)
-    else:
-        await session.execute(delete(ScoreSnapshot).where(_owner_criterion(brand_id=brand_id)))
+    await _apply_rollup(session, children, ScoreSnapshotOwnerType.BRAND, brand_id)

@@ -1,9 +1,12 @@
+from collections.abc import Mapping
 from datetime import datetime
+from types import MappingProxyType
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, UniqueConstraint, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import InstrumentedAttribute, Mapped, mapped_column
 
 from a11y_health.core.database import Base, TimestampMixin
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 
 UQ_SCORE_SNAPSHOT_SCAN_RUN_ID = "uq_score_snapshot_scan_run_id"
 UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT = "uq_score_snapshot_org_unit_snapshot_at"
@@ -59,3 +62,15 @@ class ScoreSnapshot(TimestampMixin, Base):
     pages_with_critical_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     total_pages: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# The one owner-kind → owner-id-column dispatch, next to the columns it names —
+# services (read side and rollups) derive theirs from it rather than each
+# hand-maintaining a copy.
+OWNER_ID_COLUMNS: Mapping[ScoreSnapshotOwnerType, InstrumentedAttribute[int | None]] = MappingProxyType(
+    {
+        ScoreSnapshotOwnerType.APP: ScoreSnapshot.app_id,
+        ScoreSnapshotOwnerType.ORG_UNIT: ScoreSnapshot.org_unit_id,
+        ScoreSnapshotOwnerType.BRAND: ScoreSnapshot.brand_id,
+    }
+)

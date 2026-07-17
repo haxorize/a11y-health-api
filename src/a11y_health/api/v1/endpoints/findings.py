@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
-from a11y_health.core.pagination import Page, PageParams
+from a11y_health.core.pagination import PageParams, TotalledPage
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.schemas._tag_parsing import ClassificationToken
 from a11y_health.schemas.rule_finding import FindingFilterOptionsRead, RuleFindingDetail, RuleFindingRead
@@ -23,7 +23,7 @@ async def list_findings(
     category: Annotated[list[Category] | None, Query()] = None,
     wcag_criterion: Annotated[list[str] | None, Query()] = None,
     classification: Annotated[list[ClassificationToken] | None, Query()] = None,
-) -> Page[RuleFindingRead]:
+) -> TotalledPage[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,
         scan_run_id,
@@ -35,7 +35,7 @@ async def list_findings(
         cursor=pagination.cursor,
         limit=pagination.limit,
     )
-    return Page.from_cursor_page(page)
+    return TotalledPage.from_totalled_cursor_page(page)
 
 
 # Registered before /{finding_id} so the static segment isn't parsed as a finding id.

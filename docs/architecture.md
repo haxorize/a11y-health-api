@@ -352,6 +352,18 @@ The conversion lives in one place, co-located with `Page`, so no list endpoint
 re-assembles the response item-by-item. Endpoints whose items are already the public
 type (the `into` aggregates) call it without a mapper.
 
+An operation whose consumers need the **exact filtered count** opts into the
+**totalled** envelope: the service passes `with_total=True` and `paginate` also
+serves `total`, counted from the same statement the page runs over so the two can
+never disagree on which rows are in scope (the count is skipped when the first
+page is also the last). The equivalence is of scope, not snapshot: the count is a
+second query, so a write committed between the two can shift `total` relative to
+the page until the next fetch — acceptable for a result-count announcement. The pair `TotalledCursorPage`/`TotalledPage` extends the
+plain envelope per-operation — every other listing keeps its two-field shape and
+pays no count query. Today only the findings listing is totalled (its UI announces
+"N results" after a filter change); the conformance sweep requires any totalled
+operation to publish `total` as a required response property.
+
 The module also owns the **request-facing half**: a paginated endpoint declares one
 `pagination: PageParams` argument (a `PaginationParams` dependency from
 `core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the

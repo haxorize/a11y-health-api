@@ -17,11 +17,11 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, cast, overload
+from typing import Annotated, Literal, cast, overload
 
 from fastapi import Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import Row, Select, tuple_
+from sqlalchemy import Row, Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -88,6 +88,11 @@ class CursorPage[T]:
     next_cursor: str | None
 
 
+@dataclass(frozen=True)
+class TotalledCursorPage[T](CursorPage[T]):
+    total: int
+
+
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
@@ -102,9 +107,26 @@ class Page[T](BaseModel):
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> "Page[R]": ...
     @classmethod
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> "Page[I] | Page[R]":
+        if isinstance(page, TotalledCursorPage):
+            # A totalled page reaching the plain converter means the count query
+            # was paid and its result silently dropped — fail loud instead.
+            raise TypeError("page carries a total — serve it via TotalledPage.from_totalled_cursor_page")
         if item is None:
             return Page(items=page.items, next_cursor=page.next_cursor)
         return Page(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
+
+
+# Per-operation extension, not a field on Page: only operations whose consumers
+# need an exact filtered count pay the count query, and every other envelope
+# keeps its two-field shape.
+class TotalledPage[T](Page[T]):
+    total: int
+
+    # No `item` mapper counterpart to from_cursor_page: the one totalled caller
+    # maps rows in the service via `into`; add the mapper when a caller needs it.
+    @classmethod
+    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> "TotalledPage[I]":
+        return TotalledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
 
 
 def encode_cursor(*values: int | str | datetime) -> str:
@@ -152,6 +174,30 @@ def _coerce(attr: InstrumentedAttribute, raw: object) -> object:
     raise UnsupportedKeysetTypeError(python_type)
 
 
+@overload
+async def paginate[T](
+    session: AsyncSession,
+    stmt: Select,
+    *,
+    keyset: Sequence[InstrumentedAttribute],
+    cursor: str | None,
+    limit: int,
+    descending: bool = ...,
+    into: Callable[[Row], T] | None = ...,
+    with_total: Literal[False] = ...,
+) -> CursorPage[T]: ...
+@overload
+async def paginate[T](
+    session: AsyncSession,
+    stmt: Select,
+    *,
+    keyset: Sequence[InstrumentedAttribute],
+    cursor: str | None,
+    limit: int,
+    descending: bool = ...,
+    into: Callable[[Row], T] | None = ...,
+    with_total: Literal[True],
+) -> TotalledCursorPage[T]: ...
 async def paginate[T](
     session: AsyncSession,
     stmt: Select,
@@ -161,11 +207,18 @@ async def paginate[T](
     limit: int,
     descending: bool = False,
     into: Callable[[Row], T] | None = None,
+    with_total: bool = False,
 ) -> CursorPage[T]:
     """Apply keyset pagination to `stmt`, returning one page and the next cursor.
 
     `descending` reverses both the ORDER BY and the keyset comparison so paging
     walks newest→oldest; cursor encoding stays direction-agnostic.
+
+    `with_total=True` also serves the full filtered count as a
+    `TotalledCursorPage` — counted from the same statement the page runs over,
+    so the two can never disagree on which rows are in scope. The count is a
+    second query, so under READ COMMITTED a commit landing between the two can
+    make `total` lag the page by the concurrent writes; a refetch corrects it.
 
     Caller contract not captured by the types:
     - `keyset` columns must be NOT NULL — a NULL makes the row-value `>` comparison
@@ -177,6 +230,7 @@ async def paginate[T](
     Raises `InvalidCursorError` on a malformed cursor (handled as 400) and
     `UnsupportedKeysetTypeError` if a keyset column's type isn't int/datetime/str.
     """
+    unpaged = stmt
     order = [col.desc() for col in keyset] if descending else list(keyset)
     if cursor is not None:
         decoded = decode_cursor(cursor, expected=len(keyset))
@@ -192,4 +246,15 @@ async def paginate[T](
     page_rows = rows[:limit]
     items = [into(row) if into is not None else row[0] for row in page_rows]
     next_cursor = encode_cursor(*_cursor_values(page_rows[-1], keyset)) if has_more and page_rows else None
-    return CursorPage(items=items, next_cursor=next_cursor)
+    if not with_total:
+        return CursorPage(items=items, next_cursor=next_cursor)
+    if cursor is None and not has_more:
+        total = len(items)  # the first page is also the last — no count query needed
+    else:
+        # Counted over the pre-cursor statement so later pages still report the
+        # full set. Postgres prunes the derived table's unreferenced output
+        # columns (e.g. a correlated per-row aggregate), so the count pays for
+        # the filtered row scan only, not the page's SELECT-list work.
+        count_stmt = select(func.count()).select_from(unpaged.order_by(None).subquery())
+        total = (await session.execute(count_stmt)).scalar_one()
+    return TotalledCursorPage(items=items, next_cursor=next_cursor, total=total)

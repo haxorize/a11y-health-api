@@ -16,6 +16,8 @@ from a11y_health.core.pagination import (
     InvalidCursorError,
     Page,
     PaginationParams,
+    TotalledCursorPage,
+    TotalledPage,
     encode_cursor,
     paginate,
 )
@@ -192,6 +194,40 @@ async def test_paginate_string_keyset_round_trip(db_session: AsyncSession) -> No
     assert second.next_cursor is None
 
 
+async def test_paginate_with_total_counts_beyond_the_page(db_session: AsyncSession) -> None:
+    for name in ("alpha", "bravo", "charlie"):
+        await make_brand(db_session, name=name)
+
+    page = await paginate(db_session, select(Brand), keyset=[Brand.id], cursor=None, limit=2, with_total=True)
+
+    assert isinstance(page, TotalledCursorPage)
+    assert len(page.items) == 2
+    assert page.next_cursor is not None
+    assert page.total == 3
+
+
+async def test_paginate_with_total_keeps_the_full_count_on_a_later_page(db_session: AsyncSession) -> None:
+    for name in ("alpha", "bravo", "charlie"):
+        await make_brand(db_session, name=name)
+
+    stmt = select(Brand)
+    first = await paginate(db_session, stmt, keyset=[Brand.id], cursor=None, limit=2, with_total=True)
+    second = await paginate(db_session, stmt, keyset=[Brand.id], cursor=first.next_cursor, limit=2, with_total=True)
+
+    assert len(second.items) == 1
+    assert second.total == 3
+
+
+async def test_paginate_with_total_when_the_first_page_is_the_last(db_session: AsyncSession) -> None:
+    for name in ("alpha", "bravo"):
+        await make_brand(db_session, name=name)
+
+    page = await paginate(db_session, select(Brand), keyset=[Brand.id], cursor=None, limit=5, with_total=True)
+
+    assert page.next_cursor is None
+    assert page.total == 2
+
+
 def _flat_dependants(dependant: Any) -> Iterator[Any]:
     yield dependant
     for sub in dependant.dependencies:
@@ -216,13 +252,17 @@ def _paginated_operations() -> list[Any]:
     return operations
 
 
-def _spec_parameters(spec: dict[str, Any], op: Any, method: str) -> list[dict[str, Any]]:
+def _spec_operation(spec: dict[str, Any], op: Any, method: str) -> dict[str, Any]:
     operation = spec["paths"].get(op.path_format, {}).get(method.lower())
     assert operation is not None, (
         f"{method} {op.path_format} serves the Page envelope but is missing from the "
         f"OpenAPI document — paginated operations must publish their contract"
     )
-    return operation.get("parameters", [])
+    return operation
+
+
+def _spec_parameters(spec: dict[str, Any], op: Any, method: str) -> list[dict[str, Any]]:
+    return _spec_operation(spec, op, method).get("parameters", [])
 
 
 # Asserted against the published spec, not the dependant tree: the wire-level
@@ -281,6 +321,24 @@ def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
             f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not declare "
             f"the invalid-cursor error mode — add ErrorCode.INVALID_CURSOR to its error_responses()"
         )
+
+
+# "Totalled" is a named contract mode like invalid_cursor: an operation that
+# opts into the extended envelope must publish `total` as a required response
+# property, so a client can rely on it without probing.
+def test_every_totalled_operation_publishes_a_required_total() -> None:
+    spec = app.openapi()
+    totalled = [op for op in _paginated_operations() if issubclass(op.response_model, TotalledPage)]
+    assert totalled, "totalled-operation sweep found nothing — detection is broken"
+    for op in totalled:
+        for method in op.methods:
+            operation = _spec_operation(spec, op, method)
+            ref = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+            schema = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+            assert "total" in schema.get("required", []), (
+                f"{method} {op.path_format} serves the TotalledPage envelope but its response "
+                f"schema does not require `total`"
+            )
 
 
 def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> None:
@@ -347,3 +405,31 @@ class TestPageFromCursorPage:
         page = Page.from_cursor_page(internal, _to_str)
 
         assert page.next_cursor is None
+
+    def test_rejects_a_totalled_page(self) -> None:
+        # A totalled page through the plain converter would pay the count query
+        # and silently drop `total` from the response.
+        internal = TotalledCursorPage(items=[1], next_cursor=None, total=1)
+
+        with pytest.raises(TypeError, match="from_totalled_cursor_page"):
+            Page.from_cursor_page(internal)
+
+
+class TestTotalledPageFromTotalledCursorPage:
+    def test_preserves_items_cursor_and_total(self) -> None:
+        internal = TotalledCursorPage(items=["already", "shaped"], next_cursor="cursor-xyz", total=7)
+
+        page = TotalledPage.from_totalled_cursor_page(internal)
+
+        assert page.items == ["already", "shaped"]
+        assert page.next_cursor == "cursor-xyz"
+        assert page.total == 7
+
+    def test_empty_result_yields_no_items_and_zero_total(self) -> None:
+        internal: TotalledCursorPage[int] = TotalledCursorPage(items=[], next_cursor=None, total=0)
+
+        page = TotalledPage.from_totalled_cursor_page(internal)
+
+        assert page.items == []
+        assert page.next_cursor is None
+        assert page.total == 0

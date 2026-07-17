@@ -1,0 +1,21 @@
+# Filtered totals are a per-operation TotalledPage envelope, counted inside paginate()
+
+The findings listing needs an exact filtered total (the UI's live region announces
+"N results" after a filter change), but keyset pagination has no page count. We serve
+`total` on the operation's own envelope — `TotalledPage[T](Page[T])`, populated by
+`paginate(..., with_total=True)` — rather than a separate count endpoint or a field on
+the shared `Page`. The count endpoint was rejected because its consumer refetches page 1
+on every filter change anyway, so an envelope total costs zero extra round-trips while a
+count endpoint costs one, duplicates the five-filter declaration across two operations,
+and can drift from the page it describes. A `total` field on the shared `Page` was
+rejected because every listing would pay a count query for a field only one consumer
+needs. Counting inside `paginate()` — the [ADR 0017](0017-keyset-pagination-deep-module.md)
+deep module — from the same statement the page runs over, before the cursor predicate,
+rather than in the service keeps the page/count equivalence structural — a service
+building two parallel filtered statements keeps them equivalent only by discipline, and
+any drift is a silently wrong total. The equivalence is of scope, not snapshot: the count
+is a second statement, so a concurrent commit between the two queries can shift `total`
+relative to the page until the next fetch — accepted for the result-count use case.
+`paginate` skips the count query when the first page is also the last. The conformance
+sweep (re-anchored to the envelope in ADR 0017's Story #94 addendum) enforces the mode:
+any operation serving `TotalledPage` must publish `total` as a required response property.

@@ -579,33 +579,6 @@
         "title": "Page[PageMetricsRead]",
         "type": "object"
       },
-      "Page_RuleFindingRead_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RuleFindingRead"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "Page[RuleFindingRead]",
-        "type": "object"
-      },
       "Page_ScanRunRead_": {
         "properties": {
           "items": {
@@ -1085,6 +1058,38 @@
         ],
         "title": "SortOrder",
         "type": "string"
+      },
+      "TotalledPage_RuleFindingRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuleFindingRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "TotalledPage[RuleFindingRead]",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -2877,7 +2882,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_RuleFindingRead_"
+                  "$ref": "#/components/schemas/TotalledPage_RuleFindingRead_"
                 }
               }
             },

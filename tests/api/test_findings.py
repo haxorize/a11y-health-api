@@ -31,6 +31,23 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["node_finding_count"] == 1
 
 
+# The transport slot for `total`: the count semantics are owned by the paginate
+# and service suites; this asserts the value crosses the wire, with total ≠
+# len(items) so an accidental echo of the loaded rows can't pass.
+async def test_list_findings_total_counts_beyond_the_page(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
+    for rule_id in ("color-contrast", "image-alt", "meta-viewport"):
+        await make_rule_finding(db_session, page_result_id=page_result.id, rule_id=rule_id)
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"limit": 1})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 3
+
+
 async def test_best_practice_classification_serializes_without_null_members(
     db_client: AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -69,6 +86,7 @@ async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSess
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
+    assert data["total"] == 0
 
 
 async def test_list_findings_scan_run_not_found(db_client: AsyncClient) -> None:

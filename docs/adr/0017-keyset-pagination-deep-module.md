@@ -83,6 +83,16 @@ still holds, but as a consequence of the two directions rather than as the disco
 basis — under the old basis, an operation that lost its cursor dropped out of the
 sweep instead of failing it.
 
+**2026-07-17 — filtered totals (issue #107).** `paginate()` gained
+`with_total: bool = False`; opting in serves the exact filtered count as a
+`TotalledCursorPage`, counted from the caller's statement before the cursor
+predicate (and skipped when the first page is also the last). The envelope side
+is the per-operation `TotalledPage[T](Page[T])` — why per-operation rather than
+a shared field or a count endpoint is recorded in
+[ADR 0032](0032-filtered-total-as-per-operation-totalled-page.md). The Story #94
+sweep above gained a fourth obligation: an operation serving `TotalledPage` must
+publish `total` as a required response property.
+
 **2026-07-11 — the client-facing `order` flag arrived (issue #90).** The three
 score-history listings (`/apps/{id}/scores`, `/org-units/{id}/scores`,
 `/brands/{id}/scores`) now take `order=asc|desc` (default `asc`, so existing

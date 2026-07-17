@@ -1,9 +1,10 @@
 import itertools
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from httpx import Response
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
@@ -18,6 +19,8 @@ from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services.score_snapshot import build_snapshot
+
+SessionFactory = Callable[[], AsyncSession]
 
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
@@ -288,6 +291,19 @@ def make_parsed_axe_payload(
 ) -> AxePayload:
     raw = make_axe_payload(url=url, violations=violations, incomplete=incomplete)
     return parse_axe_payload(raw)
+
+
+async def advisory_lock_waiters(session: AsyncSession) -> int:
+    # pg_locks is instance-wide; without the database filter an unrelated
+    # backend's waiter (shared dev/CI instance) would satisfy the poll early.
+    result = await session.execute(
+        text(
+            "SELECT count(*) FROM pg_locks"
+            " WHERE locktype = 'advisory' AND NOT granted"
+            " AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+        )
+    )
+    return result.scalar_one()
 
 
 def assert_error(response: Response, status: int, code: str, *, message_contains: str | None = None) -> None:

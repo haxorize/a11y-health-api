@@ -1,8 +1,16 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScanRunStatus
-from tests.factories import assert_error, make_page_result, make_scan_run, make_scan_run_with_parents
+from a11y_health.services import score_snapshot as score_snapshot_service
+from tests.factories import (
+    assert_error,
+    make_app_with_org_unit,
+    make_page_result,
+    make_scan_run,
+    make_scan_run_with_parents,
+)
 
 
 async def test_create_scan_run(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -96,6 +104,22 @@ async def test_delete_scan_run(db_client: AsyncClient, db_session: AsyncSession)
 async def test_delete_scan_run_not_found(db_client: AsyncClient) -> None:
     response = await db_client.delete("/api/v1/scan-runs/999999")
     assert response.status_code == 404
+
+
+async def test_delete_scan_run_losing_a_concurrent_rollup_returns_retryable_409(
+    db_client: AsyncClient, db_session: AsyncSession, mocker
+) -> None:
+    app = await make_app_with_org_unit(db_session)
+    scan_run = await make_scan_run(db_session, app_id=app.id)
+
+    mocker.patch.object(
+        score_snapshot_service,
+        "_acquire_rollup_lock",
+        side_effect=ConcurrentRollupError("Org unit", app.org_unit_id),
+    )
+
+    response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")
+    assert_error(response, 409, "concurrent_rollup", message_contains="retry")
 
 
 async def test_update_scan_run_invalid_transition(db_client: AsyncClient, db_session: AsyncSession) -> None:

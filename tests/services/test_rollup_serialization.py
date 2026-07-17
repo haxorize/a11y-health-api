@@ -7,20 +7,20 @@ deadlock test crosses two plain uncommitted sessions instead.
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
 import pytest
 from pytest import approx
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from a11y_health.core.database import Base
 from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
+    SessionFactory,
+    advisory_lock_waiters,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -35,8 +35,6 @@ _STALE_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 _NEWER_AT = datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
 _DEADLINE = 5.0
 
-SessionFactory = Callable[[], AsyncSession]
-
 
 class ReadChildren(Protocol):
     """A named children-read function on the service module (patchable by name)."""
@@ -44,41 +42,6 @@ class ReadChildren(Protocol):
     __name__: str
 
     def __call__(self, session: AsyncSession, owner_id: int, /) -> Awaitable[list]: ...
-
-
-@pytest.fixture
-async def committed_session_factory(engine: AsyncEngine) -> AsyncIterator[SessionFactory]:
-    """Real-commit sessions on separate connections — one session's writes
-    must be visible to another, so the rollback isolation of `db_session`
-    (ADR 0011) cannot apply. Teardown truncates every table instead."""
-    sessions: list[AsyncSession] = []
-
-    def factory() -> AsyncSession:
-        session = AsyncSession(bind=engine, expire_on_commit=False)
-        sessions.append(session)
-        return session
-
-    try:
-        yield factory
-    finally:
-        for session in sessions:
-            await session.close()
-        tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-        async with engine.begin() as conn:
-            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
-
-
-async def _advisory_lock_waiters(session: AsyncSession) -> int:
-    # pg_locks is instance-wide; without the database filter an unrelated
-    # backend's waiter (shared dev/CI instance) would satisfy the poll early.
-    result = await session.execute(
-        text(
-            "SELECT count(*) FROM pg_locks"
-            " WHERE locktype = 'advisory' AND NOT granted"
-            " AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"
-        )
-    )
-    return result.scalar_one()
 
 
 async def _race_stale_rollup_against_newer_observation(
@@ -125,7 +88,7 @@ async def _race_stale_rollup_against_newer_observation(
     # (serialized). Polling is forced here: Postgres emits no event for a
     # backend waiting on a lock.
     async def finished_or_blocked(task: asyncio.Task[None]) -> None:
-        while not task.done() and await _advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
+        while not task.done() and await advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
             await asyncio.sleep(0.05)
 
     task_a = asyncio.create_task(stale_rollup())

@@ -1,6 +1,8 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import ConcurrentRollupError
+from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
 
 
@@ -190,3 +192,38 @@ async def test_delete_app(db_client: AsyncClient, db_session: AsyncSession) -> N
 async def test_delete_app_not_found(db_client: AsyncClient) -> None:
     response = await db_client.delete("/api/v1/apps/999999")
     assert response.status_code == 404
+
+
+async def test_reassign_app_losing_a_concurrent_rollup_returns_retryable_409(
+    db_client: AsyncClient, db_session: AsyncSession, mocker
+) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    other = await make_org_unit(db_session, name="CenterWell", parent_id=org_unit.id)
+    brand = await make_brand(db_session)
+    app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
+
+    mocker.patch.object(
+        score_snapshot_service,
+        "_acquire_rollup_lock",
+        side_effect=ConcurrentRollupError("Org unit", org_unit.id),
+    )
+
+    response = await db_client.patch(f"/api/v1/apps/{app.id}", json={"org_unit_id": other.id})
+    assert_error(response, 409, "concurrent_rollup", message_contains="retry")
+
+
+async def test_delete_app_losing_a_concurrent_rollup_returns_retryable_409(
+    db_client: AsyncClient, db_session: AsyncSession, mocker
+) -> None:
+    org_unit = await make_org_unit(db_session, name="Humana")
+    brand = await make_brand(db_session)
+    app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
+
+    mocker.patch.object(
+        score_snapshot_service,
+        "_acquire_rollup_lock",
+        side_effect=ConcurrentRollupError("Org unit", org_unit.id),
+    )
+
+    response = await db_client.delete(f"/api/v1/apps/{app.id}")
+    assert_error(response, 409, "concurrent_rollup", message_contains="retry")

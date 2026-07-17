@@ -20,14 +20,8 @@ from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
-from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.models.score_snapshot import OWNER_ID_COLUMNS, ScoreSnapshot
 from a11y_health.services._latest_snapshot import select_latest_snapshots
-
-_OWNER_COLUMN = {
-    ScoreSnapshotOwnerType.APP: ScoreSnapshot.app_id,
-    ScoreSnapshotOwnerType.ORG_UNIT: ScoreSnapshot.org_unit_id,
-    ScoreSnapshotOwnerType.BRAND: ScoreSnapshot.brand_id,
-}
 
 
 async def list_latest_scores(
@@ -37,7 +31,7 @@ async def list_latest_scores(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
-    owner_col = _OWNER_COLUMN[owner_type]
+    owner_col = OWNER_ID_COLUMNS[owner_type]
     stmt = select_latest_snapshots(
         select(ScoreSnapshot).where(owner_col.is_not(None)),
         partition_on=[owner_col],

@@ -220,6 +220,15 @@ def test_score_snapshot_column_set_is_pinned() -> None:
     }
 
 
+def test_rollup_owner_snapshot_columns_are_build_snapshot_kwargs() -> None:
+    # Canary: _apply_rollup passes **{spec.snapshot_column.key: owner_id} into
+    # build_snapshot — a name coupling ty can't see. Pin it so renaming either
+    # side fails here by name instead of as a TypeError mid-rollup.
+    params = inspect.signature(score_snapshot_service.build_snapshot).parameters
+    for spec in score_snapshot_service._ROLLUP_OWNERS.values():
+        assert spec.snapshot_column.key in params
+
+
 class TestComputeAppScoreCreatesSnapshot:
     async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)

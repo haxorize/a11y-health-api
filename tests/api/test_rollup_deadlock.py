@@ -15,7 +15,7 @@ import asyncio
 import pytest
 from httpx import AsyncClient, Response
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from a11y_health.core import database
 from a11y_health.models.enums import ScoreSnapshotOwnerType
@@ -46,38 +46,62 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
     holder = committed_session_factory()
     poll = committed_session_factory()
 
-    # The request backend keeps the 1s default, so once the cycle closes it is
-    # always the one whose deadlock check fires — the deterministic victim.
+    # Postgres arms a waiter's deadlock check once, deadlock_timeout after the
+    # wait begins, and never re-arms it — so the victim's check must start
+    # after the cycle is closed. Pausing the reparent's old-parent rollup
+    # between its child-lock grant and the root cascade lets the holder queue
+    # on the child first; the request then blocks on root as the cycle's last
+    # waiter, and its one-shot check (engine-wide 50ms, conftest) always finds
+    # the closed cycle. The holder's own check is pushed out of the way.
     await holder.execute(text("SET deadlock_timeout = '10s'"))
     await score_snapshot_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, root.id)
+
+    request_holds_child = asyncio.Event()
+    holder_queued_on_child = asyncio.Event()
+    read_children = score_snapshot_service._latest_child_snapshots
+
+    async def pause_after_child_read(session: AsyncSession, owner_id: int) -> list:
+        children = await read_children(session, owner_id)
+        if owner_id == child.id and not holder_queued_on_child.is_set():
+            request_holds_child.set()
+            await holder_queued_on_child.wait()
+        return children
+
+    mocker.patch.object(score_snapshot_service, "_latest_child_snapshots", pause_after_child_read)
 
     async def reparent() -> Response:
         return await client.patch(f"/api/v1/org-units/{grandchild.id}", json={"parent_id": root.id})
 
     request = asyncio.create_task(reparent())
+    holder_acquire: asyncio.Task[None] | None = None
     try:
-        # The reparent's old-parent rollup locks the child, then blocks
-        # cascading to root — the advisory waiter is the request's backend.
-        # The done() guard fails fast on the actual response if a regression
-        # lets the request finish without ever blocking.
-        async def request_blocked() -> None:
-            while not request.done() and await advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
+        await asyncio.wait_for(request_holds_child.wait(), timeout=_DEADLINE)
+
+        holder_acquire = asyncio.create_task(
+            score_snapshot_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, child.id)
+        )
+
+        # The done() guard fails fast if a regression drops the per-owner lock
+        # and lets the holder acquire without ever waiting.
+        async def holder_blocked() -> None:
+            while not holder_acquire.done() and await advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
                 await asyncio.sleep(0.025)
 
-        await asyncio.wait_for(request_blocked(), timeout=_DEADLINE)
+        await asyncio.wait_for(holder_blocked(), timeout=_DEADLINE)
         await poll.rollback()
+        assert not holder_acquire.done(), "holder acquired the child lock without blocking on the rollup lock"
 
-        # Requesting the child's lock closes the cycle. The request aborts with
-        # 40P01 and this acquisition is granted — returning cleanly is itself
-        # the assertion that the holder was not the victim.
-        await asyncio.wait_for(
-            score_snapshot_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, child.id),
-            timeout=_DEADLINE,
-        )
+        # Resuming closes the cycle. The request aborts with 40P01 and the
+        # holder's acquisition is granted — returning cleanly is itself the
+        # assertion that the holder was not the victim.
+        holder_queued_on_child.set()
+        await asyncio.wait_for(holder_acquire, timeout=_DEADLINE)
         response = await asyncio.wait_for(request, timeout=_DEADLINE)
     finally:
-        request.cancel()
-        await asyncio.gather(request, return_exceptions=True)
+        tasks = [task for task in (request, holder_acquire) if task is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     assert_error(response, 409, "concurrent_rollup", message_contains="retry")
 

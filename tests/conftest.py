@@ -23,7 +23,13 @@ _honest_transport = ASGITransport(app=DeclarationHonestyShim(app))
 
 @pytest.fixture(scope="session")
 async def engine() -> AsyncIterator[AsyncEngine]:
-    eng = create_async_engine(settings.TEST_DATABASE_URL, echo=settings.DEBUG)
+    eng = create_async_engine(
+        settings.TEST_DATABASE_URL,
+        echo=settings.DEBUG,
+        # Deadlock tests would otherwise idle out the 1s default before
+        # detection fires. PGC_SUSET — dev and CI connect as superuser (#112).
+        connect_args={"server_settings": {"deadlock_timeout": "50ms"}},
+    )
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.execute(text("DROP TYPE IF EXISTS brand"))

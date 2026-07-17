@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
 from tests._declaration_honesty import DeclarationHonestyShim
+from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -59,6 +61,31 @@ async def db_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
             yield ac
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def committed_session_factory(engine: AsyncEngine) -> AsyncIterator[SessionFactory]:
+    """Real-commit sessions on separate connections — one session's writes
+    must be visible to another, so the rollback isolation of `db_session`
+    (ADR 0011) cannot apply. Teardown truncates every table instead."""
+    sessions: list[AsyncSession] = []
+
+    def factory() -> AsyncSession:
+        session = AsyncSession(bind=engine, expire_on_commit=False)
+        sessions.append(session)
+        return session
+
+    try:
+        yield factory
+    finally:
+        # One broken session (e.g. a connection killed as a deadlock victim)
+        # must not skip the remaining closes or the truncate below.
+        for session in sessions:
+            with suppress(Exception):
+                await session.close()
+        tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+        async with engine.begin() as conn:
+            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture

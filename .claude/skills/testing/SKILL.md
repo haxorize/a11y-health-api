@@ -11,7 +11,7 @@ Mirror the app structure:
 
 ```
 tests/
-  conftest.py              # shared fixtures (client, db_session, db_client)
+  conftest.py              # shared fixtures (client, db_session, db_client, committed_session_factory)
   test_config.py           # top-level Settings/config tests
   fixtures/                # sample axe JSON payloads and other static test data
   api/
@@ -31,15 +31,16 @@ tests/
 
 ## Fixtures (from conftest.py)
 
-Five fixtures, layered:
+Six fixtures, layered:
 
 - **`engine`** (session scope) — creates a test `AsyncEngine`, drops and recreates all tables once per session
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB
+- **`committed_session_factory`** — factory for real-commit sessions on separate connections, for the rare test that needs one session's writes visible to another (genuine lock contention); teardown truncates every table. The sanctioned exception to rollback isolation — see [ADR 0011](../../../docs/adr/0011-transactional-rollback-test-isolation.md)
 - **`axe_payload`** (function scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests. Function scope prevents cross-test pollution from mutations
 
-Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed.
+Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed. The one exception is tests built on `committed_session_factory`, which really commit and rely on its truncate teardown.
 
 ## Writing endpoint tests
 
@@ -190,6 +191,6 @@ See [references/test-recipes.md](references/test-recipes.md) for coverage and ru
 
 ## Anti-patterns
 
-- **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation.
+- **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation. (Sessions from `committed_session_factory` are the exception — committing is their purpose, and its truncate teardown cleans up.)
 - **Don't make parallel HTTP calls in a single test** — `db_client` routes every request through one shared `AsyncSession`, which isn't concurrent-safe; `asyncio.gather` on it deadlocks or corrupts state. Await calls sequentially.
 - **Don't `asyncio.sleep()` to wait for state** — poll the condition with a deadline (loop: check, short sleep, re-check, fail past timeout) and assert what you waited *for*; a fixed sleep is either too slow or flaky. Fixed sleeps are legitimate only when elapsed time is itself the behavior under test (e.g., TTL expiry).

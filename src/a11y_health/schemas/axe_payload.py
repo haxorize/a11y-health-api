@@ -15,7 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.enums import Category, Impact
-from a11y_health.schemas._tag_parsing import extract_category, extract_classifications, extract_wcag_criteria
+from a11y_health.schemas._tag_parsing import (
+    Classification,
+    extract_category,
+    extract_classifications,
+    extract_wcag_criteria,
+)
 
 
 class AxeNode(BaseModel):
@@ -42,7 +47,7 @@ class AxeRule(BaseModel):
     nodes: list[AxeNode]
     category: Category
     wcag_criteria: list[str]
-    classifications: list[dict[str, str]]
+    classifications: list[Classification]
 
     @model_validator(mode="before")
     @classmethod

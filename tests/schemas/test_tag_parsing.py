@@ -2,6 +2,7 @@ import pytest
 
 from a11y_health.models.enums import Category
 from a11y_health.schemas._tag_parsing import (
+    Classification,
     extract_category,
     extract_classifications,
     extract_wcag_criteria,
@@ -11,38 +12,38 @@ from a11y_health.schemas._tag_parsing import (
 @pytest.mark.parametrize(
     ("tag", "expected"),
     [
-        ("wcag2a", {"standard": "wcag", "version": "2.0", "level": "A"}),
-        ("wcag2aa", {"standard": "wcag", "version": "2.0", "level": "AA"}),
-        ("wcag2aaa", {"standard": "wcag", "version": "2.0", "level": "AAA"}),
-        ("wcag21a", {"standard": "wcag", "version": "2.1", "level": "A"}),
-        ("wcag21aa", {"standard": "wcag", "version": "2.1", "level": "AA"}),
-        ("wcag21aaa", {"standard": "wcag", "version": "2.1", "level": "AAA"}),
-        ("wcag22a", {"standard": "wcag", "version": "2.2", "level": "A"}),
-        ("wcag22aa", {"standard": "wcag", "version": "2.2", "level": "AA"}),
-        ("wcag22aaa", {"standard": "wcag", "version": "2.2", "level": "AAA"}),
+        ("wcag2a", Classification(standard="wcag", version="2.0", level="A")),
+        ("wcag2aa", Classification(standard="wcag", version="2.0", level="AA")),
+        ("wcag2aaa", Classification(standard="wcag", version="2.0", level="AAA")),
+        ("wcag21a", Classification(standard="wcag", version="2.1", level="A")),
+        ("wcag21aa", Classification(standard="wcag", version="2.1", level="AA")),
+        ("wcag21aaa", Classification(standard="wcag", version="2.1", level="AAA")),
+        ("wcag22a", Classification(standard="wcag", version="2.2", level="A")),
+        ("wcag22aa", Classification(standard="wcag", version="2.2", level="AA")),
+        ("wcag22aaa", Classification(standard="wcag", version="2.2", level="AAA")),
     ],
 )
-def test_classifications_wcag_version_and_level(tag: str, expected: dict[str, str]) -> None:
+def test_classifications_wcag_version_and_level(tag: str, expected: Classification) -> None:
     assert extract_classifications([tag]) == [expected]
 
 
 def test_classifications_best_practice() -> None:
-    assert extract_classifications(["best-practice"]) == [{"standard": "best-practice"}]
+    assert extract_classifications(["best-practice"]) == [Classification(standard="best-practice")]
 
 
 def test_classifications_multiple_standards() -> None:
     result = extract_classifications(["wcag2a", "wcag21a", "best-practice"])
     assert len(result) == 3
-    assert {"standard": "wcag", "version": "2.0", "level": "A"} in result
-    assert {"standard": "wcag", "version": "2.1", "level": "A"} in result
-    assert {"standard": "best-practice"} in result
+    assert Classification(standard="wcag", version="2.0", level="A") in result
+    assert Classification(standard="wcag", version="2.1", level="A") in result
+    assert Classification(standard="best-practice") in result
 
 
 def test_classifications_aaa_only_rule() -> None:
     # An AAA-only axe rule (e.g. color-contrast-enhanced: cat.color + wcag2aaa +
     # the 1.4.6 criterion) carries its AAA Classification instead of dropping to [].
     assert extract_classifications(["cat.color", "wcag2aaa", "wcag146"]) == [
-        {"standard": "wcag", "version": "2.0", "level": "AAA"}
+        Classification(standard="wcag", version="2.0", level="AAA")
     ]
 
 

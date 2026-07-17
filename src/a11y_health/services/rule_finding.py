@@ -13,7 +13,11 @@ from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.schemas._tag_parsing import Classification, classification_to_tag, wcag_criterion_sort_key
+from a11y_health.schemas._tag_parsing import (
+    ClassificationToken,
+    token_to_stored_classification,
+    wcag_criterion_sort_key,
+)
 from a11y_health.schemas.rule_finding import (
     FindingFilterOptionsRead,
     NodeFindingDetail,
@@ -36,7 +40,7 @@ async def list_findings(
     impact: list[Impact] | None = None,
     category: list[Category] | None = None,
     wcag_criterion: list[str] | None = None,
-    classification: list[Classification] | None = None,
+    classification: list[ClassificationToken] | None = None,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[RuleFindingRead]:
@@ -63,7 +67,7 @@ async def list_findings(
     if wcag_criterion:
         stmt = stmt.where(RuleFinding.wcag_criteria.has_any(array(wcag_criterion, type_=Text)))
     if classification:
-        targets = [classification_to_tag(c) for c in classification]
+        targets = [token_to_stored_classification(c) for c in classification]
         stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
 
     return await paginate(

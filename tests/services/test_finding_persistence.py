@@ -11,7 +11,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.services.page_result import create_page_result
-from tests.factories import make_scan_run_with_parents
+from tests.factories import make_axe_payload, make_scan_run_with_parents, make_violation
 
 
 @pytest.fixture
@@ -84,6 +84,18 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
     assert finding is not None
 
     assert {"standard": "wcag", "version": "2.0", "level": "AA"} in finding.classifications
+
+
+async def test_best_practice_classification_stored_without_null_members(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    payload = make_axe_payload(violations=[make_violation("region", "moderate")])
+    await create_page_result(db_session, scan_run.id, parse_axe_payload(payload))
+
+    stmt = select(RuleFinding).where(RuleFinding.rule_id == "region")
+    finding = (await db_session.execute(stmt)).scalars().one()
+
+    # Compact JSONB, matching the GIN containment targets the classification filter builds.
+    assert finding.classifications == [{"standard": "best-practice"}]
 
 
 async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, page_result: PageResult) -> None:

@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from a11y_health.schemas._tag_parsing import Classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from tests.factories import make_axe_payload, make_parsed_axe_payload, make_violation
 
@@ -165,8 +166,8 @@ class TestAxeRuleSemanticValidation:
         rule = payload.findings.violations[0]
         assert rule.category.value == "color"
         assert rule.wcag_criteria == ["1.4.3"]
-        assert {"standard": "wcag", "version": "2.0", "level": "AA"} in rule.classifications
-        assert {"standard": "best-practice"} in rule.classifications
+        assert Classification(standard="wcag", version="2.0", level="AA") in rule.classifications
+        assert Classification(standard="best-practice") in rule.classifications
 
 
 class TestParseAxePayloadSourceRetention:

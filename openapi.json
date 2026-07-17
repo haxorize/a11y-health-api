@@ -136,6 +136,50 @@
         "title": "Category",
         "type": "string"
       },
+      "Classification": {
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "A",
+                  "AA",
+                  "AAA"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "standard": {
+            "enum": [
+              "wcag",
+              "best-practice"
+            ],
+            "title": "Standard",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "standard"
+        ],
+        "title": "Classification",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -623,10 +667,7 @@
           },
           "classifications": {
             "items": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
+              "$ref": "#/components/schemas/Classification"
             },
             "title": "Classifications",
             "type": "array"
@@ -707,10 +748,7 @@
           },
           "classifications": {
             "items": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
+              "$ref": "#/components/schemas/Classification"
             },
             "title": "Classifications",
             "type": "array"

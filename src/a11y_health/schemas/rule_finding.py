@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.schemas._tag_parsing import Classification
 
 if TYPE_CHECKING:
     from a11y_health.models.rule_finding import RuleFinding
@@ -33,7 +34,7 @@ class _RuleFindingBase(BaseModel):
     help_url: str
     category: Category
     wcag_criteria: list[str]
-    classifications: list[dict[str, str]]
+    classifications: list[Classification]
     tags: list[str]
 
 

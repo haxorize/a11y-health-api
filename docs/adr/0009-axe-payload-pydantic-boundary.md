@@ -31,7 +31,7 @@ Considered and rejected:
   could carry the semantic rules.
 - **Two-layer validation (Pydantic for shape, service for semantics)**:
   rejected because every "semantic" rule we had — impact must be one of four
-  values, classifications must look like `{"id": ..., "version": ...}`,
+  values, classifications must look like `{"standard": ..., "version": ..., "level": ...}`,
   wcag_criteria must parse — was expressible as a Pydantic validator. Splitting
   the rules across layers lost the locality without buying anything.
 

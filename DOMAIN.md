@@ -30,7 +30,8 @@
 | **Finding Type** | Whether a **Rule Finding** is a **Violation** (definite failure, counts toward scoring) or **Incomplete** (needs manual review, excluded from scoring). | Result type, finding kind |
 | **Node Finding** | A specific DOM element instance that triggered a **Rule Finding**, with HTML snippet, selector, and failure details. | Instance, node result, occurrence, element |
 | **Impact** | The severity of a **Rule Finding**: critical, serious, moderate, or minor. | Severity, priority, level |
-| **Classification** | A standard that a **Rule Finding** belongs to — either a WCAG version/level pair (levels A, AA, or AAA — e.g., WCAG 2.1 AA, WCAG 2.2 AAA) or best-practice. | Standard, conformance, tag |
+| **Classification** | A standard that a **Rule Finding** belongs to — either a WCAG version/level pair (levels A, AA, or AAA — e.g., WCAG 2.1 AA, WCAG 2.2 AAA) or best-practice. A WCAG Classification carries a version and level; a best-practice Classification carries neither. | Standard (the `standard` member names the wcag-vs-best-practice axis, not the whole Classification), conformance, tag |
+| **Classification Token** | The compact query token naming a **Classification** in the findings filter — one of `wcag2a` … `wcag22aaa` or `best-practice`. A closed vocabulary served as an enum in the OpenAPI contract; each token maps to exactly one **Classification**. | Tag, classification string |
 | **Category** | The functional grouping of a **Rule Finding** (e.g., text-alternatives, keyboard, color) derived from the `cat.*` axe tag. | Group, type, area |
 | **WCAG Criteria** | The WCAG success criteria a **Rule Finding** maps to — zero or more per finding (e.g., [1.1.1], [1.4.3, 1.4.6]). Stored as a JSONB array. | Rule, guideline, requirement |
 | **Incomplete** | A **Rule Finding** that axe could not determine automatically, flagged for manual review and excluded from scoring. | Needs review, manual check, undetermined |

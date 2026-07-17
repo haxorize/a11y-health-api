@@ -3,24 +3,47 @@
 Maps a rule's raw `tags` list onto a Category, its WCAG Criteria, and its
 Classifications (WCAG version/level pairs or best-practice). `axe_payload.py`
 owns the ingest-side parsing; the findings filter (service and endpoint) reads
-the `Classification` vocabulary and `classification_to_tag` from here so query
-and storage can never disagree, and the filter-options enumeration reads
-`wcag_criterion_sort_key` so response ordering stays with the code that mints
-the criterion format. Unknown WCAG-shaped tags are dropped rather than
-rejected, since the axe tag set is open-ended.
+the `ClassificationToken` vocabulary and `token_to_stored_classification` from
+here so query and storage can never disagree, and the filter-options
+enumeration reads `wcag_criterion_sort_key` so response ordering stays with
+the code that mints the criterion format. Unknown WCAG-shaped tags are dropped
+rather than rejected, since the axe tag set is open-ended.
 
 See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
 """
 
 import re
-from typing import Literal
+from typing import Literal, get_args
+
+from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
 
 from a11y_health.models.enums import Category
 
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CAT_TAG = re.compile(r"^cat\.(.+)$")
 
-Classification = Literal[
+
+class Classification(BaseModel):
+    # Frozen because _TOKEN_TO_CLASSIFICATION hands out shared instances.
+    model_config = ConfigDict(frozen=True)
+
+    standard: Literal["wcag", "best-practice"]
+    version: str | None = None
+    level: Literal["A", "AA", "AAA"] | None = None
+
+    def stored(self) -> dict[str, str]:
+        """The canonical JSONB shape — no null members, so the filter's GIN
+        containment targets and persisted rows can never disagree."""
+        return self.model_dump(exclude_none=True)
+
+    @model_serializer(mode="wrap")
+    def _omit_none_members(self, handler: SerializerFunctionWrapHandler):
+        # Wire shape == stored shape: clients generated before this model was typed
+        # validate members as strings, so absent members are omitted, never null.
+        return {k: v for k, v in handler(self).items() if v is not None}
+
+
+ClassificationToken = Literal[
     "wcag2a",
     "wcag2aa",
     "wcag2aaa",
@@ -34,26 +57,34 @@ Classification = Literal[
 ]
 
 
-_CLASSIFICATION_TO_TAG: dict[str, dict[str, str]] = {
-    "wcag2a": {"standard": "wcag", "version": "2.0", "level": "A"},
-    "wcag2aa": {"standard": "wcag", "version": "2.0", "level": "AA"},
-    "wcag2aaa": {"standard": "wcag", "version": "2.0", "level": "AAA"},
-    "wcag21a": {"standard": "wcag", "version": "2.1", "level": "A"},
-    "wcag21aa": {"standard": "wcag", "version": "2.1", "level": "AA"},
-    "wcag21aaa": {"standard": "wcag", "version": "2.1", "level": "AAA"},
-    "wcag22a": {"standard": "wcag", "version": "2.2", "level": "A"},
-    "wcag22aa": {"standard": "wcag", "version": "2.2", "level": "AA"},
-    "wcag22aaa": {"standard": "wcag", "version": "2.2", "level": "AAA"},
-    "best-practice": {"standard": "best-practice"},
+_TOKEN_TO_CLASSIFICATION: dict[str, Classification] = {
+    "wcag2a": Classification(standard="wcag", version="2.0", level="A"),
+    "wcag2aa": Classification(standard="wcag", version="2.0", level="AA"),
+    "wcag2aaa": Classification(standard="wcag", version="2.0", level="AAA"),
+    "wcag21a": Classification(standard="wcag", version="2.1", level="A"),
+    "wcag21aa": Classification(standard="wcag", version="2.1", level="AA"),
+    "wcag21aaa": Classification(standard="wcag", version="2.1", level="AAA"),
+    "wcag22a": Classification(standard="wcag", version="2.2", level="A"),
+    "wcag22aa": Classification(standard="wcag", version="2.2", level="AA"),
+    "wcag22aaa": Classification(standard="wcag", version="2.2", level="AAA"),
+    "best-practice": Classification(standard="best-practice"),
 }
 
+# The Literal feeds the OpenAPI enum; the map feeds storage and the filter. A missing
+# map entry would 500 on a contractually valid token, so drift fails at import instead
+# (an explicit raise, not an assert — asserts vanish under python -O).
+if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
+    raise RuntimeError("ClassificationToken and _TOKEN_TO_CLASSIFICATION have drifted")
 
-def classification_to_tag(c: Classification) -> dict[str, str]:
-    return _CLASSIFICATION_TO_TAG[c]
+_TOKEN_TO_STORED: dict[str, dict[str, str]] = {t: c.stored() for t, c in _TOKEN_TO_CLASSIFICATION.items()}
 
 
-def extract_classifications(tags: list[str]) -> list[dict[str, str]]:
-    return [_CLASSIFICATION_TO_TAG[tag] for tag in tags if tag in _CLASSIFICATION_TO_TAG]
+def token_to_stored_classification(token: ClassificationToken) -> dict[str, str]:
+    return _TOKEN_TO_STORED[token]
+
+
+def extract_classifications(tags: list[str]) -> list[Classification]:
+    return [_TOKEN_TO_CLASSIFICATION[tag] for tag in tags if tag in _TOKEN_TO_CLASSIFICATION]
 
 
 def extract_wcag_criteria(tags: list[str]) -> list[str]:

@@ -6,7 +6,7 @@ from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page, PageParams
 from a11y_health.models.enums import Category, FindingType, Impact
-from a11y_health.schemas._tag_parsing import Classification
+from a11y_health.schemas._tag_parsing import ClassificationToken
 from a11y_health.schemas.rule_finding import FindingFilterOptionsRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 
@@ -22,7 +22,7 @@ async def list_findings(
     impact: Annotated[list[Impact] | None, Query()] = None,
     category: Annotated[list[Category] | None, Query()] = None,
     wcag_criterion: Annotated[list[str] | None, Query()] = None,
-    classification: Annotated[list[Classification] | None, Query()] = None,
+    classification: Annotated[list[ClassificationToken] | None, Query()] = None,
 ) -> Page[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,

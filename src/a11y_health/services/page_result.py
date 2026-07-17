@@ -30,7 +30,7 @@ async def _persist_findings(
             help_url=rule.help_url,
             category=rule.category,
             wcag_criteria=rule.wcag_criteria,
-            classifications=rule.classifications,
+            classifications=[c.stored() for c in rule.classifications],
             tags=rule.tags,
         )
         rule_findings.append(rf)

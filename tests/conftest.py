@@ -13,12 +13,13 @@ from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
-from tests._declaration_honesty import DeclarationHonestyShim
+from tests._declaration_honesty import DeclarationHonestyShim, instrument_rollup_raisers
 from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 _honest_transport = ASGITransport(app=DeclarationHonestyShim(app))
+instrument_rollup_raisers()
 
 
 @pytest.fixture(scope="session")

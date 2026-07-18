@@ -164,6 +164,20 @@ wrapper in `tests/_declaration_honesty.py`, applying
 `error_contract.assert_declared_mode`) fails any test that observes an
 undeclared error status or code. The endpoint logic stays untouched.
 
+One mode can't be caught at the response: rollup-race 409s
+(`concurrent_rollup`) never fire organically in endpoint tests. The same test
+module closes that gap at the *raise site* instead — it instruments the
+public `rollup_*` functions in `score_snapshot` through which
+`ConcurrentRollupError` can escape, and any operation observed reaching one
+during a request fails immediately (via
+`error_contract.assert_raisable_mode_declared`) unless it declares the
+retryable mode. Rollups fire on success paths, so enforcement reaches as deep
+as the suite drives rollup-triggering variants — each known rollup-triggering
+operation is pinned by an explicit HTTP canary in
+`tests/core/test_error_contract.py`, and a structural test pins the
+attribute-access calling convention the instrumentation relies on (#113; ADR
+0033 records the residuals).
+
 ---
 
 ## 2. The scoring & rollup model

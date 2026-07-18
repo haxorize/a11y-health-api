@@ -1,0 +1,63 @@
+# Rollup-race declaration honesty is enforced at the raise site, not by a pinned list
+
+[ADR 0022](0022-error-contract-single-table-400-vs-422.md) closes declaration
+gaps "as deep as the suite exercises each operation's error paths" — but
+rollup-race 409s (`concurrent_rollup`) never fire organically in endpoint
+tests, so those declarations were guarded by a hand-pinned operation list in
+the test suite: review-vigilance of exactly the kind 0022 exists to kill
+(#113). Decided: enforcement moves to the raise site. The suite instruments
+every public `rollup_*` function in `score_snapshot` — the module's naming
+convention for the surface through which `ConcurrentRollupError` can escape
+(today `rollup_org_unit_scores` and `rollup_brand_scores`); the
+declaration-honesty shim stashes the request scope in a `ContextVar`, and any
+operation observed reaching a rollup fails immediately — via the mode-agnostic
+`error_contract.assert_raisable_mode_declared` — unless it declares the
+retryable mode. Rollups fire on success paths, so any endpoint test driving a
+rollup-triggering variant enforces its operation's declaration — enforcement
+is exactly as deep as the suite exercises those variants, with no declaration
+list to maintain. Two structural pins close the mechanism's own dependencies:
+each known rollup-triggering operation has an explicit HTTP canary driving its
+triggering variant (so incidental test refactors can't silently drop
+enforcement), and a source scan pins the attribute-access calling convention
+the `setattr` instrumentation relies on (a `from`-import binding taken before
+instrumentation would bypass it). Outside a request context (service tests,
+CLI) the instrumentation passes through untouched.
+
+This amends 0022's residual: for `concurrent_rollup`, the "raisable mode no
+test triggers stays invisible to the shim" gap narrows from error-path depth
+(which nothing exercises organically) to rollup-triggering-success-path depth
+(which the canaries pin for every known operation), and the pattern
+generalizes to any future mode whose error path can't fire organically.
+
+Considered and rejected:
+
+- **Amending 0022 to record the pinned list as an accepted residual**: honest
+  about the gap, but keeps the drift class alive — a future endpoint whose
+  service triggers rollups fails nothing if the author forgets both the
+  declaration and the list entry.
+- **Static derivation (mapping services importing the rollup machinery to
+  their operations)**: module-level granularity is too coarse — not every
+  operation of a rollup-importing service triggers one — and call-graph
+  analysis is fragile.
+- **Tagging rollup-triggering routes**: moves the vigilance from a list to a
+  tag; forgetting the tag is the same failure mode.
+- **Wrapping the `scoring_orchestration` `on_*` switchboard**: a naming
+  convention one level shallower than the raiser — a service calling
+  `score_snapshot.rollup_*` directly would escape enforcement, and a handler
+  that triggers no rollup would over-assert.
+
+Known residuals:
+
+- **Reverse direction**: an operation still declaring `concurrent_rollup`
+  after its rollup call is removed goes unnoticed, leaving a stale retryable
+  409 in the contract. The pinned list never enforced that direction either,
+  and a full-suite observed-vs-declared diff would fail subset runs; accepted
+  for now.
+- **Conditional-trigger depth**: a *future* operation whose rollup fires only
+  on a conditional branch (like reassignment or reparenting) is enforced only
+  when some test drives that branch — until its canary exists, a suite that
+  exercises only non-triggering variants fails nothing.
+- **Naming convention**: a future raiser named outside the `rollup_*`
+  convention escapes instrumentation. The inverse failure is loud, not
+  silent — a non-raising `rollup_*` function would over-assert, failing tests
+  until it is renamed or its callers declare the mode.

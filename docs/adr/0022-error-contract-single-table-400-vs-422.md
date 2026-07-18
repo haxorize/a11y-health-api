@@ -23,6 +23,11 @@ declaration-honesty shim fails any test that observes an undeclared 4xx status
 or error code. Table gaps are thus closed structurally; per-operation
 declaration gaps are closed as deep as the suite exercises each operation's
 error paths — a raisable mode no test triggers stays invisible to the shim.
+(Amended by [ADR 0033](0033-rollup-race-declaration-enforced-at-raise-site.md):
+a mode that never fires organically is asserted at its raise site instead,
+narrowing this residual for `concurrent_rollup` to the depth at which tests
+exercise its rollup-triggering success paths — pinned by explicit canaries for
+every known operation.)
 
 The transport rule: **422 belongs to the framework** — it is produced only by
 FastAPI's own request-shape validation, with its standard body. A request that

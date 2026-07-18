@@ -123,6 +123,19 @@ def error_responses(*codes: ErrorCode) -> dict[int | str, dict[str, Any]]:
 FRAMEWORK_STATUSES: frozenset[int] = frozenset({405, 422})
 
 
+def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode) -> None:
+    """Declaration honesty asserted at the raise site instead of the response,
+    for modes no test observes organically — applied suite-wide by the
+    instrumentation in `tests/_declaration_honesty.py`. The failure message
+    names the operation by its route template, not the concrete request path.
+    """
+    declared_codes = getattr(route, "responses", {}).get(_STATUS_BY_CODE[code], {}).get("x-error-codes", [])
+    assert code in declared_codes, (
+        f"{method} {route.path} can produce error code {code} but does not declare it — "
+        f"add ErrorCode.{code.name} to the operation's error_responses()"
+    )
+
+
 def assert_declared_mode(method: str, path: str, route: Any, status: int, body: bytes) -> None:
     """Declaration honesty, applied suite-wide by the test shim in
     `tests/_declaration_honesty.py`. Raises `AssertionError` on an observed

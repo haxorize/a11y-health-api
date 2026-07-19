@@ -137,6 +137,7 @@
         "type": "string"
       },
       "Classification": {
+        "additionalProperties": false,
         "properties": {
           "level": {
             "anyOf": [

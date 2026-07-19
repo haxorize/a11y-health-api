@@ -14,6 +14,24 @@ async def test_out_of_vocabulary_classification_is_refused_at_flush(db_session: 
         await make_rule_finding(db_session, page_result_id=page.id, classifications=[{"standard": "section508"}])
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param({"standard": "wcag", "version": "2.1", "level": "AA", "note": "waived"}, id="extra-member"),
+        pytest.param({"standard": "wcag"}, id="wcag-without-version-and-level"),
+        pytest.param({"standard": "best-practice", "level": "AA"}, id="best-practice-with-level"),
+    ],
+)
+async def test_non_canonical_classification_is_refused_at_flush(
+    db_session: AsyncSession, entry: dict[str, str]
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+
+    with pytest.raises(StatementError):
+        await make_rule_finding(db_session, page_result_id=page.id, classifications=[entry])
+
+
 async def test_bound_entries_are_stored_in_the_compact_shape(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)

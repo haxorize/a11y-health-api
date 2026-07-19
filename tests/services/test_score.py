@@ -10,6 +10,7 @@ from tests.factories import (
     latest_brand_snapshot,
     make_app_with_org_unit,
     make_brand,
+    make_org_unit,
     make_score_snapshot,
 )
 
@@ -144,6 +145,22 @@ async def test_list_latest_scores_owner_id_filter_composes_with_cursor_paginatio
     )
     assert [(s.app_id, s.id) for s in second.items] == [(app_c.id, latest_c.id)]
     assert second.next_cursor is None
+
+
+async def test_list_latest_scores_owner_id_filter_is_exact_match_for_rollup_owners(db_session: AsyncSession) -> None:
+    # No descendant expansion, unlike list_apps' org_unit_id: the parent's rollup
+    # snapshot already aggregates the child's, so the child must not surface.
+    parent = await make_org_unit(db_session, name="Parent")
+    child = await make_org_unit(db_session, name="Child", parent_id=parent.id)
+
+    parent_snapshot = await make_score_snapshot(
+        db_session, org_unit_id=parent.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, org_unit_id=child.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, owner_id=[parent.id])
+
+    assert [(s.org_unit_id, s.id) for s in page.items] == [(parent.id, parent_snapshot.id)]
 
 
 async def test_list_latest_scores_filters_by_owner_type(db_session: AsyncSession) -> None:

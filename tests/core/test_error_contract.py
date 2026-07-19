@@ -241,8 +241,14 @@ class TestIncludeLevelDeclarations:
         # The raise-site assert must pass; the session=None crash that follows
         # proves the rollup itself was reached (contrast the undeclared test
         # below, which never gets past the assert).
-        with request_scope(scope), pytest.raises(AttributeError):
-            await scoring_orchestration.on_app_deleted(None, 1, 2)  # ty: ignore[invalid-argument-type]
+        try:
+            with request_scope(scope), pytest.raises(AttributeError):
+                await scoring_orchestration.on_app_deleted(None, 1, 2)  # ty: ignore[invalid-argument-type]
+        finally:
+            # The observed set is module-global and feeds the sessionfinish
+            # stale-diff; a leaked synthetic key would mask a same-keyed stale
+            # declaration.
+            OBSERVED_ROLLUP_OPERATIONS.discard(("PATCH", "/widgets/{widget_id}"))
 
     async def test_undeclared_mode_behind_include_still_fails(self) -> None:
         widget_app = _not_found_raising_app(None)

@@ -131,8 +131,10 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     merged view lives on the route's include context, read here through the
     same iterator OpenAPI generation uses. Falls back to the route itself when
     there is no app or no context (e.g. synthetic test scopes) — a view that
-    can only under-report declarations, so honesty fails loud, never passes
-    falsely.
+    can only under-report declarations, so honesty fails loud. A router mounted
+    more than once shares one route object across contexts and the first match
+    wins, which could over-report for a less-declaring mount — an ADR 0033
+    residual; no router is mounted twice today.
     """
     if app is None:
         return route
@@ -146,29 +148,38 @@ def _declared_codes(view: Any, status: int) -> list[ErrorCode]:
     return getattr(view, "responses", {}).get(status, {}).get("x-error-codes", [])
 
 
+def operation_key(method: str, route: Any) -> tuple[str, str]:
+    """The one identity both sides of the reverse-direction rollup diff key on
+    (ADR 0033, #121): the route's own template, include prefix excluded. The
+    declared side (`operations_declaring`) and the observed side (the rollup
+    instrumentation in tests/_declaration_honesty.py) must build keys here or
+    the diff silently degrades.
+    """
+    return (method, route.path)
+
+
 def operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]:
-    """The (method, route-template) operations whose effective declaration
-    (include-level responses merged in) carries `code` — the declared side of
-    the reverse-direction rollup diff in tests/_declaration_honesty.py
-    (ADR 0033, #121). The template is the matched route's own path, prefix
-    excluded, matching the keys the rollup instrumentation records.
+    """The operations whose effective declaration (include-level responses
+    merged in) carries `code` — the declared side of the reverse-direction
+    rollup diff, keyed by `operation_key`.
     """
     status = _STATUS_BY_CODE[code]
     operations: set[tuple[str, str]] = set()
     for context in iter_route_contexts(app.routes):
         route = context.original_route
         if isinstance(route, APIRoute) and code in _declared_codes(context, status):
-            operations.update((method, route.path) for method in route.methods or ())
+            operations.update(operation_key(method, route) for method in route.methods or ())
     return operations
 
 
-def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None = None) -> None:
+def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None) -> None:
     """Declaration honesty asserted at the raise site instead of the response,
     for modes no test observes organically — applied suite-wide by the
     instrumentation in `tests/_declaration_honesty.py`. Checked against the
-    operation's effective declaration (include-level responses merged in) when
-    `app` is given. The failure message names the operation by its route
-    template, not the concrete request path.
+    operation's effective declaration (include-level responses merged in);
+    `app=None` (synthetic scopes) degrades to the route-only, under-reporting
+    view, so callers must state which view they mean. The failure message names
+    the operation by its route template, not the concrete request path.
     """
     route = _effective_route(app, route)
     declared_codes = _declared_codes(route, _STATUS_BY_CODE[code])
@@ -178,14 +189,13 @@ def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app:
     )
 
 
-def assert_declared_mode(
-    method: str, path: str, route: Any, status: int, body: bytes, app: FastAPI | None = None
-) -> None:
+def assert_declared_mode(method: str, path: str, route: Any, status: int, body: bytes, app: FastAPI | None) -> None:
     """Declaration honesty, applied suite-wide by the test shim in
     `tests/_declaration_honesty.py`. Raises `AssertionError` on an observed
     4xx whose mode is not declared on the operation — checked against the
-    operation's effective declaration (include-level responses merged in) when
-    `app` is given.
+    operation's effective declaration (include-level responses merged in);
+    `app=None` (synthetic scopes) degrades to the route-only, under-reporting
+    view, so callers must state which view they mean.
     """
     declared = getattr(_effective_route(app, route), "responses", {})
     assert status in declared, (

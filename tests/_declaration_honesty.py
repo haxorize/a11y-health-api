@@ -17,6 +17,7 @@ from a11y_health.core.error_contract import (
     ErrorCode,
     assert_declared_mode,
     assert_raisable_mode_declared,
+    operation_key,
     operations_declaring,
 )
 from a11y_health.services import score_snapshot
@@ -76,7 +77,7 @@ def _enforcing(raiser: Any) -> Any:
         route = scope.get("route") if scope is not None else None
         if route is not None:
             assert_raisable_mode_declared(scope["method"], route, ErrorCode.CONCURRENT_ROLLUP, app=scope.get("app"))
-            OBSERVED_ROLLUP_OPERATIONS.add((scope["method"], route.path))
+            OBSERVED_ROLLUP_OPERATIONS.add(operation_key(scope["method"], route))
         return await raiser(*args, **kwargs)
 
     return wrapper

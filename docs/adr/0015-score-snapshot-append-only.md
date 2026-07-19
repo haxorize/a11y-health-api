@@ -58,7 +58,12 @@ transaction fails as `ConcurrentRollupError` (409, retryable) via the integrity
 guard (ADR 0028). The mode lives in the `ERROR_MODES` table only — deliberately
 undeclared in per-operation `error_responses(...)`, since rollups run behind
 most mutating operations and a per-operation census would smear it across the
-contract.
+contract. *Superseded on this point by
+[ADR 0033](0033-rollup-race-declaration-enforced-at-raise-site.md) (#113): the
+mode is now declared on exactly the operations that trigger rollups, and
+raise-site enforcement plus the #121 stale-declaration diff keep that census
+honest in both directions without hand maintenance — the smearing this ADR
+feared.*
 App snapshots stay unconstrained — two Scan Runs may legitimately share an
 observation time, with latest selection breaking the tie on id.
 

@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -28,28 +28,44 @@ instrument_rollup_raisers()
 
 # The reverse direction of ADR 0033 (#121): an operation still declaring the
 # retryable concurrent_rollup mode after its rollup call is removed. Only a
-# full run observes every rollup-triggering variant, so any narrowing —
-# positional paths, --ignore, collect/setup-only, or deselection (-k/-m/--lf,
-# read from the reporter's own bookkeeping) — skips the diff rather than
-# failing operations the subset legitimately never drove. Residual: an
-# explicit `pytest tests` reads as narrowed and skips the check, erring
-# toward silence, never toward a spurious failure.
+# green full run observes every rollup-triggering variant, so any narrowing —
+# positional paths, --ignore, deselection, or a mode that executes no tests
+# (collect/setup-only, --fixtures) — skips the diff rather than failing
+# operations the subset never drove. Deselection and execution are tracked by
+# this conftest's own hooks below, not another plugin's bookkeeping. Residuals
+# (recorded in ADR 0033): narrowing the gate doesn't recognize would diff a
+# starved observed set, and an explicit `pytest tests` reads as narrowed and
+# skips the check.
 # Failure sets session.exitstatus instead of raising pytest.exit: wrap_session
 # returns the mutated value, and an exception here would abort the terminal
 # reporter's sessionfinish wrapper before it prints the run summary.
+_deselected = False
+_tests_ran = 0
+
+
+def pytest_deselected(items: Sequence[pytest.Item]) -> None:
+    global _deselected
+    if items:
+        _deselected = True
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    global _tests_ran
+    if report.when == "call":
+        _tests_ran += 1
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     config = session.config
     reporter = config.pluginmanager.get_plugin("terminalreporter")
     narrowed = (
         reporter is None
-        or reporter.stats.get("deselected")
+        or _deselected
+        or not _tests_ran
         or config.getoption("file_or_dir")
         or config.getoption("ignore")
         or config.getoption("ignore_glob")
-        or config.getoption("collectonly")
-        or config.getoption("setuponly")
-        or config.getoption("setupplan")
     )
     if exitstatus != 0 or narrowed:
         return

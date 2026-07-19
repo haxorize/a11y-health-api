@@ -36,8 +36,8 @@ async def list_latest_scores(
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
     if owner_id:
         # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
-        # owner's snapshot already aggregates its subtree, so expansion would
-        # double-count what the requested owner covers.
+        # owner's snapshot already aggregates everything it covers (an org unit's
+        # subtree, a brand's flat app set), so expansion would double-count.
         snapshots = snapshots.where(owner_col.in_(owner_id))
     stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
     # Keyset on the owner id alone: it is unique here (one row per owner), never

@@ -52,12 +52,22 @@ Known residuals:
   after its rollup call is removed goes unnoticed, leaving a stale retryable
   409 in the contract. The pinned list never enforced that direction either,
   and a full-suite observed-vs-declared diff would fail subset runs. *Closed
-  by #121*: the diff runs at `pytest_sessionfinish`, gated to full-suite runs
-  (any narrowing — positional paths, `--ignore`, deselection, collect/setup-
-  only — skips it), so subset runs stay unaffected. Its own residual: a run
-  narrowed in a way the gate doesn't recognize would diff a starved observed
-  set; the gate errs toward skipping, and an explicit `pytest tests` skips
-  the check rather than enforcing it.
+  by #121*: the diff runs at `pytest_sessionfinish`, gated to green full-suite
+  runs (any narrowing — positional paths, `--ignore`, deselection, or a mode
+  that executes no tests — skips it), so subset runs stay unaffected. Its own
+  residuals: the diff runs only on otherwise-green runs, so a stale
+  declaration hides behind an unrelated failure until the next green full run;
+  an explicit `pytest tests` reads as narrowed and skips the check; and
+  narrowing the gate doesn't recognize would diff a starved observed set and
+  fail spuriously — pytest-xdist (workers observe, the controller diffs) or a
+  multi-method route declaring the mode (only the driven method is observed)
+  would do the same, if either is ever introduced.
+- **Mount ambiguity**: `_effective_route` resolves a matched route to the
+  first include context sharing its route object, so a router mounted more
+  than once resolves every request to that first mount's merged declaration —
+  which could bless an undeclared operation on the other mount. The scope
+  cannot say which mount served the request; no router is mounted twice
+  today.
 - **Conditional-trigger depth**: a *future* operation whose rollup fires only
   on a conditional branch (like reassignment or reparenting) is enforced only
   when some test drives that branch — until its canary exists, a suite that

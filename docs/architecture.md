@@ -180,11 +180,13 @@ attribute-access calling convention the instrumentation relies on (#113; ADR
 
 The reverse direction — an operation still declaring `concurrent_rollup`
 after its rollup call is removed — is caught at session finish (#121): on a
-full-suite run, `conftest.py` diffs the operations declaring the mode
+green full-suite run, `conftest.py` diffs the operations declaring the mode
 (`error_contract.operations_declaring`) against those observed reaching a
 rollup and fails the run on any stale declaration. Narrowed runs (positional
-paths, `--ignore`, deselection, collect/setup-only) skip the diff, since a
-subset legitimately observes nothing for the operations it never drove.
+paths, `--ignore`, deselection, or a mode that executes no tests) skip the
+diff, since a subset legitimately observes nothing for the operations it
+never drove; a red run also skips it, so a stale declaration surfaces on the
+next green full run.
 
 ---
 
@@ -259,7 +261,12 @@ rollup shapes:
 `id`, per owner — owned by `services/_latest_snapshot.py` and shared by both
 rollup shapes and the `GET /scores/latest` read endpoint
 ([ADR 0023](adr/0023-scores-latest-read-endpoint.md)), so what a dashboard shows
-as "latest" can never disagree with what rollups aggregate.
+as "latest" can never disagree with what rollups aggregate. That endpoint's
+`owner_id` filter is exact-match, unlike the apps listing's
+descendant-expanding `org_unit_id`: a rollup owner's snapshot already
+aggregates everything it covers, so expansion would double-count. Any future
+owner-valued filter on a scores read should follow the exact-match side of
+that split.
 
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.

@@ -17,12 +17,31 @@ from a11y_health.core.error_contract import (
     ErrorCode,
     assert_declared_mode,
     assert_raisable_mode_declared,
+    operations_declaring,
 )
 from a11y_health.services import score_snapshot
 
 _current_request_scope: ContextVar[Any] = ContextVar("_current_request_scope", default=None)
 
 OBSERVED_ROLLUP_OPERATIONS: set[tuple[str, str]] = set()
+
+
+def stale_rollup_declaration_message(app: Any) -> str | None:
+    """The reverse direction of ADR 0033 (#121): the failure text naming every
+    operation that declares the retryable concurrent_rollup mode without any
+    test having observed it reach a rollup, or None when none is stale. Only
+    meaningful after a full suite run — conftest's sessionfinish hook owns that
+    gating.
+    """
+    stale = operations_declaring(app, ErrorCode.CONCURRENT_ROLLUP) - OBSERVED_ROLLUP_OPERATIONS
+    if not stale:
+        return None
+    operations = ", ".join(f"{method} {path}" for method, path in sorted(stale))
+    return (
+        f"stale concurrent_rollup declaration(s): {operations} — no test observed these "
+        "operations reaching a rollup; drop ErrorCode.CONCURRENT_ROLLUP from their "
+        "error_responses() or restore the rollup trigger"
+    )
 
 
 @contextmanager

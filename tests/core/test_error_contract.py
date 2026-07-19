@@ -13,6 +13,7 @@ from a11y_health.core.error_contract import (
     ErrorBody,
     ErrorCode,
     error_responses,
+    operations_declaring,
     register_error_handlers,
     response_for,
 )
@@ -33,7 +34,12 @@ from a11y_health.core.pagination import InvalidCursorError
 from a11y_health.main import app
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.services import scoring_orchestration
-from tests._declaration_honesty import OBSERVED_ROLLUP_OPERATIONS, DeclarationHonestyShim, request_scope
+from tests._declaration_honesty import (
+    OBSERVED_ROLLUP_OPERATIONS,
+    DeclarationHonestyShim,
+    request_scope,
+    stale_rollup_declaration_message,
+)
 from tests.factories import (
     assert_error,
     make_app_with_org_unit,
@@ -243,6 +249,49 @@ class TestIncludeLevelDeclarations:
 
         with pytest.raises(AssertionError, match="not declared"):
             await _get_widget_through_shim(widget_app)
+
+
+# The reverse direction of ADR 0033 (#121): a stale concurrent_rollup
+# declaration — the rollup call removed, the retryable 409 still declared — is
+# caught by a full-suite sessionfinish diff in conftest.py. These tests pin its
+# declared side: every operation whose effective declaration carries the code,
+# keyed (method, route template) like OBSERVED_ROLLUP_OPERATIONS.
+class TestOperationsDeclaring:
+    def test_route_level_declarer_is_enumerated_by_method_and_template(self) -> None:
+        widget_app = FastAPI()
+        router = APIRouter()
+
+        @router.patch("/widgets/{widget_id}", responses=error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        async def patch_widget(widget_id: int) -> None: ...
+
+        @router.get("/widgets/{widget_id}", responses=error_responses(ErrorCode.NOT_FOUND))
+        async def get_widget(widget_id: int) -> None: ...
+
+        widget_app.include_router(router, prefix="/api/v1")
+
+        assert operations_declaring(widget_app, ErrorCode.CONCURRENT_ROLLUP) == {("PATCH", "/widgets/{widget_id}")}
+
+    def test_include_level_declarer_is_enumerated(self) -> None:
+        # The declaration lives on the include, not route.responses (#120),
+        # and must still count as declared or every include-declared operation
+        # would read as stale.
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
+
+        assert operations_declaring(widget_app, ErrorCode.CONCURRENT_ROLLUP) == {("GET", "/widgets/{widget_id}")}
+
+    def test_stale_message_names_only_unobserved_declarers(self) -> None:
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        key = ("GET", "/widgets/{widget_id}")
+        OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        try:
+            message = stale_rollup_declaration_message(widget_app)
+            assert message is not None
+            assert "GET /widgets/{widget_id}" in message
+
+            OBSERVED_ROLLUP_OPERATIONS.add(key)
+            assert stale_rollup_declaration_message(widget_app) is None
+        finally:
+            OBSERVED_ROLLUP_OPERATIONS.discard(key)
 
 
 async def test_missing_app_produces_declared_coded_not_found(db_client: AsyncClient) -> None:

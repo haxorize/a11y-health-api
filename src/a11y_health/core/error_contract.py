@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.routing import iter_route_contexts
+from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import BaseModel, ValidationError
 from starlette.requests import Request
 
@@ -142,6 +142,26 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     return route
 
 
+def _declared_codes(view: Any, status: int) -> list[ErrorCode]:
+    return getattr(view, "responses", {}).get(status, {}).get("x-error-codes", [])
+
+
+def operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]:
+    """The (method, route-template) operations whose effective declaration
+    (include-level responses merged in) carries `code` — the declared side of
+    the reverse-direction rollup diff in tests/_declaration_honesty.py
+    (ADR 0033, #121). The template is the matched route's own path, prefix
+    excluded, matching the keys the rollup instrumentation records.
+    """
+    status = _STATUS_BY_CODE[code]
+    operations: set[tuple[str, str]] = set()
+    for context in iter_route_contexts(app.routes):
+        route = context.original_route
+        if isinstance(route, APIRoute) and code in _declared_codes(context, status):
+            operations.update((method, route.path) for method in route.methods or ())
+    return operations
+
+
 def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None = None) -> None:
     """Declaration honesty asserted at the raise site instead of the response,
     for modes no test observes organically — applied suite-wide by the
@@ -151,7 +171,7 @@ def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app:
     template, not the concrete request path.
     """
     route = _effective_route(app, route)
-    declared_codes = getattr(route, "responses", {}).get(_STATUS_BY_CODE[code], {}).get("x-error-codes", [])
+    declared_codes = _declared_codes(route, _STATUS_BY_CODE[code])
     assert code in declared_codes, (
         f"{method} {route.path} can produce error code {code} but does not declare it — "
         f"add ErrorCode.{code.name} to the operation's error_responses()"

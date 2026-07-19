@@ -178,6 +178,14 @@ operation is pinned by an explicit HTTP canary in
 attribute-access calling convention the instrumentation relies on (#113; ADR
 0033 records the residuals).
 
+The reverse direction — an operation still declaring `concurrent_rollup`
+after its rollup call is removed — is caught at session finish (#121): on a
+full-suite run, `conftest.py` diffs the operations declaring the mode
+(`error_contract.operations_declaring`) against those observed reaching a
+rollup and fails the run on any stale declaration. Narrowed runs (positional
+paths, `--ignore`, deselection, collect/setup-only) skip the diff, since a
+subset legitimately observes nothing for the operations it never drove.
+
 ---
 
 ## 2. The scoring & rollup model

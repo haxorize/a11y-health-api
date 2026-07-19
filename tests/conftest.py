@@ -13,13 +13,50 @@ from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
-from tests._declaration_honesty import DeclarationHonestyShim, instrument_rollup_raisers
+from tests._declaration_honesty import (
+    DeclarationHonestyShim,
+    instrument_rollup_raisers,
+    stale_rollup_declaration_message,
+)
 from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 _honest_transport = ASGITransport(app=DeclarationHonestyShim(app))
 instrument_rollup_raisers()
+
+
+# The reverse direction of ADR 0033 (#121): an operation still declaring the
+# retryable concurrent_rollup mode after its rollup call is removed. Only a
+# full run observes every rollup-triggering variant, so any narrowing —
+# positional paths, --ignore, collect/setup-only, or deselection (-k/-m/--lf,
+# read from the reporter's own bookkeeping) — skips the diff rather than
+# failing operations the subset legitimately never drove. Residual: an
+# explicit `pytest tests` reads as narrowed and skips the check, erring
+# toward silence, never toward a spurious failure.
+# Failure sets session.exitstatus instead of raising pytest.exit: wrap_session
+# returns the mutated value, and an exception here would abort the terminal
+# reporter's sessionfinish wrapper before it prints the run summary.
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    config = session.config
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    narrowed = (
+        reporter is None
+        or reporter.stats.get("deselected")
+        or config.getoption("file_or_dir")
+        or config.getoption("ignore")
+        or config.getoption("ignore_glob")
+        or config.getoption("collectonly")
+        or config.getoption("setuponly")
+        or config.getoption("setupplan")
+    )
+    if exitstatus != 0 or narrowed:
+        return
+    message = stale_rollup_declaration_message(app)
+    if message is not None:
+        reporter.write_sep("!", message, red=True)
+        session.exitstatus = 1
 
 
 @pytest.fixture(scope="session")

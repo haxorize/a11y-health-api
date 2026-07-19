@@ -83,6 +83,69 @@ async def test_served_owner_not_repeated_when_import_lands_mid_walk(db_session: 
     assert second.next_cursor is None
 
 
+async def test_list_latest_scores_owner_id_filter_returns_only_requested_owners(db_session: AsyncSession) -> None:
+    app_a = await make_app_with_org_unit(db_session, org_name="Org A", app_name="App A", slug="app-a")
+    app_b = await make_app_with_org_unit(db_session, org_name="Org B", app_name="App B", slug="app-b")
+    app_c = await make_app_with_org_unit(db_session, org_name="Org C", app_name="App C", slug="app-c")
+
+    snapshot_a = await make_score_snapshot(
+        db_session, app_id=app_a.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    snapshot_b = await make_score_snapshot(
+        db_session, app_id=app_b.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, app_id=app_c.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=[app_a.id, app_b.id])
+
+    assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, snapshot_a.id), (app_b.id, snapshot_b.id)}
+    assert page.next_cursor is None
+
+
+async def test_list_latest_scores_owner_id_filter_ignores_unknown_and_never_scored_ids(
+    db_session: AsyncSession,
+) -> None:
+    scored = await make_app_with_org_unit(db_session, org_name="Org A", app_name="App A", slug="app-a")
+    # exists but has no snapshots — filtering on it yields nothing, not an error
+    never_scored = await make_app_with_org_unit(db_session, org_name="Org B", app_name="App B", slug="app-b")
+
+    latest = await make_score_snapshot(
+        db_session, app_id=scored.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.APP, owner_id=[scored.id, never_scored.id, 999999]
+    )
+
+    assert [(s.app_id, s.id) for s in page.items] == [(scored.id, latest.id)]
+
+
+async def test_list_latest_scores_owner_id_filter_composes_with_cursor_pagination(db_session: AsyncSession) -> None:
+    app_a = await make_app_with_org_unit(db_session, org_name="Org A", app_name="App A", slug="app-a")
+    excluded = await make_app_with_org_unit(db_session, org_name="Org B", app_name="App B", slug="app-b")
+    app_c = await make_app_with_org_unit(db_session, org_name="Org C", app_name="App C", slug="app-c")
+
+    latest_a = await make_score_snapshot(
+        db_session, app_id=app_a.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, app_id=excluded.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+    latest_c = await make_score_snapshot(
+        db_session, app_id=app_c.id, score=0.6, snapshot_at=datetime(2026, 4, 1, tzinfo=UTC)
+    )
+
+    requested = [app_a.id, app_c.id]
+    first = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, limit=1)
+    assert [(s.app_id, s.id) for s in first.items] == [(app_a.id, latest_a.id)]
+    assert first.next_cursor is not None
+
+    # the excluded owner sits between the two requested ids in keyset order and must not surface mid-walk
+    second = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, cursor=first.next_cursor, limit=1
+    )
+    assert [(s.app_id, s.id) for s in second.items] == [(app_c.id, latest_c.id)]
+    assert second.next_cursor is None
+
+
 async def test_list_latest_scores_filters_by_owner_type(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     app = await make_app_with_org_unit(db_session, org_name="Org A", slug="app-a", brand_id=brand.id)

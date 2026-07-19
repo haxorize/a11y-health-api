@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
@@ -15,6 +17,9 @@ async def list_latest_scores(
     db: DbSession,
     owner_type: ScoreSnapshotOwnerType,
     pagination: PageParams,
+    owner_id: Annotated[list[int] | None, Query()] = None,
 ) -> Page[ScoreSnapshotRead]:
-    page = await score_service.list_latest_scores(db, owner_type, cursor=pagination.cursor, limit=pagination.limit)
+    page = await score_service.list_latest_scores(
+        db, owner_type, owner_id=owner_id, cursor=pagination.cursor, limit=pagination.limit
+    )
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)

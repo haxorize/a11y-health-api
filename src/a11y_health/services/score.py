@@ -28,14 +28,18 @@ async def list_latest_scores(
     session: AsyncSession,
     owner_type: ScoreSnapshotOwnerType,
     *,
+    owner_id: list[int] | None = None,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
     owner_col = OWNER_ID_COLUMNS[owner_type]
-    stmt = select_latest_snapshots(
-        select(ScoreSnapshot).where(owner_col.is_not(None)),
-        partition_on=[owner_col],
-    )
+    snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
+    if owner_id:
+        # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
+        # owner's snapshot already aggregates its subtree, so expansion would
+        # double-count what the requested owner covers.
+        snapshots = snapshots.where(owner_col.in_(owner_id))
+    stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
     # Keyset on the owner id alone: it is unique here (one row per owner), never
     # NULL (the filter above), and an owner's position can't move when the latest
     # view recomputes between requests. Keying on snapshot_at — or adding the

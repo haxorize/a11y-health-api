@@ -14,6 +14,7 @@ from typing import Any, NamedTuple
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.routing import iter_route_contexts
 from pydantic import BaseModel, ValidationError
 from starlette.requests import Request
 
@@ -123,12 +124,33 @@ def error_responses(*codes: ErrorCode) -> dict[int | str, dict[str, Any]]:
 FRAMEWORK_STATUSES: frozenset[int] = frozenset({405, 422})
 
 
-def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode) -> None:
+def _effective_route(app: FastAPI | None, route: Any) -> Any:
+    """Resolve a matched route to the declaration view the OpenAPI document is
+    generated from. FastAPI's non-copying include keeps
+    `include_router(responses=...)` declarations off `route.responses`; the
+    merged view lives on the route's include context, read here through the
+    same iterator OpenAPI generation uses. Falls back to the route itself when
+    there is no app or no context (e.g. synthetic test scopes) — a view that
+    can only under-report declarations, so honesty fails loud, never passes
+    falsely.
+    """
+    if app is None:
+        return route
+    for context in iter_route_contexts(app.routes):
+        if context.original_route is route:
+            return context
+    return route
+
+
+def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None = None) -> None:
     """Declaration honesty asserted at the raise site instead of the response,
     for modes no test observes organically — applied suite-wide by the
-    instrumentation in `tests/_declaration_honesty.py`. The failure message
-    names the operation by its route template, not the concrete request path.
+    instrumentation in `tests/_declaration_honesty.py`. Checked against the
+    operation's effective declaration (include-level responses merged in) when
+    `app` is given. The failure message names the operation by its route
+    template, not the concrete request path.
     """
+    route = _effective_route(app, route)
     declared_codes = getattr(route, "responses", {}).get(_STATUS_BY_CODE[code], {}).get("x-error-codes", [])
     assert code in declared_codes, (
         f"{method} {route.path} can produce error code {code} but does not declare it — "
@@ -136,12 +158,16 @@ def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode) -> N
     )
 
 
-def assert_declared_mode(method: str, path: str, route: Any, status: int, body: bytes) -> None:
+def assert_declared_mode(
+    method: str, path: str, route: Any, status: int, body: bytes, app: FastAPI | None = None
+) -> None:
     """Declaration honesty, applied suite-wide by the test shim in
     `tests/_declaration_honesty.py`. Raises `AssertionError` on an observed
-    4xx whose mode is not declared on the operation.
+    4xx whose mode is not declared on the operation — checked against the
+    operation's effective declaration (include-level responses merged in) when
+    `app` is given.
     """
-    declared = getattr(route, "responses", {})
+    declared = getattr(_effective_route(app, route), "responses", {})
     assert status in declared, (
         f"{method} {path} returned {status}, which is not declared on the "
         f"operation — declare the mode via error_responses()"

@@ -3,11 +3,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from httpx import AsyncClient
+from fastapi import APIRouter, FastAPI
+from httpx import ASGITransport, AsyncClient, Response
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.error_contract import ERROR_MODES, ErrorBody, ErrorCode, error_responses, response_for
+from a11y_health.core.error_contract import (
+    ERROR_MODES,
+    ErrorBody,
+    ErrorCode,
+    error_responses,
+    register_error_handlers,
+    response_for,
+)
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     ConcurrentRollupError,
@@ -25,8 +33,9 @@ from a11y_health.core.pagination import InvalidCursorError
 from a11y_health.main import app
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.services import scoring_orchestration
-from tests._declaration_honesty import OBSERVED_ROLLUP_OPERATIONS, request_scope
+from tests._declaration_honesty import OBSERVED_ROLLUP_OPERATIONS, DeclarationHonestyShim, request_scope
 from tests.factories import (
+    assert_error,
     make_app_with_org_unit,
     make_org_unit,
     make_page_result,
@@ -183,6 +192,57 @@ class TestRollupObservationCanaries:
         response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")
         assert response.status_code == 204
         assert key in OBSERVED_ROLLUP_OPERATIONS
+
+
+def _not_found_raising_app(include_responses: dict[int | str, dict[str, object]] | None) -> FastAPI:
+    widget_app = FastAPI()
+    register_error_handlers(widget_app)
+    router = APIRouter()
+
+    @router.get("/widgets/{widget_id}")
+    async def get_widget(widget_id: int) -> None:
+        raise NotFoundError("Widget", widget_id)
+
+    widget_app.include_router(router, prefix="/api/v1", responses=include_responses)
+    return widget_app
+
+
+async def _get_widget_through_shim(widget_app: FastAPI) -> Response:
+    transport = ASGITransport(app=DeclarationHonestyShim(widget_app))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get("/api/v1/widgets/1")
+
+
+class TestIncludeLevelDeclarations:
+    # FastAPI's non-copying include keeps include_router(responses=...)
+    # declarations off the matched route object, so honesty must read the
+    # effective merged view, not route.responses (#120).
+    async def test_mode_declared_only_at_include_level_is_honest(self) -> None:
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.NOT_FOUND))
+
+        response = await _get_widget_through_shim(widget_app)
+        assert_error(response, 404, "not_found")
+
+    async def test_raisable_mode_declared_only_at_include_level_is_honest(self) -> None:
+        widget_app = FastAPI()
+        router = APIRouter()
+
+        @router.patch("/widgets/{widget_id}")
+        async def patch_widget(widget_id: int) -> None: ...
+
+        widget_app.include_router(router, prefix="/api/v1", responses=error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        scope = {"method": "PATCH", "path": "/api/v1/widgets/1", "route": router.routes[0], "app": widget_app}
+        # The raise-site assert must pass; the session=None crash that follows
+        # proves the rollup itself was reached (contrast the undeclared test
+        # below, which never gets past the assert).
+        with request_scope(scope), pytest.raises(AttributeError):
+            await scoring_orchestration.on_app_deleted(None, 1, 2)  # ty: ignore[invalid-argument-type]
+
+    async def test_undeclared_mode_behind_include_still_fails(self) -> None:
+        widget_app = _not_found_raising_app(None)
+
+        with pytest.raises(AssertionError, match="not declared"):
+            await _get_widget_through_shim(widget_app)
 
 
 async def test_missing_app_produces_declared_coded_not_found(db_client: AsyncClient) -> None:

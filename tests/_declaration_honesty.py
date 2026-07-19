@@ -56,7 +56,7 @@ def _enforcing(raiser: Any) -> Any:
         scope = _current_request_scope.get()
         route = scope.get("route") if scope is not None else None
         if route is not None:
-            assert_raisable_mode_declared(scope["method"], route, ErrorCode.CONCURRENT_ROLLUP)
+            assert_raisable_mode_declared(scope["method"], route, ErrorCode.CONCURRENT_ROLLUP, app=scope.get("app"))
             OBSERVED_ROLLUP_OPERATIONS.add((scope["method"], route.path))
         return await raiser(*args, **kwargs)
 
@@ -81,7 +81,9 @@ class DeclarationHonestyShim:
             elif message["type"] == "http.response.body" and pending_status is not None:
                 body += message.get("body", b"")
                 if not message.get("more_body", False):
-                    assert_declared_mode(scope["method"], scope["path"], route, pending_status, body)
+                    assert_declared_mode(
+                        scope["method"], scope["path"], route, pending_status, body, app=scope.get("app")
+                    )
                     pending_status = None
                     body = b""
             await send(message)

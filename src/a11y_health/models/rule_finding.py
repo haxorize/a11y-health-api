@@ -40,7 +40,7 @@ class _CompactClassifications(TypeDecorator[list[dict[str, str]]]):
                 logger.warning("Dropping invalid classification %r from a rule_finding read", entry)
                 continue
             # Re-dump, don't pass through: a raw-SQL entry can validate yet
-            # carry null members or extra keys the compact shape excludes.
+            # carry null members the compact shape excludes.
             kept.append(classification.stored())
         return kept
 

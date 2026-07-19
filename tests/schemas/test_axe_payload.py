@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from a11y_health.schemas._tag_parsing import Classification
+from a11y_health.models.classification import Classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from tests.factories import make_axe_payload, make_parsed_axe_payload, make_violation
 

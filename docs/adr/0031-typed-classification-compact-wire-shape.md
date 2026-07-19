@@ -6,3 +6,7 @@
 
 - One canonical Classification shape everywhere: stored JSONB, GIN containment filter targets, and the wire all agree (`Classification.stored()` and the `_omit_none_members` serializer in `schemas/_tag_parsing.py`).
 - Out-of-vocabulary values in the JSONB column (manual backfill, a future standard) now fail read-side validation instead of passing through — write-side enforcement is a tracked follow-up.
+
+---
+
+**Amended 2026-07-18 (#114):** the follow-up landed, and it changed both halves of the second consequence. The compact shape is now a column guarantee — `_CompactClassifications` (a `TypeDecorator` in `models/rule_finding.py`) validates and dumps every bound value, covering writers and the filter's GIN containment targets alike — and an out-of-vocabulary entry written past that guard (raw-SQL backfill) is dropped from reads with a warning instead of failing the page that renders it, matching the codebase's tolerant-read style (unknown tags dropped at ingest, out-of-shape criteria sorting last). `Classification` itself moved to `models/classification.py`, a layer-neutral leaf, so the column type never imports from schemas; `schemas/_tag_parsing.py` still owns parsing and the token vocabulary.

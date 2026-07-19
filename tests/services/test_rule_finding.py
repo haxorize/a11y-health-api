@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
+from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
 from a11y_health.services import rule_finding as rule_finding_service
 from tests.factories import (
@@ -191,3 +194,28 @@ async def test_filter_options_sort_malformed_criterion_last(db_session: AsyncSes
     options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
 
     assert options.wcag_criteria == ["1.4.3", "not-a-criterion"]
+
+
+async def test_planted_out_of_vocabulary_classification_is_dropped_from_reads_not_fatal(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    # A raw-SQL backfill bypasses the column's bind-time guard; the read must
+    # drop the unknown entry (with a warning) instead of 500ing the page (#106).
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    finding = await make_rule_finding(db_session, page_result_id=page.id)
+    await db_session.execute(
+        text("UPDATE rule_finding SET classifications = CAST(:val AS jsonb) WHERE id = :id"),
+        {
+            "val": '[{"standard": "wcag", "version": "2.1", "level": "AA"}, {"standard": "section508"}]',
+            "id": finding.id,
+        },
+    )
+    scan_run_id = scan_run.id
+    db_session.expire_all()
+
+    with caplog.at_level(logging.WARNING):
+        result = await rule_finding_service.list_findings(db_session, scan_run_id)
+
+    assert result.items[0].classifications == [Classification(standard="wcag", version="2.1", level="AA")]
+    assert "section508" in caplog.text

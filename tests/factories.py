@@ -166,7 +166,7 @@ async def make_rule_finding(
     impact: Impact = Impact.SERIOUS,
     category: Category = Category.COLOR,
     wcag_criteria: list[str] | None = None,
-    classifications: list[dict[str, str]] | None = None,
+    classifications: list[dict[str, Any]] | None = None,
     tags: list[str] | None = None,
 ) -> RuleFinding:
     rf = RuleFinding(

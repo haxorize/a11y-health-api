@@ -197,11 +197,11 @@ async def test_filter_options_sort_malformed_criterion_last(db_session: AsyncSes
     assert options.wcag_criteria == ["1.4.3", "not-a-criterion"]
 
 
-async def test_planted_out_of_vocabulary_classification_is_dropped_from_reads_not_fatal(
+async def test_planted_invalid_classification_is_dropped_from_reads_not_fatal(
     db_session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
     # A raw-SQL backfill bypasses the column's bind-time guard; the read must
-    # drop the unknown entry (with a warning) instead of 500ing the page (#106).
+    # drop the invalid entry (with a warning) instead of 500ing the page (#106).
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     finding = await make_rule_finding(db_session, page_result_id=page.id)

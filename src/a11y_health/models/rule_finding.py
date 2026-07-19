@@ -37,7 +37,7 @@ class _CompactClassifications(TypeDecorator[list[dict[str, str]]]):
             try:
                 classification = Classification.model_validate(entry)
             except ValidationError:
-                logger.warning("Dropping out-of-vocabulary classification %r from a rule_finding read", entry)
+                logger.warning("Dropping invalid classification %r from a rule_finding read", entry)
                 continue
             # Re-dump, don't pass through: a raw-SQL entry can validate yet
             # carry null members or extra keys the compact shape excludes.

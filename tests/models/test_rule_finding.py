@@ -8,7 +8,7 @@ from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from tests.factories import make_page_result, make_rule_finding, make_scan_run_with_parents
 
 
-async def test_out_of_vocabulary_classification_is_refused_at_flush(db_session: AsyncSession) -> None:
+async def test_unknown_standard_classification_is_refused_at_flush(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
 

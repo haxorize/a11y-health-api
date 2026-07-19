@@ -75,7 +75,7 @@
 - An **App** has zero or more **Scan Runs**
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed) and one or more **Page Results**
 - A **Page Result** has zero or more **Rule Findings**, and exactly one **Page Health** once its **Scan Run** completes — none while the run is Pending, since health is assigned at the Pending → Completed transition
-- A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), one or more **Classifications**, and zero or more **WCAG Criteria**
+- A **Rule Finding** has exactly one **Finding Type** (Violation or Incomplete), zero or more **Node Findings** (in practice, violations always have at least one), one or more **Classifications** (as stored; a degraded read drops invalid entries and can serve fewer, even zero), and zero or more **WCAG Criteria**
 - A **Score Snapshot** belongs to exactly one **Owner**: an **App** (linked to a **Scan Run**), an **Org Unit** (recomputed via **Rollup**), or a **Brand** (recomputed via **Brand Rollup**)
 - Deleting an **App** cascades to its **Scan Runs** and **Score Snapshots**; deleting an **Org Unit** that has dependents is refused (**Dependents Guard**)
 

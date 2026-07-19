@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.main import app
 from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from tests.factories import (
     make_node_finding,
     make_page_result,
@@ -27,6 +28,8 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["impact"] == "serious"
     assert finding["category"] == "color"
     assert finding["wcag_criteria"] == ["1.4.3"]
+    # Deliberately literal — the wire-shape pin for a wcag Classification, like the
+    # best-practice pin below; deriving it would tie the assert to the mint under test.
     assert finding["classifications"] == [{"standard": "wcag", "version": "2.0", "level": "AA"}]
     assert finding["node_finding_count"] == 1
 
@@ -54,7 +57,7 @@ async def test_best_practice_classification_serializes_without_null_members(
     scan_run = await make_scan_run_with_parents(db_session)
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
     rule_finding = await make_rule_finding(
-        db_session, page_result_id=page_result.id, classifications=[{"standard": "best-practice"}]
+        db_session, page_result_id=page_result.id, classifications=[token_to_stored_classification("best-practice")]
     )
     await make_node_finding(db_session, rule_finding_id=rule_finding.id)
 
@@ -270,13 +273,13 @@ async def test_filter_by_classification(db_client: AsyncClient, db_session: Asyn
         db_session,
         page_result_id=page.id,
         rule_id="color-contrast",
-        classifications=[{"standard": "wcag", "version": "2.0", "level": "AA"}],
+        classifications=[token_to_stored_classification("wcag2aa")],
     )
     await make_rule_finding(
         db_session,
         page_result_id=page.id,
         rule_id="skip-link",
-        classifications=[{"standard": "best-practice"}],
+        classifications=[token_to_stored_classification("best-practice")],
     )
 
     response = await db_client.get(
@@ -296,19 +299,19 @@ async def test_filter_by_classification_multi_select(db_client: AsyncClient, db_
         db_session,
         page_result_id=page.id,
         rule_id="color-contrast",
-        classifications=[{"standard": "wcag", "version": "2.0", "level": "AA"}],
+        classifications=[token_to_stored_classification("wcag2aa")],
     )
     await make_rule_finding(
         db_session,
         page_result_id=page.id,
         rule_id="skip-link",
-        classifications=[{"standard": "best-practice"}],
+        classifications=[token_to_stored_classification("best-practice")],
     )
     await make_rule_finding(
         db_session,
         page_result_id=page.id,
         rule_id="aria-roles",
-        classifications=[{"standard": "wcag", "version": "2.1", "level": "AA"}],
+        classifications=[token_to_stored_classification("wcag21aa")],
     )
 
     response = await db_client.get(
@@ -331,8 +334,8 @@ async def test_filter_by_classification_multi(db_client: AsyncClient, db_session
         page_result_id=page.id,
         rule_id="color-contrast",
         classifications=[
-            {"standard": "wcag", "version": "2.0", "level": "AA"},
-            {"standard": "wcag", "version": "2.1", "level": "AA"},
+            token_to_stored_classification("wcag2aa"),
+            token_to_stored_classification("wcag21aa"),
         ],
     )
 

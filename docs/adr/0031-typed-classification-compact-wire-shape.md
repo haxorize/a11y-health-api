@@ -4,7 +4,7 @@
 
 ## Consequences
 
-- One canonical Classification shape everywhere: stored JSONB, GIN containment filter targets, and the wire all agree (`Classification.stored()` and the `_omit_none_members` serializer in `schemas/_tag_parsing.py`).
+- One canonical Classification shape everywhere: stored JSONB, GIN containment filter targets, and the wire all agree (`Classification.stored()` and the `_omit_none_members` serializer in `models/classification.py`).
 - Out-of-vocabulary values in the JSONB column (manual backfill, a future standard) now fail read-side validation instead of passing through — write-side enforcement is a tracked follow-up.
 
 ---

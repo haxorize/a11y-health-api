@@ -16,6 +16,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services.score_snapshot import build_snapshot
@@ -169,6 +170,13 @@ async def make_rule_finding(
     classifications: list[dict[str, Any]] | None = None,
     tags: list[str] | None = None,
 ) -> RuleFinding:
+    # `is None` rather than `or`, so an explicit empty list stays empty.
+    if wcag_criteria is None:
+        wcag_criteria = ["1.4.3"]
+    if classifications is None:
+        classifications = [token_to_stored_classification("wcag2aa")]
+    if tags is None:
+        tags = ["wcag2aa", "cat.color"]
     rf = RuleFinding(
         page_result_id=page_result_id,
         rule_id=rule_id,
@@ -178,9 +186,9 @@ async def make_rule_finding(
         help=f"{rule_id} help",
         help_url=f"https://example.com/{rule_id}",
         category=category,
-        wcag_criteria=wcag_criteria or ["1.4.3"],
-        classifications=classifications or [{"standard": "wcag", "version": "2.0", "level": "AA"}],
-        tags=tags or ["wcag2aa", "cat.color"],
+        wcag_criteria=wcag_criteria,
+        classifications=classifications,
+        tags=tags,
     )
     db.add(rf)
     await db.flush()
@@ -246,14 +254,14 @@ async def app_snapshots(db: AsyncSession, app_id: int) -> list[ScoreSnapshot]:
     return await _all_snapshots(db, ScoreSnapshot.app_id, app_id)
 
 
-def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
+def make_violation(rule_id: str, impact: str, *, tags: list[str] | None = None) -> dict[str, Any]:
     return {
         "id": rule_id,
         "impact": impact,
         "description": f"{rule_id} desc",
         "help": f"{rule_id} help",
         "helpUrl": f"https://example.com/{rule_id}",
-        "tags": ["best-practice", "cat.color"],
+        "tags": tags if tags is not None else ["best-practice", "cat.color"],
         "nodes": [
             {
                 "html": "<div></div>",

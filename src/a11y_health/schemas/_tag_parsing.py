@@ -55,11 +55,9 @@ _TOKEN_TO_CLASSIFICATION: dict[str, Classification] = {
 if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
     raise RuntimeError("ClassificationToken and _TOKEN_TO_CLASSIFICATION have drifted")
 
-_TOKEN_TO_STORED: dict[str, dict[str, str]] = {t: c.stored() for t, c in _TOKEN_TO_CLASSIFICATION.items()}
-
 
 def token_to_stored_classification(token: ClassificationToken) -> dict[str, str]:
-    return _TOKEN_TO_STORED[token]
+    return _TOKEN_TO_CLASSIFICATION[token].stored()
 
 
 def extract_classifications(tags: list[str]) -> list[Classification]:

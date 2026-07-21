@@ -310,7 +310,7 @@ class TestScoringModuleImports:
     @pytest.mark.parametrize(
         ("module_name", "shared_helpers"),
         [
-            ("score", {"_latest_snapshot"}),
+            ("score", {"_latest_snapshot", "_org_subtree"}),
             ("score_snapshot", {"_scoring_vocabulary", "_latest_snapshot"}),
         ],
     )

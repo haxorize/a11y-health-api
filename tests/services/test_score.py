@@ -1,13 +1,16 @@
 from datetime import UTC, datetime
 
+import pytest
 from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import score as score_service
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
     latest_brand_snapshot,
+    make_app,
     make_app_with_org_unit,
     make_brand,
     make_org_unit,
@@ -184,3 +187,109 @@ async def test_list_latest_scores_filters_by_owner_type(db_session: AsyncSession
     ]:
         page = await score_service.list_latest_scores(db_session, owner_type)
         assert [s.id for s in page.items] == [expected.id]
+
+
+async def test_under_org_unit_scope_serves_apps_across_the_whole_subtree(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+
+    own_app = await make_app(db_session, name="Own", slug="own", org_unit_id=scoped.id)
+    child_app = await make_app(db_session, name="Deep", slug="deep", org_unit_id=child.id)
+    outside_app = await make_app(db_session, name="Outside", slug="outside", org_unit_id=sibling.id)
+
+    own_latest = await make_score_snapshot(
+        db_session, app_id=own_app.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    child_latest = await make_score_snapshot(
+        db_session, app_id=child_app.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=outside_app.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=scoped.id)
+
+    assert {(s.app_id, s.id) for s in page.items} == {(own_app.id, own_latest.id), (child_app.id, child_latest.id)}
+
+
+async def test_under_org_unit_scope_serves_strict_descendant_units_not_the_unit_itself(
+    db_session: AsyncSession,
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+    grandchild = await make_org_unit(db_session, name="Grandchild", parent_id=child.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+
+    # the scoped unit's own snapshot must NOT appear — "under" is strictly below
+    await make_score_snapshot(
+        db_session, org_unit_id=scoped.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    child_latest = await make_score_snapshot(
+        db_session, org_unit_id=child.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    grandchild_latest = await make_score_snapshot(
+        db_session, org_unit_id=grandchild.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, org_unit_id=sibling.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=scoped.id
+    )
+
+    assert {(s.org_unit_id, s.id) for s in page.items} == {
+        (child.id, child_latest.id),
+        (grandchild.id, grandchild_latest.id),
+    }
+
+
+async def test_under_org_unit_scope_serves_no_brand_owners(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    brand = await make_brand(db_session)
+    # the brand even owns an app inside the subtree — still not "under" the unit:
+    # brands have no org-tree placement, so the scoped brand-owner set is empty
+    await make_app(db_session, name="In Subtree", slug="in-subtree", brand_id=brand.id, org_unit_id=scoped.id)
+    await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, under_org_unit_id=scoped.id)
+
+    assert page.items == []
+
+
+async def test_under_org_unit_scope_intersects_with_owner_id_filter(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+
+    inside_requested = await make_app(db_session, name="In R", slug="in-r", org_unit_id=scoped.id)
+    inside_unrequested = await make_app(db_session, name="In U", slug="in-u", org_unit_id=scoped.id)
+    outside_requested = await make_app(db_session, name="Out R", slug="out-r", org_unit_id=sibling.id)
+
+    kept = await make_score_snapshot(
+        db_session, app_id=inside_requested.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=inside_unrequested.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=outside_requested.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session,
+        ScoreSnapshotOwnerType.APP,
+        owner_id=[inside_requested.id, outside_requested.id],
+        under_org_unit_id=scoped.id,
+    )
+
+    assert [(s.app_id, s.id) for s in page.items] == [(inside_requested.id, kept.id)]
+
+
+async def test_under_org_unit_scope_requires_the_unit_to_exist(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError):
+        await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=999999)

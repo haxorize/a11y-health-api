@@ -12,14 +12,20 @@ from a11y_health.services import score as score_service
 router = APIRouter(prefix="/scores", tags=["scores"])
 
 
-@router.get("/latest", responses=error_responses(ErrorCode.INVALID_CURSOR))
+@router.get("/latest", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_CURSOR))
 async def list_latest_scores(
     db: DbSession,
     owner_type: ScoreSnapshotOwnerType,
     pagination: PageParams,
     owner_id: Annotated[list[int] | None, Query()] = None,
+    under_org_unit_id: int | None = None,
 ) -> Page[ScoreSnapshotRead]:
     page = await score_service.list_latest_scores(
-        db, owner_type, owner_id=owner_id, cursor=pagination.cursor, limit=pagination.limit
+        db,
+        owner_type,
+        owner_id=owner_id,
+        under_org_unit_id=under_org_unit_id,
+        cursor=pagination.cursor,
+        limit=pagination.limit,
     )
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)

@@ -266,7 +266,13 @@ as "latest" can never disagree with what rollups aggregate. That endpoint's
 descendant-expanding `org_unit_id`: a rollup owner's snapshot already
 aggregates everything it covers, so expansion would double-count. Any future
 owner-valued filter on a scores read should follow the exact-match side of
-that split.
+that split. The `under_org_unit_id` scope is the sanctioned other side — it
+names a *place* in the org tree, not owners, and resolves per owner type:
+`app` serves apps placed anywhere in the unit's subtree (the unit's own apps
+included, matching the apps listing), `org_unit` serves the units strictly
+below it (the named unit is not "under" itself, and its own rollup already
+aggregates the subtree), and `brand` serves the empty set (brands have no
+org-tree placement). It intersects with `owner_id` when both are sent.
 
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.

@@ -101,16 +101,6 @@ async def get_descendants(session: AsyncSession, org_unit_id: int) -> list[OrgUn
     return list(result.scalars().all())
 
 
-async def get_descendant_ids(session: AsyncSession, org_unit_ids: list[int]) -> set[int]:
-    if not org_unit_ids:
-        return set()
-    cte = select(OrgUnit.id).where(OrgUnit.id.in_(org_unit_ids)).cte(name="subtree", recursive=True)
-    child = aliased(OrgUnit)
-    cte = cte.union_all(select(child.id).where(child.parent_id == cte.c.id))
-    result = await session.execute(select(cte.c.id))
-    return {row[0] for row in result}
-
-
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
     # One instance for all three dependent FKs: guard raises at most once per call.

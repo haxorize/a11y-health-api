@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_app_with_org_unit, make_brand, make_org_unit, make_score_snapshot
+from tests.factories import make_app, make_app_with_org_unit, make_brand, make_org_unit, make_score_snapshot
 
 
 async def test_list_app_scores_ordered_chronologically(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -206,3 +206,30 @@ async def test_list_latest_scores_owner_id_params_decode_to_filter(
 async def test_list_latest_scores_invalid_owner_type(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "fleet"})
     assert response.status_code == 422
+
+
+async def test_list_latest_scores_under_org_unit_id_param_decodes_to_subtree_scope(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+    inside = await make_app(db_session, name="Inside", slug="inside", org_unit_id=scoped.id)
+    outside = await make_app(db_session, name="Outside", slug="outside", org_unit_id=sibling.id)
+
+    kept = await make_score_snapshot(
+        db_session, app_id=inside.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, app_id=outside.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    response = await db_client.get(
+        "/api/v1/scores/latest", params={"owner_type": "app", "under_org_unit_id": scoped.id}
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [kept.id]
+
+
+async def test_list_latest_scores_unknown_under_org_unit_id_is_404(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "app", "under_org_unit_id": 999999})
+    assert response.status_code == 404

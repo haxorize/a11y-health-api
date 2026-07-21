@@ -10,7 +10,7 @@ from a11y_health.models.brand import Brand
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import scoring_orchestration
-from a11y_health.services.org_unit import get_descendant_ids
+from a11y_health.services._org_subtree import get_descendant_ids
 
 
 async def list_apps(

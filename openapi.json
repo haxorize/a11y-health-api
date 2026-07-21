@@ -3368,6 +3368,22 @@
           },
           {
             "in": "query",
+            "name": "under_org_unit_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Under Org Unit Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -3417,6 +3433,19 @@
             "description": "Domain error: invalid_cursor",
             "x-error-codes": [
               "invalid_cursor"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Domain error: not_found",
+            "x-error-codes": [
+              "not_found"
             ]
           },
           "422": {

@@ -11,7 +11,7 @@ See `docs/architecture.md` ("The scoring & rollup model").
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
@@ -22,6 +22,7 @@ from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.score_snapshot import OWNER_ID_COLUMNS, ScoreSnapshot
 from a11y_health.services._latest_snapshot import select_latest_snapshots
+from a11y_health.services._org_subtree import get_descendant_ids
 
 
 async def list_latest_scores(
@@ -29,11 +30,27 @@ async def list_latest_scores(
     owner_type: ScoreSnapshotOwnerType,
     *,
     owner_id: list[int] | None = None,
+    under_org_unit_id: int | None = None,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
     owner_col = OWNER_ID_COLUMNS[owner_type]
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
+    if under_org_unit_id is not None:
+        await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
+        subtree = await get_descendant_ids(session, [under_org_unit_id])
+        if owner_type is ScoreSnapshotOwnerType.APP:
+            # An app placed anywhere in the subtree — including on the named unit
+            # itself — is "under" it, matching list_apps' org_unit_id expansion.
+            snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id.in_(subtree))))
+        elif owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
+            # Strictly below: the named unit is not under itself, and its own
+            # rollup already aggregates the subtree being scoped to.
+            snapshots = snapshots.where(owner_col.in_(subtree - {under_org_unit_id}))
+        else:
+            # Brands have no org-tree placement, so no brand owner is ever
+            # "under" an org unit — the honest scoped set is empty, not "all".
+            snapshots = snapshots.where(false())
     if owner_id:
         # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
         # owner's snapshot already aggregates everything it covers (an org unit's

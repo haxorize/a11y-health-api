@@ -12,6 +12,7 @@ from a11y_health.core.exceptions import (
 from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
+from a11y_health.services._org_subtree import get_descendant_ids
 from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
 
 
@@ -201,7 +202,7 @@ async def test_get_descendants_not_found(db_session: AsyncSession) -> None:
 
 async def test_get_descendant_ids_leaf_returns_self(db_session: AsyncSession) -> None:
     leaf = await make_org_unit(db_session, name="Leaf")
-    result = await org_unit_service.get_descendant_ids(db_session, [leaf.id])
+    result = await get_descendant_ids(db_session, [leaf.id])
     assert result == {leaf.id}
 
 
@@ -210,7 +211,7 @@ async def test_get_descendant_ids_deep_hierarchy(db_session: AsyncSession) -> No
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
     great_grandchild = await make_org_unit(db_session, name="Clinic", parent_id=grandchild.id)
-    result = await org_unit_service.get_descendant_ids(db_session, [root.id])
+    result = await get_descendant_ids(db_session, [root.id])
     assert result == {root.id, child.id, grandchild.id, great_grandchild.id}
 
 
@@ -219,12 +220,12 @@ async def test_get_descendant_ids_multiple_inputs_with_overlap(db_session: Async
     branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
     leaf_a = await make_org_unit(db_session, name="Primary Care", parent_id=branch_a.id)
-    result = await org_unit_service.get_descendant_ids(db_session, [branch_a.id, branch_b.id])
+    result = await get_descendant_ids(db_session, [branch_a.id, branch_b.id])
     assert result == {branch_a.id, branch_b.id, leaf_a.id}
 
 
 async def test_get_descendant_ids_empty_input(db_session: AsyncSession) -> None:
-    result = await org_unit_service.get_descendant_ids(db_session, [])
+    result = await get_descendant_ids(db_session, [])
     assert result == set()
 
 

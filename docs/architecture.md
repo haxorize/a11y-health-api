@@ -375,7 +375,7 @@ Every **unbounded** list endpoint is **keyset (cursor) paginated** through one
 shared function, `paginate()` in `core/pagination.py` —
 [ADR 0017](adr/0017-keyset-pagination-deep-module.md). No list service hand-rolls
 its own paging. Bounded reference collections — brand and org-unit listings and
-the ancestors/descendants traversals — deliberately return bare arrays instead;
+the ancestors traversal — deliberately return bare arrays instead;
 the boundary is the data's growth model, not its row count
 ([ADR 0025](adr/0025-bounded-reference-lists-stay-bare-arrays.md)).
 

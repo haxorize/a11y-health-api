@@ -34,3 +34,10 @@ bounded (reference data, tree traversals). If one of these
 collections stops being bounded — or a consumer genuinely needs to page it —
 that operation graduates to the envelope as its own story, since contract
 shape changes stop being cheap once UI list screens consume them.
+
+---
+
+**Amended 2026-07-21 (#129):** `GET /org-units/{id}/descendants` was removed
+once its last consumer migrated to the `parent_id` filter on `GET /org-units`
+— not a graduation to the envelope but a departure from the surface. Three of
+the four operations remain; the decision stands unchanged for them.

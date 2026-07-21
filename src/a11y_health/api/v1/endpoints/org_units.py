@@ -53,12 +53,6 @@ async def get_ancestors(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
     return [OrgUnitRead.model_validate(a) for a in ancestors]
 
 
-@router.get("/{org_unit_id}/descendants", responses=error_responses(ErrorCode.NOT_FOUND))
-async def get_descendants(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
-    descendants = await org_unit_service.get_descendants(db, org_unit_id)
-    return [OrgUnitRead.model_validate(d) for d in descendants]
-
-
 @router.patch(
     "/{org_unit_id}",
     responses=error_responses(

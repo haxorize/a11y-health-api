@@ -120,22 +120,6 @@ async def test_get_ancestors_not_found(db_client: AsyncClient) -> None:
     assert response.status_code == 404
 
 
-async def test_get_descendants(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    root = await make_org_unit(db_session, name="Humana")
-    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
-    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
-
-    response = await db_client.get(f"/api/v1/org-units/{root.id}/descendants")
-    assert response.status_code == 200
-    ids = {d["id"] for d in response.json()}
-    assert ids == {child.id, grandchild.id}
-
-
-async def test_get_descendants_not_found(db_client: AsyncClient) -> None:
-    response = await db_client.get("/api/v1/org-units/999999/descendants")
-    assert response.status_code == 404
-
-
 async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)

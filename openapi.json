@@ -2446,65 +2446,6 @@
         ]
       }
     },
-    "/api/v1/org-units/{org_unit_id}/descendants": {
-      "get": {
-        "operationId": "get_descendants",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "org_unit_id",
-            "required": true,
-            "schema": {
-              "title": "Org Unit Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/OrgUnitRead"
-                  },
-                  "title": "Response Get Descendants",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "Domain error: not_found",
-            "x-error-codes": [
-              "not_found"
-            ]
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Descendants",
-        "tags": [
-          "org-units"
-        ]
-      }
-    },
     "/api/v1/org-units/{org_unit_id}/scores": {
       "get": {
         "operationId": "list_org_unit_scores",

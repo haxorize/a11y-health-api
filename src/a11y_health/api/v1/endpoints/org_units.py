@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
@@ -18,8 +20,11 @@ async def create_org_unit(db: DbSession, data: OrgUnitCreate) -> OrgUnitRead:
 
 
 @router.get("")
-async def list_org_units(db: DbSession) -> list[OrgUnitRead]:
-    org_units = await org_unit_service.list_org_units(db)
+async def list_org_units(
+    db: DbSession,
+    parent_id: Annotated[list[int] | None, Query()] = None,
+) -> list[OrgUnitRead]:
+    org_units = await org_unit_service.list_org_units(db, parent_id=parent_id)
     return [OrgUnitRead.model_validate(ou) for ou in org_units]
 
 

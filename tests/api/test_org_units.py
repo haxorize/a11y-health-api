@@ -44,6 +44,16 @@ async def test_list_org_units(db_client: AsyncClient, db_session: AsyncSession) 
     assert names == {"Humana", "CenterWell"}
 
 
+async def test_list_org_units_filtered_by_parent(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+
+    response = await db_client.get("/api/v1/org-units", params={"parent_id": root.id})
+    assert response.status_code == 200
+    assert [ou["id"] for ou in response.json()] == [child.id]
+
+
 async def test_get_org_unit(db_client: AsyncClient, db_session: AsyncSession) -> None:
     parent = await make_org_unit(db_session, name="Humana")
     org_unit = await make_org_unit(db_session, name="CenterWell", parent_id=parent.id)

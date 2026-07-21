@@ -47,8 +47,11 @@ async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit
     return org_unit
 
 
-async def list_org_units(session: AsyncSession) -> Sequence[OrgUnit]:
-    result = await session.execute(select(OrgUnit).order_by(OrgUnit.id))
+async def list_org_units(session: AsyncSession, *, parent_id: list[int] | None = None) -> Sequence[OrgUnit]:
+    stmt = select(OrgUnit).order_by(OrgUnit.id)
+    if parent_id:
+        stmt = stmt.where(OrgUnit.parent_id.in_(parent_id))
+    result = await session.execute(stmt)
     return result.scalars().all()
 
 

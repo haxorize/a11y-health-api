@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
 from a11y_health.core.exceptions import EmptyScanRunError, InvalidStatusTransitionError, ScanRunCompletedError
-from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
+from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, TotalledCursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
 from a11y_health.models.page_result import PageResult
@@ -32,11 +32,17 @@ async def get_scan_run(session: AsyncSession, scan_run_id: int) -> ScanRun:
 
 async def list_scan_runs(
     session: AsyncSession, app_id: int, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
-) -> CursorPage[ScanRun]:
+) -> TotalledCursorPage[ScanRun]:
     await existence.get_by_pk(session, App, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
     return await paginate(
-        session, stmt, keyset=[ScanRun.scanned_at, ScanRun.id], cursor=cursor, limit=limit, descending=True
+        session,
+        stmt,
+        keyset=[ScanRun.scanned_at, ScanRun.id],
+        cursor=cursor,
+        limit=limit,
+        descending=True,
+        with_total=True,
     )
 
 

@@ -389,9 +389,10 @@ page is also the last). The equivalence is of scope, not snapshot: the count is 
 second query, so a write committed between the two can shift `total` relative to
 the page until the next fetch — acceptable for a result-count announcement. The pair `TotalledCursorPage`/`TotalledPage` extends the
 plain envelope per-operation — every other listing keeps its two-field shape and
-pays no count query. Today only the findings listing is totalled (its UI announces
-"N results" after a filter change); the conformance sweep requires any totalled
-operation to publish `total` as a required response property.
+pays no count query. Today the findings listing (its UI announces "N results"
+after a filter change) and an app's scan-run listing (its UI's history count
+line) are totalled; the conformance sweep requires any totalled operation to
+publish `total` as a required response property.
 
 The module also owns the **request-facing half**: a paginated endpoint declares one
 `pagination: PageParams` argument (a `PaginationParams` dependency from

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
-from a11y_health.core.pagination import Page, PageParams
+from a11y_health.core.pagination import Page, PageParams, TotalledPage
 from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.schemas.page_result import PageMetricsRead, PageResultRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
@@ -29,9 +29,9 @@ async def list_scan_runs(
     db: DbSession,
     app_id: int,
     pagination: PageParams,
-) -> Page[ScanRunRead]:
+) -> TotalledPage[ScanRunRead]:
     page = await scan_run_service.list_scan_runs(db, app_id, cursor=pagination.cursor, limit=pagination.limit)
-    return Page.from_cursor_page(page, ScanRunRead.model_validate)
+    return TotalledPage.from_totalled_cursor_page(page, ScanRunRead.model_validate)
 
 
 @router.get("/{scan_run_id}", responses=error_responses(ErrorCode.NOT_FOUND))

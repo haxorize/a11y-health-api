@@ -49,6 +49,21 @@ async def test_list_scan_runs(db_client: AsyncClient, db_session: AsyncSession) 
     assert all(r["app_id"] == sr1.app_id for r in data["items"])
 
 
+# The transport slot for `total` (mirrors the findings pin): count semantics are
+# owned by the paginate suite; this asserts the value crosses the wire, with
+# total ≠ len(items) so an accidental echo of the loaded rows can't pass.
+async def test_list_scan_runs_total_counts_beyond_the_page(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    sr1 = await make_scan_run_with_parents(db_session)
+    for _ in range(2):
+        await make_scan_run(db_session, app_id=sr1.app_id)
+
+    response = await db_client.get(f"/api/v1/apps/{sr1.app_id}/scan-runs", params={"limit": 1})
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["total"] == 3
+
+
 async def test_list_scan_runs_invalid_app(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/apps/999999/scan-runs")
     assert response.status_code == 404

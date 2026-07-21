@@ -122,11 +122,21 @@ class Page[T](BaseModel):
 class TotalledPage[T](Page[T]):
     total: int
 
-    # No `item` mapper counterpart to from_cursor_page: the one totalled caller
-    # maps rows in the service via `into`; add the mapper when a caller needs it.
+    @overload
     @classmethod
-    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> "TotalledPage[I]":
-        return TotalledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
+    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> "TotalledPage[I]": ...
+    @overload
+    @classmethod
+    def from_totalled_cursor_page[I, R](
+        cls, page: TotalledCursorPage[I], item: Callable[[I], R]
+    ) -> "TotalledPage[R]": ...
+    @classmethod
+    def from_totalled_cursor_page[I, R](
+        cls, page: TotalledCursorPage[I], item: Callable[[I], R] | None = None
+    ) -> "TotalledPage[I] | TotalledPage[R]":
+        if item is None:
+            return TotalledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
+        return TotalledPage(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)
 
 
 def encode_cursor(*values: int | str | datetime) -> str:

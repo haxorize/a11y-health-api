@@ -1,6 +1,9 @@
 # The under_org_unit_id scope resolves per owner type: inclusive for apps, strict for org units, empty for brands
 
-`GET /scores/latest?under_org_unit_id=X` names a place in the org tree, not owners, so
+`GET /scores/latest?under_org_unit_id=X` — extending the latest-scores read
+([ADR 0023](0023-scores-latest-read-endpoint.md)) via a subtree helper shared
+under the two-tier call rule ([ADR 0024](0024-existence-guard-core-module-two-tier-rule.md),
+`services/_org_subtree.py`) — names a place in the org tree, not owners, so
 each owner type resolves it by its own placement semantics rather than one uniform
 subtree rule: `app` serves apps placed anywhere in X's inclusive subtree (an app *of* X
 is under X, matching the apps listing's descendant-expanding `org_unit_id`); `org_unit`
@@ -15,3 +18,5 @@ whose true answer is ∅, not a malformed request — an error mode would buy a 
 `ErrorCode` and a special case to protect a client mistake the empty page already makes
 visible. The scope composes with the exact-match `owner_id` filter by intersection (both
 predicates apply), the same composition as the apps listing's `brand_id` + `org_unit_id`.
+See `docs/architecture.md` ("The scoring & rollup model") for where this sits in the
+scores-read surface.

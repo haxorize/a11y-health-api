@@ -24,3 +24,17 @@ Considered and rejected:
   summary is a Score Snapshot view — mixing findings-filter enumeration into it
   couples two unrelated read models and forces summary consumers to pay for
   criteria they don't use.
+
+---
+
+**Amended 2026-07-21 (#125):** `classifications` landed as the second dimension —
+the additive-sibling growth this ADR anticipated, but for a reason the original
+rationale didn't: the value of serving it isn't enumerability (Classification *is*
+a closed contract enum the client already reads) but run-scoping plus labeling —
+which classifications are present in *this* run's findings, each token paired with
+the structured Classification it names, so the UI derives labels from the contract
+instead of keeping its own decode table. Present-only was chosen over serving the
+full vocabulary to match `wcag_criteria`'s scoping: an option that matches no
+finding in the run is a dead dropdown entry. "Only dimension the server alone can
+enumerate" above thus describes 2026-07 reality, not the criterion for adding a
+dimension.

@@ -274,3 +274,8 @@ async def test_list_latest_scores_brand_id_param_decodes_to_brand_scope(
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [kept.id]
+
+
+async def test_list_latest_scores_unknown_brand_id_is_404(db_client: AsyncClient) -> None:
+    response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "app", "brand_id": 999999})
+    assert response.status_code == 404

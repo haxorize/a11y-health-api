@@ -54,6 +54,34 @@ async def test_list_org_units_filtered_by_parent(db_client: AsyncClient, db_sess
     assert [ou["id"] for ou in response.json()] == [child.id]
 
 
+async def test_list_org_units_filtered_by_several_parents(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    # Repeated parent_id decodes to a list and unions the children — the same
+    # multi-value filter shape the apps listing uses.
+    root = await make_org_unit(db_session, name="Humana")
+    left = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    right = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
+    left_child = await make_org_unit(db_session, name="Primary Care", parent_id=left.id)
+    right_child = await make_org_unit(db_session, name="Mail Order", parent_id=right.id)
+
+    response = await db_client.get("/api/v1/org-units", params={"parent_id": [left.id, right.id]})
+
+    assert response.status_code == 200
+    assert [ou["id"] for ou in response.json()] == [left_child.id, right_child.id]
+
+
+async def test_list_org_units_filtered_by_unknown_parent_is_empty(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # A filter, not a scope: an unknown parent narrows to nothing rather than
+    # 404ing, matching the apps listing's org_unit_id filter.
+    await make_org_unit(db_session, name="Humana")
+
+    response = await db_client.get("/api/v1/org-units", params={"parent_id": 999999})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 async def test_get_org_unit(db_client: AsyncClient, db_session: AsyncSession) -> None:
     parent = await make_org_unit(db_session, name="Humana")
     org_unit = await make_org_unit(db_session, name="CenterWell", parent_id=parent.id)

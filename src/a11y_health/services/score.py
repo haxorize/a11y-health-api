@@ -11,8 +11,9 @@ See `docs/architecture.md` ("The scoring & rollup model").
 
 from typing import Any, assert_never
 
-from sqlalchemy import false, select
+from sqlalchemy import ColumnElement, false, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
@@ -40,48 +41,12 @@ async def list_latest_scores(
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
     if brand_id is not None:
         await existence.get_by_pk(session, Brand, brand_id)
-        if owner_type is ScoreSnapshotOwnerType.APP:
-            # Brand ownership is flat, like the brand rollup: App.brand_id alone
-            # decides membership, wherever the app sits in the org tree.
-            snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.brand_id == brand_id)))
-        else:
-            # Only apps carry brand ownership. An org unit has no brand, and a
-            # brand isn't owned by a brand — the scoping brand's own rollup
-            # already aggregates the scoped app set (fetch it via owner_id),
-            # mirroring the under-scope's "not under itself". Empty, not "all".
-            snapshots = snapshots.where(false())
+        snapshots = snapshots.where(_brand_scope(owner_type, owner_col, brand_id))
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
-        if owner_type is ScoreSnapshotOwnerType.APP:
-            if direct_only:
-                # Placed exactly on the named unit — the direct counterpart of
-                # the inclusive-subtree default, resolved per owner type like
-                # the scope itself.
-                snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id == under_org_unit_id)))
-            else:
-                # An app placed anywhere in the subtree — including on the named unit
-                # itself — is "under" it, matching list_apps' org_unit_id expansion.
-                subtree = await get_descendant_ids(session, [under_org_unit_id])
-                snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id.in_(subtree))))
-        elif owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
-            if direct_only:
-                # Depth-1 needs no subtree walk: direct children are one
-                # parent_id predicate.
-                snapshots = snapshots.where(
-                    owner_col.in_(select(OrgUnit.id).where(OrgUnit.parent_id == under_org_unit_id))
-                )
-            else:
-                # Strictly below: the named unit is not under itself, and its own
-                # rollup already aggregates the subtree being scoped to.
-                subtree = await get_descendant_ids(session, [under_org_unit_id])
-                snapshots = snapshots.where(owner_col.in_(subtree - {under_org_unit_id}))
-        elif owner_type is ScoreSnapshotOwnerType.BRAND:
-            # Brands have no org-tree placement, so no brand owner is ever
-            # "under" an org unit — the honest scoped set is empty, not "all",
-            # and no subtree query is worth running to say so.
-            snapshots = snapshots.where(false())
-        else:
-            assert_never(owner_type)
+        snapshots = snapshots.where(
+            await _under_org_unit_scope(session, owner_type, owner_col, under_org_unit_id, direct_only)
+        )
     if owner_id:
         # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
         # owner's snapshot already aggregates everything it covers (an org unit's
@@ -100,6 +65,52 @@ async def list_latest_scores(
         cursor=cursor,
         limit=limit,
     )
+
+
+def _brand_scope(
+    owner_type: ScoreSnapshotOwnerType, owner_col: InstrumentedAttribute[int | None], brand_id: int
+) -> ColumnElement[bool]:
+    if owner_type is ScoreSnapshotOwnerType.APP:
+        # Brand ownership is flat, like the brand rollup: App.brand_id alone
+        # decides membership, wherever the app sits in the org tree.
+        return owner_col.in_(select(App.id).where(App.brand_id == brand_id))
+    if owner_type is ScoreSnapshotOwnerType.ORG_UNIT or owner_type is ScoreSnapshotOwnerType.BRAND:
+        # Only apps carry brand ownership. An org unit has no brand, and a
+        # brand isn't owned by a brand — the scoping brand's own rollup
+        # already aggregates the scoped app set (fetch it via owner_id),
+        # mirroring the under-scope's "not under itself". Empty, not "all".
+        return false()
+    assert_never(owner_type)
+
+
+async def _under_org_unit_scope(
+    session: AsyncSession,
+    owner_type: ScoreSnapshotOwnerType,
+    owner_col: InstrumentedAttribute[int | None],
+    under_org_unit_id: int,
+    direct_only: bool,
+) -> ColumnElement[bool]:
+    if owner_type is ScoreSnapshotOwnerType.APP:
+        # An app placed anywhere in the subtree — including on the named unit
+        # itself — is "under" it, matching list_apps' org_unit_id expansion.
+        # direct_only is that same rule over the one-unit subtree.
+        unit_ids = {under_org_unit_id} if direct_only else await get_descendant_ids(session, [under_org_unit_id])
+        return owner_col.in_(select(App.id).where(App.org_unit_id.in_(unit_ids)))
+    if owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
+        if direct_only:
+            # Depth-1 needs no subtree walk: direct children are one
+            # parent_id predicate.
+            return owner_col.in_(select(OrgUnit.id).where(OrgUnit.parent_id == under_org_unit_id))
+        # Strictly below: the named unit is not under itself, and its own
+        # rollup already aggregates the subtree being scoped to.
+        subtree = await get_descendant_ids(session, [under_org_unit_id])
+        return owner_col.in_(subtree - {under_org_unit_id})
+    if owner_type is ScoreSnapshotOwnerType.BRAND:
+        # Brands have no org-tree placement, so no brand owner is ever
+        # "under" an org unit — the honest scoped set is empty, not "all",
+        # and no subtree query is worth running to say so.
+        return false()
+    assert_never(owner_type)
 
 
 async def _list_scores(

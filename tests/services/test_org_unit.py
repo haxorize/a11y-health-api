@@ -179,27 +179,6 @@ async def test_get_ancestors_not_found(db_session: AsyncSession) -> None:
         await org_unit_service.get_ancestors(db_session, 999999)
 
 
-async def test_get_descendants_returns_subtree(db_session: AsyncSession) -> None:
-    root = await make_org_unit(db_session, name="Humana")
-    child_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
-    child_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
-    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child_a.id)
-    descendants = await org_unit_service.get_descendants(db_session, root.id)
-    descendant_ids = {d.id for d in descendants}
-    assert descendant_ids == {child_a.id, child_b.id, grandchild.id}
-
-
-async def test_get_descendants_leaf_has_no_descendants(db_session: AsyncSession) -> None:
-    leaf = await make_org_unit(db_session, name="Humana")
-    descendants = await org_unit_service.get_descendants(db_session, leaf.id)
-    assert descendants == []
-
-
-async def test_get_descendants_not_found(db_session: AsyncSession) -> None:
-    with pytest.raises(NotFoundError, match="Org unit"):
-        await org_unit_service.get_descendants(db_session, 999999)
-
-
 async def test_get_descendant_ids_leaf_returns_self(db_session: AsyncSession) -> None:
     leaf = await make_org_unit(db_session, name="Leaf")
     result = await get_descendant_ids(db_session, [leaf.id])

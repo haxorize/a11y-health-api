@@ -12,6 +12,7 @@ from a11y_health.models.org_unit import FK_ORG_UNIT_PARENT_ID, UQ_ORG_UNIT_SINGL
 from a11y_health.models.score_snapshot import FK_SCORE_SNAPSHOT_ORG_UNIT_ID
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
+from a11y_health.services._org_subtree import get_descendant_ids
 
 _RESOURCE = existence.ENTITY_LABELS[OrgUnit]
 
@@ -67,10 +68,9 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
         new_parent_id = updates["parent_id"]
         if new_parent_id is not None:
             await get_org_unit(session, new_parent_id)
-            if new_parent_id == org_unit_id:
-                raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
-            descendant_ids = {d.id for d in await get_descendants(session, org_unit_id)}
-            if new_parent_id in descendant_ids:
+            # The subtree is inclusive of the unit itself, so self-parenting
+            # and descendant-parenting fail as one membership check.
+            if new_parent_id in await get_descendant_ids(session, [org_unit_id]):
                 raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
         else:
             await _check_no_other_root(session, exclude_id=org_unit_id)
@@ -92,15 +92,6 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
     result = await session.execute(
         select(OrgUnit).join(cte, OrgUnit.id == cte.c.id).where(OrgUnit.id != org_unit_id).order_by(cte.c.depth)
     )
-    return list(result.scalars().all())
-
-
-async def get_descendants(session: AsyncSession, org_unit_id: int) -> list[OrgUnit]:
-    await get_org_unit(session, org_unit_id)
-    cte = select(OrgUnit).where(OrgUnit.parent_id == org_unit_id).cte(name="descendants", recursive=True)
-    child = aliased(OrgUnit)
-    cte = cte.union_all(select(child).where(child.parent_id == cte.c.id))
-    result = await session.execute(select(OrgUnit).join(cte, OrgUnit.id == cte.c.id))
     return list(result.scalars().all())
 
 

@@ -181,6 +181,35 @@
         "title": "Classification",
         "type": "object"
       },
+      "ClassificationFilterOption": {
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/Classification"
+          },
+          "token": {
+            "enum": [
+              "wcag2a",
+              "wcag2aa",
+              "wcag2aaa",
+              "wcag21a",
+              "wcag21aa",
+              "wcag21aaa",
+              "wcag22a",
+              "wcag22aa",
+              "wcag22aaa",
+              "best-practice"
+            ],
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "classification"
+        ],
+        "title": "ClassificationFilterOption",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -217,6 +246,13 @@
       },
       "FindingFilterOptionsRead": {
         "properties": {
+          "classifications": {
+            "items": {
+              "$ref": "#/components/schemas/ClassificationFilterOption"
+            },
+            "title": "Classifications",
+            "type": "array"
+          },
           "wcag_criteria": {
             "items": {
               "type": "string"
@@ -226,7 +262,8 @@
           }
         },
         "required": [
-          "wcag_criteria"
+          "wcag_criteria",
+          "classifications"
         ],
         "title": "FindingFilterOptionsRead",
         "type": "object"

@@ -160,6 +160,7 @@ async def test_filter_options_empty_for_run_without_findings(db_session: AsyncSe
     options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
 
     assert options.wcag_criteria == []
+    assert options.classifications == []
 
 
 async def test_filter_options_scoped_to_the_run(db_session: AsyncSession) -> None:
@@ -195,6 +196,71 @@ async def test_filter_options_sort_malformed_criterion_last(db_session: AsyncSes
     options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
 
     assert options.wcag_criteria == ["1.4.3", "not-a-criterion"]
+
+
+async def test_filter_options_enumerate_distinct_classifications_in_vocabulary_order(
+    db_session: AsyncSession,
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page_one = await make_page_result(db_session, scan_run_id=scan_run.id, url="https://example.com/a")
+    page_two = await make_page_result(db_session, scan_run_id=scan_run.id, url="https://example.com/b")
+    await make_rule_finding(
+        db_session,
+        page_result_id=page_one.id,
+        rule_id="color-contrast",
+        classifications=[token_to_stored_classification("best-practice"), token_to_stored_classification("wcag22aaa")],
+    )
+    await make_rule_finding(
+        db_session,
+        page_result_id=page_two.id,
+        rule_id="image-alt",
+        classifications=[token_to_stored_classification("wcag22aaa"), token_to_stored_classification("wcag2a")],
+    )
+
+    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
+
+    assert [(o.token, o.classification) for o in options.classifications] == [
+        ("wcag2a", Classification(standard="wcag", version="2.0", level="A")),
+        ("wcag22aaa", Classification(standard="wcag", version="2.2", level="AAA")),
+        ("best-practice", Classification(standard="best-practice")),
+    ]
+
+
+async def test_filter_options_classifications_scoped_to_the_run(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    other_run = await make_scan_run_with_parents(db_session, org_name="Other Org", app_name="Other App", slug="other")
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    other_page = await make_page_result(db_session, scan_run_id=other_run.id)
+    await make_rule_finding(
+        db_session, page_result_id=page.id, classifications=[token_to_stored_classification("wcag2aa")]
+    )
+    await make_rule_finding(
+        db_session, page_result_id=other_page.id, classifications=[token_to_stored_classification("best-practice")]
+    )
+
+    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
+
+    assert [o.token for o in options.classifications] == ["wcag2aa"]
+
+
+async def test_filter_options_omit_valid_but_off_vocabulary_classification(db_session: AsyncSession) -> None:
+    # A stored entry can validate as a Classification without naming any token
+    # (e.g. a raw-backfilled WCAG 3.0). The filter can't query what it can't
+    # name, so it earns no option instead of failing the enumeration.
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(
+        db_session,
+        page_result_id=page.id,
+        classifications=[
+            {"standard": "wcag", "version": "3.0", "level": "A"},
+            token_to_stored_classification("wcag2aa"),
+        ],
+    )
+
+    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
+
+    assert [o.token for o in options.classifications] == ["wcag2aa"]
 
 
 async def test_planted_invalid_classification_is_dropped_from_reads_not_fatal(

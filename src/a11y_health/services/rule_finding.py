@@ -15,10 +15,12 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas._tag_parsing import (
     ClassificationToken,
+    classification_options,
     token_to_stored_classification,
     wcag_criterion_sort_key,
 )
 from a11y_health.schemas.rule_finding import (
+    ClassificationFilterOption,
     FindingFilterOptionsRead,
     NodeFindingDetail,
     RuleFindingDetail,
@@ -84,10 +86,16 @@ async def list_findings(
 async def list_filter_options(session: AsyncSession, scan_run_id: int) -> FindingFilterOptionsRead:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
-    stmt = _scoped_to_run(select(RuleFinding.wcag_criteria), scan_run_id)
-    rows = (await session.execute(stmt)).scalars().all()
-    distinct = {criterion for row in rows for criterion in row}
-    return FindingFilterOptionsRead(wcag_criteria=sorted(distinct, key=wcag_criterion_sort_key))
+    stmt = _scoped_to_run(select(RuleFinding.wcag_criteria, RuleFinding.classifications), scan_run_id)
+    rows = (await session.execute(stmt)).all()
+    distinct = {criterion for row in rows for criterion in row.wcag_criteria}
+    options = classification_options(entry for row in rows for entry in row.classifications)
+    return FindingFilterOptionsRead(
+        wcag_criteria=sorted(distinct, key=wcag_criterion_sort_key),
+        classifications=[
+            ClassificationFilterOption(token=token, classification=classification) for token, classification in options
+        ],
+    )
 
 
 async def get_finding(

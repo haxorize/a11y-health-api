@@ -80,6 +80,26 @@ def test_openapi_declares_typed_classification_schema() -> None:
     assert schemas["RuleFindingRead"]["properties"]["classifications"]["items"] == ref
     assert schemas["RuleFindingDetail"]["properties"]["classifications"]["items"] == ref
 
+    # The filter option pairs the query token with the structure it names, so
+    # the UI derives labels from the contract instead of its own decode table.
+    option = schemas["ClassificationFilterOption"]
+    assert option["required"] == ["token", "classification"]
+    assert option["properties"]["classification"] == ref
+    assert option["properties"]["token"]["enum"] == [
+        "wcag2a",
+        "wcag2aa",
+        "wcag2aaa",
+        "wcag21a",
+        "wcag21aa",
+        "wcag21aaa",
+        "wcag22a",
+        "wcag22aa",
+        "wcag22aaa",
+        "best-practice",
+    ]
+    option_ref = {"$ref": "#/components/schemas/ClassificationFilterOption"}
+    assert schemas["FindingFilterOptionsRead"]["properties"]["classifications"]["items"] == option_ref
+
 
 async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
@@ -106,13 +126,52 @@ async def test_filter_options_round_trip(db_client: AsyncClient, db_session: Asy
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/filter-options")
 
     assert response.status_code == 200
-    assert response.json() == {"wcag_criteria": ["1.1.1", "1.4.3"]}
+    assert response.json() == {
+        "wcag_criteria": ["1.1.1", "1.4.3"],
+        "classifications": [
+            {"token": "wcag2aa", "classification": {"standard": "wcag", "version": "2.0", "level": "AA"}}
+        ],
+    }
 
     # Every enumerated option is accepted by the findings filter it feeds.
     for criterion in response.json()["wcag_criteria"]:
         listing = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"wcag_criterion": criterion})
         assert listing.status_code == 200
         assert listing.json()["items"], f"enumerated criterion {criterion} matched no findings"
+
+
+async def test_filter_options_serve_classifications_as_token_plus_structure(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(
+        db_session, page_result_id=page.id, classifications=[token_to_stored_classification("wcag21aa")]
+    )
+    await make_rule_finding(
+        db_session,
+        page_result_id=page.id,
+        rule_id="image-alt",
+        classifications=[token_to_stored_classification("best-practice")],
+    )
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/filter-options")
+
+    assert response.status_code == 200
+    # Deliberately literal — the wire-shape pin the UI derives labels from (#125),
+    # like the classification pins in the listing tests.
+    assert response.json()["classifications"] == [
+        {"token": "wcag21aa", "classification": {"standard": "wcag", "version": "2.1", "level": "AA"}},
+        {"token": "best-practice", "classification": {"standard": "best-practice"}},
+    ]
+
+    # Every enumerated token is accepted by the findings filter it feeds.
+    for option in response.json()["classifications"]:
+        listing = await db_client.get(
+            f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": option["token"]}
+        )
+        assert listing.status_code == 200
+        assert listing.json()["items"], f"enumerated token {option['token']} matched no findings"
 
 
 async def test_filter_options_scan_run_not_found(db_client: AsyncClient) -> None:

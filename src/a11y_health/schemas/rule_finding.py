@@ -4,11 +4,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.schemas._tag_parsing import ClassificationToken
 
 if TYPE_CHECKING:
     from a11y_health.models.rule_finding import RuleFinding
 
 __all__ = [
+    "ClassificationFilterOption",
     "FindingFilterOptionsRead",
     "NodeFindingDetail",
     "NodeFindingRead",
@@ -17,8 +19,17 @@ __all__ = [
 ]
 
 
+# The token is the findings filter's query vocabulary; the Classification is the
+# structure it names, so clients derive labels from the contract instead of
+# keeping their own token decode table (#125).
+class ClassificationFilterOption(BaseModel):
+    token: ClassificationToken
+    classification: Classification
+
+
 class FindingFilterOptionsRead(BaseModel):
     wcag_criteria: list[str]
+    classifications: list[ClassificationFilterOption]
 
 
 class _RuleFindingBase(BaseModel):

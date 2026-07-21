@@ -5,14 +5,16 @@ Classifications (WCAG version/level pairs or best-practice). `axe_payload.py`
 owns the ingest-side parsing; the findings filter (service and endpoint) reads
 the `ClassificationToken` vocabulary and `token_to_stored_classification` from
 here so query and storage can never disagree, and the filter-options
-enumeration reads `wcag_criterion_sort_key` so response ordering stays with
-the code that mints the criterion format. Unknown WCAG-shaped tags are dropped
+enumeration reads `wcag_criterion_sort_key` and `classification_options` so
+response ordering and the token↔Classification pairing stay with the code
+that mints them. Unknown WCAG-shaped tags are dropped
 rather than rejected, since the axe tag set is open-ended.
 
 See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
 """
 
 import re
+from collections.abc import Iterable
 from typing import Literal, get_args
 
 from a11y_health.models.classification import Classification
@@ -58,6 +60,26 @@ if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
 
 def token_to_stored_classification(token: ClassificationToken) -> dict[str, str]:
     return _TOKEN_TO_CLASSIFICATION[token].stored()
+
+
+# Classification is frozen, so its own value-equality keys the reverse lookup.
+_CLASSIFICATION_TO_TOKEN: dict[Classification, ClassificationToken] = {
+    _TOKEN_TO_CLASSIFICATION[token]: token for token in get_args(ClassificationToken)
+}
+
+
+def classification_options(
+    stored_entries: Iterable[dict[str, str]],
+) -> list[tuple[ClassificationToken, Classification]]:
+    """Distinct (token, Classification) pairs for the stored entries, in
+    vocabulary order. An entry with no token — valid but off-vocabulary, e.g. a
+    raw-SQL backfill — is dropped: the filter can't query what it can't name."""
+    present = {
+        token
+        for entry in stored_entries
+        if (token := _CLASSIFICATION_TO_TOKEN.get(Classification.model_validate(entry))) is not None
+    }
+    return [(token, _TOKEN_TO_CLASSIFICATION[token]) for token in get_args(ClassificationToken) if token in present]
 
 
 def extract_classifications(tags: list[str]) -> list[Classification]:

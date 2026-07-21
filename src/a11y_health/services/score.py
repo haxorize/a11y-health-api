@@ -9,7 +9,7 @@ The computation that produces these snapshots lives in `score_snapshot.py`.
 See `docs/architecture.md` ("The scoring & rollup model").
 """
 
-from typing import Any
+from typing import Any, assert_never
 
 from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,19 +38,23 @@ async def list_latest_scores(
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
-        subtree = await get_descendant_ids(session, [under_org_unit_id])
         if owner_type is ScoreSnapshotOwnerType.APP:
             # An app placed anywhere in the subtree — including on the named unit
             # itself — is "under" it, matching list_apps' org_unit_id expansion.
+            subtree = await get_descendant_ids(session, [under_org_unit_id])
             snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id.in_(subtree))))
         elif owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
             # Strictly below: the named unit is not under itself, and its own
             # rollup already aggregates the subtree being scoped to.
+            subtree = await get_descendant_ids(session, [under_org_unit_id])
             snapshots = snapshots.where(owner_col.in_(subtree - {under_org_unit_id}))
-        else:
+        elif owner_type is ScoreSnapshotOwnerType.BRAND:
             # Brands have no org-tree placement, so no brand owner is ever
-            # "under" an org unit — the honest scoped set is empty, not "all".
+            # "under" an org unit — the honest scoped set is empty, not "all",
+            # and no subtree query is worth running to say so.
             snapshots = snapshots.where(false())
+        else:
+            assert_never(owner_type)
     if owner_id:
         # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
         # owner's snapshot already aggregates everything it covers (an org unit's

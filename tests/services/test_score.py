@@ -247,6 +247,21 @@ async def test_under_org_unit_scope_serves_strict_descendant_units_not_the_unit_
     }
 
 
+async def test_under_org_unit_scope_on_a_leaf_unit_serves_an_empty_page(db_session: AsyncSession) -> None:
+    # A leaf's strict-descendant set is empty — the scoped page must be too,
+    # exercising the empty-IN rendering of `subtree - {self}`.
+    root = await make_org_unit(db_session, name="Root")
+    leaf = await make_org_unit(db_session, name="Leaf", parent_id=root.id)
+    await make_score_snapshot(db_session, org_unit_id=leaf.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC))
+    await make_score_snapshot(db_session, org_unit_id=root.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=leaf.id
+    )
+
+    assert page.items == []
+
+
 async def test_under_org_unit_scope_serves_no_brand_owners(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Root")
     scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)

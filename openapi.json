@@ -3368,6 +3368,22 @@
           },
           {
             "in": "query",
+            "name": "brand_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Brand Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "under_org_unit_id",
             "required": false,
             "schema": {

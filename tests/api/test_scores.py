@@ -254,3 +254,23 @@ async def test_list_latest_scores_direct_only_param_decodes_to_direct_scope(
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [kept.id]
+
+
+async def test_list_latest_scores_brand_id_param_decodes_to_brand_scope(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    brand = await make_brand(db_session)
+    other = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+    inside = await make_app(db_session, name="Inside", slug="inside", brand_id=brand.id, org_unit_id=root.id)
+    outside = await make_app(db_session, name="Outside", slug="outside", brand_id=other.id, org_unit_id=root.id)
+
+    kept = await make_score_snapshot(
+        db_session, app_id=inside.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, app_id=outside.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "app", "brand_id": brand.id})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [kept.id]

@@ -402,3 +402,123 @@ async def test_direct_only_without_the_scope_is_ignored(db_session: AsyncSession
         (app_on_root.id, root_latest.id),
         (app_on_child.id, child_latest.id),
     }
+
+
+async def test_brand_scope_serves_the_brands_apps_wherever_they_sit(db_session: AsyncSession) -> None:
+    # Brand ownership is flat, like the brand rollup: org-tree placement is
+    # irrelevant, only App.brand_id decides membership.
+    scoped = await make_brand(db_session)
+    other = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+    child = await make_org_unit(db_session, name="Child", parent_id=root.id)
+
+    app_on_root = await make_app(db_session, name="On Root", slug="on-root", brand_id=scoped.id, org_unit_id=root.id)
+    app_on_child = await make_app(
+        db_session, name="On Child", slug="on-child", brand_id=scoped.id, org_unit_id=child.id
+    )
+    other_app = await make_app(db_session, name="Other", slug="other", brand_id=other.id, org_unit_id=root.id)
+
+    root_latest = await make_score_snapshot(
+        db_session, app_id=app_on_root.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    child_latest = await make_score_snapshot(
+        db_session, app_id=app_on_child.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(db_session, app_id=other_app.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=scoped.id)
+
+    assert {(s.app_id, s.id) for s in page.items} == {
+        (app_on_root.id, root_latest.id),
+        (app_on_child.id, child_latest.id),
+    }
+
+
+async def test_brand_scope_serves_no_org_unit_owners(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+    # the unit even hosts one of the brand's apps — still not brand-owned:
+    # org units have no brand, so the scoped org-unit-owner set is empty
+    await make_app(db_session, name="Hosted", slug="hosted", brand_id=brand.id, org_unit_id=root.id)
+    await make_score_snapshot(db_session, org_unit_id=root.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, brand_id=brand.id)
+
+    assert page.items == []
+
+
+async def test_brand_scope_serves_no_brand_owners_not_even_the_scoping_brand(db_session: AsyncSession) -> None:
+    # A brand isn't owned by a brand, and the scoping brand's own rollup already
+    # aggregates the app set being scoped to — same posture as the under-scope
+    # excluding the named unit itself. Its rollup row is fetched via owner_id.
+    brand = await make_brand(db_session)
+    await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, brand_id=brand.id)
+
+    assert page.items == []
+
+
+async def test_brand_scope_intersects_with_owner_id_filter(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    other = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+
+    in_brand_requested = await make_app(db_session, name="In R", slug="in-r", brand_id=brand.id, org_unit_id=root.id)
+    in_brand_unrequested = await make_app(db_session, name="In U", slug="in-u", brand_id=brand.id, org_unit_id=root.id)
+    out_of_brand_requested = await make_app(
+        db_session, name="Out R", slug="out-r", brand_id=other.id, org_unit_id=root.id
+    )
+
+    kept = await make_score_snapshot(
+        db_session, app_id=in_brand_requested.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=in_brand_unrequested.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=out_of_brand_requested.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session,
+        ScoreSnapshotOwnerType.APP,
+        owner_id=[in_brand_requested.id, out_of_brand_requested.id],
+        brand_id=brand.id,
+    )
+
+    assert [(s.app_id, s.id) for s in page.items] == [(in_brand_requested.id, kept.id)]
+
+
+async def test_brand_scope_intersects_with_the_under_org_unit_scope(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+
+    in_both = await make_app(db_session, name="In Both", slug="in-both", brand_id=brand.id, org_unit_id=scoped.id)
+    in_brand_outside_subtree = await make_app(
+        db_session, name="Elsewhere", slug="elsewhere", brand_id=brand.id, org_unit_id=sibling.id
+    )
+    in_subtree_other_brand = await make_app(db_session, name="Neighbor", slug="neighbor", org_unit_id=scoped.id)
+
+    kept = await make_score_snapshot(
+        db_session, app_id=in_both.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=in_brand_outside_subtree.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=in_subtree_other_brand.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.APP, brand_id=brand.id, under_org_unit_id=scoped.id
+    )
+
+    assert [(s.app_id, s.id) for s in page.items] == [(in_both.id, kept.id)]
+
+
+async def test_brand_scope_requires_the_brand_to_exist(db_session: AsyncSession) -> None:
+    with pytest.raises(NotFoundError):
+        await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)

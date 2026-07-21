@@ -18,6 +18,7 @@ async def list_latest_scores(
     owner_type: ScoreSnapshotOwnerType,
     pagination: PageParams,
     owner_id: Annotated[list[int] | None, Query()] = None,
+    brand_id: int | None = None,
     under_org_unit_id: int | None = None,
     direct_only: bool = False,
 ) -> Page[ScoreSnapshotRead]:
@@ -25,6 +26,7 @@ async def list_latest_scores(
         db,
         owner_type,
         owner_id=owner_id,
+        brand_id=brand_id,
         under_org_unit_id=under_org_unit_id,
         direct_only=direct_only,
         cursor=pagination.cursor,

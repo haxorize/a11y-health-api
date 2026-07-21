@@ -30,6 +30,7 @@ async def list_latest_scores(
     owner_type: ScoreSnapshotOwnerType,
     *,
     owner_id: list[int] | None = None,
+    brand_id: int | None = None,
     under_org_unit_id: int | None = None,
     direct_only: bool = False,
     cursor: str | None = None,
@@ -37,6 +38,18 @@ async def list_latest_scores(
 ) -> CursorPage[ScoreSnapshot]:
     owner_col = OWNER_ID_COLUMNS[owner_type]
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
+    if brand_id is not None:
+        await existence.get_by_pk(session, Brand, brand_id)
+        if owner_type is ScoreSnapshotOwnerType.APP:
+            # Brand ownership is flat, like the brand rollup: App.brand_id alone
+            # decides membership, wherever the app sits in the org tree.
+            snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.brand_id == brand_id)))
+        else:
+            # Only apps carry brand ownership. An org unit has no brand, and a
+            # brand isn't owned by a brand — the scoping brand's own rollup
+            # already aggregates the scoped app set (fetch it via owner_id),
+            # mirroring the under-scope's "not under itself". Empty, not "all".
+            snapshots = snapshots.where(false())
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
         if owner_type is ScoreSnapshotOwnerType.APP:

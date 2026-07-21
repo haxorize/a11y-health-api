@@ -243,10 +243,13 @@ async def test_filter_options_classifications_scoped_to_the_run(db_session: Asyn
     assert [o.token for o in options.classifications] == ["wcag2aa"]
 
 
-async def test_filter_options_omit_valid_but_off_vocabulary_classification(db_session: AsyncSession) -> None:
+async def test_filter_options_omit_valid_but_off_vocabulary_classification(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
     # A stored entry can validate as a Classification without naming any token
     # (e.g. a raw-backfilled WCAG 3.0). The filter can't query what it can't
-    # name, so it earns no option instead of failing the enumeration.
+    # name, so it earns no option instead of failing the enumeration — with a
+    # warning, like the tolerant read's invalid-entry drop.
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(
@@ -258,9 +261,11 @@ async def test_filter_options_omit_valid_but_off_vocabulary_classification(db_se
         ],
     )
 
-    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
+    with caplog.at_level(logging.WARNING):
+        options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
 
     assert [o.token for o in options.classifications] == ["wcag2aa"]
+    assert "3.0" in caplog.text
 
 
 async def test_planted_invalid_classification_is_dropped_from_reads_not_fatal(

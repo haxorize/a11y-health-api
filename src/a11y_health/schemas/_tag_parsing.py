@@ -13,12 +13,15 @@ rather than rejected, since the axe tag set is open-ended.
 See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
 """
 
+import logging
 import re
 from collections.abc import Iterable
 from typing import Literal, get_args
 
 from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category
+
+logger = logging.getLogger(__name__)
 
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CAT_TAG = re.compile(r"^cat\.(.+)$")
@@ -73,12 +76,15 @@ def classification_options(
 ) -> list[tuple[ClassificationToken, Classification]]:
     """Distinct (token, Classification) pairs for the stored entries, in
     vocabulary order. An entry with no token — valid but off-vocabulary, e.g. a
-    raw-SQL backfill — is dropped: the filter can't query what it can't name."""
-    present = {
-        token
-        for entry in stored_entries
-        if (token := _CLASSIFICATION_TO_TOKEN.get(Classification.model_validate(entry))) is not None
-    }
+    raw-SQL backfill — is dropped with a warning: the filter can't query what
+    it can't name."""
+    present: set[ClassificationToken] = set()
+    for entry in stored_entries:
+        token = _CLASSIFICATION_TO_TOKEN.get(Classification.model_validate(entry))
+        if token is None:
+            logger.warning("Omitting off-vocabulary classification %r from filter options", entry)
+            continue
+        present.add(token)
     return [(token, _TOKEN_TO_CLASSIFICATION[token]) for token in get_args(ClassificationToken) if token in present]
 
 

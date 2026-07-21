@@ -308,3 +308,97 @@ async def test_under_org_unit_scope_intersects_with_owner_id_filter(db_session: 
 async def test_under_org_unit_scope_requires_the_unit_to_exist(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
         await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=999999)
+
+
+async def test_direct_only_narrows_the_org_unit_scope_to_direct_children(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+    grandchild = await make_org_unit(db_session, name="Grandchild", parent_id=child.id)
+    sibling = await make_org_unit(db_session, name="Sibling", parent_id=root.id)
+
+    # the scoped unit's own snapshot stays excluded — direct_only narrows the
+    # strict-descendant scope, it never re-adds the unit itself
+    await make_score_snapshot(
+        db_session, org_unit_id=scoped.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    child_latest = await make_score_snapshot(
+        db_session, org_unit_id=child.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, org_unit_id=grandchild.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, org_unit_id=sibling.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=scoped.id, direct_only=True
+    )
+
+    assert {(s.org_unit_id, s.id) for s in page.items} == {(child.id, child_latest.id)}
+
+
+async def test_direct_only_narrows_the_app_scope_to_apps_placed_on_the_unit_itself(
+    db_session: AsyncSession,
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+
+    own_app = await make_app(db_session, name="Own", slug="own", org_unit_id=scoped.id)
+    descendant_app = await make_app(db_session, name="Deep", slug="deep", org_unit_id=child.id)
+
+    own_latest = await make_score_snapshot(
+        db_session, app_id=own_app.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    await make_score_snapshot(
+        db_session, app_id=descendant_app.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=scoped.id, direct_only=True
+    )
+
+    assert {(s.app_id, s.id) for s in page.items} == {(own_app.id, own_latest.id)}
+
+
+async def test_direct_only_serves_no_brand_owners_either(db_session: AsyncSession) -> None:
+    # Brands have no org-tree placement at any depth: the direct scope must
+    # stay empty exactly like the subtree scope. Guards any restructuring
+    # that resolves scope depth before owner-type dispatch.
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    brand = await make_brand(db_session)
+    await make_app(db_session, name="On Unit", slug="on-unit", brand_id=brand.id, org_unit_id=scoped.id)
+    await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    page = await score_service.list_latest_scores(
+        db_session, ScoreSnapshotOwnerType.BRAND, under_org_unit_id=scoped.id, direct_only=True
+    )
+
+    assert page.items == []
+
+
+async def test_direct_only_without_the_scope_is_ignored(db_session: AsyncSession) -> None:
+    # direct_only refines under_org_unit_id; with no scope there is nothing to
+    # refine, and the honest answer is the unscoped listing — not an error and
+    # not an empty page (same posture as ADR 0034's brand-scope call).
+    root = await make_org_unit(db_session, name="Root")
+    child = await make_org_unit(db_session, name="Child", parent_id=root.id)
+    app_on_root = await make_app(db_session, name="On Root", slug="on-root", org_unit_id=root.id)
+    app_on_child = await make_app(db_session, name="On Child", slug="on-child", org_unit_id=child.id)
+
+    root_latest = await make_score_snapshot(
+        db_session, app_id=app_on_root.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
+    )
+    child_latest = await make_score_snapshot(
+        db_session, app_id=app_on_child.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
+    )
+
+    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, direct_only=True)
+
+    assert {(s.app_id, s.id) for s in page.items} == {
+        (app_on_root.id, root_latest.id),
+        (app_on_child.id, child_latest.id),
+    }

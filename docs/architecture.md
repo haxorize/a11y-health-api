@@ -273,6 +273,12 @@ included, matching the apps listing), `org_unit` serves the units strictly
 below it (the named unit is not "under" itself, and its own rollup already
 aggregates the subtree), and `brand` serves the empty set (brands have no
 org-tree placement). It intersects with `owner_id` when both are sent.
+The scope's `direct_only` opt-in narrows that resolution one step per owner
+type — `app` serves apps placed exactly on the named unit, `org_unit` its
+depth-1 children, `brand` stays empty — so a caller rendering only a unit's
+direct rows can fetch a response that matches them instead of the whole
+subtree. Without `under_org_unit_id` there is no scope to refine, so
+`direct_only` is ignored.
 
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.

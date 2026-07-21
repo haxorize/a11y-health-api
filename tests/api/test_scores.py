@@ -233,3 +233,24 @@ async def test_list_latest_scores_under_org_unit_id_param_decodes_to_subtree_sco
 async def test_list_latest_scores_unknown_under_org_unit_id_is_404(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/scores/latest", params={"owner_type": "app", "under_org_unit_id": 999999})
     assert response.status_code == 404
+
+
+async def test_list_latest_scores_direct_only_param_decodes_to_direct_scope(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+    own = await make_app(db_session, name="Own", slug="own", org_unit_id=scoped.id)
+    deep = await make_app(db_session, name="Deep", slug="deep", org_unit_id=child.id)
+
+    kept = await make_score_snapshot(db_session, app_id=own.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC))
+    await make_score_snapshot(db_session, app_id=deep.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
+
+    response = await db_client.get(
+        "/api/v1/scores/latest",
+        params={"owner_type": "app", "under_org_unit_id": scoped.id, "direct_only": "true"},
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [kept.id]

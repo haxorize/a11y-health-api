@@ -3384,6 +3384,16 @@
           },
           {
             "in": "query",
+            "name": "direct_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Direct Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {

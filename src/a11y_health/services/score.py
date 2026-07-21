@@ -31,6 +31,7 @@ async def list_latest_scores(
     *,
     owner_id: list[int] | None = None,
     under_org_unit_id: int | None = None,
+    direct_only: bool = False,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
@@ -39,15 +40,28 @@ async def list_latest_scores(
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
         if owner_type is ScoreSnapshotOwnerType.APP:
-            # An app placed anywhere in the subtree — including on the named unit
-            # itself — is "under" it, matching list_apps' org_unit_id expansion.
-            subtree = await get_descendant_ids(session, [under_org_unit_id])
-            snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id.in_(subtree))))
+            if direct_only:
+                # Placed exactly on the named unit — the direct counterpart of
+                # the inclusive-subtree default, resolved per owner type like
+                # the scope itself.
+                snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id == under_org_unit_id)))
+            else:
+                # An app placed anywhere in the subtree — including on the named unit
+                # itself — is "under" it, matching list_apps' org_unit_id expansion.
+                subtree = await get_descendant_ids(session, [under_org_unit_id])
+                snapshots = snapshots.where(owner_col.in_(select(App.id).where(App.org_unit_id.in_(subtree))))
         elif owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
-            # Strictly below: the named unit is not under itself, and its own
-            # rollup already aggregates the subtree being scoped to.
-            subtree = await get_descendant_ids(session, [under_org_unit_id])
-            snapshots = snapshots.where(owner_col.in_(subtree - {under_org_unit_id}))
+            if direct_only:
+                # Depth-1 needs no subtree walk: direct children are one
+                # parent_id predicate.
+                snapshots = snapshots.where(
+                    owner_col.in_(select(OrgUnit.id).where(OrgUnit.parent_id == under_org_unit_id))
+                )
+            else:
+                # Strictly below: the named unit is not under itself, and its own
+                # rollup already aggregates the subtree being scoped to.
+                subtree = await get_descendant_ids(session, [under_org_unit_id])
+                snapshots = snapshots.where(owner_col.in_(subtree - {under_org_unit_id}))
         elif owner_type is ScoreSnapshotOwnerType.BRAND:
             # Brands have no org-tree placement, so no brand owner is ever
             # "under" an org unit — the honest scoped set is empty, not "all",

@@ -18,6 +18,8 @@ import re
 from collections.abc import Iterable
 from typing import Literal, get_args
 
+from pydantic import ValidationError
+
 from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category
 
@@ -75,12 +77,18 @@ def classification_options(
     stored_entries: Iterable[dict[str, str]],
 ) -> list[tuple[ClassificationToken, Classification]]:
     """Distinct (token, Classification) pairs for the stored entries, in
-    vocabulary order. An entry with no token — valid but off-vocabulary, e.g. a
-    raw-SQL backfill — is dropped with a warning: the filter can't query what
-    it can't name."""
+    vocabulary order. An entry that earns no token is dropped with a warning —
+    whether invalid (mirroring the tolerant column read, so callers need not
+    pre-clean) or valid but off-vocabulary, e.g. a raw-SQL backfilled WCAG 3.0:
+    the filter can't query what it can't name."""
     present: set[ClassificationToken] = set()
     for entry in stored_entries:
-        token = _CLASSIFICATION_TO_TOKEN.get(Classification.model_validate(entry))
+        try:
+            classification = Classification.model_validate(entry)
+        except ValidationError:
+            logger.warning("Omitting invalid classification %r from filter options", entry)
+            continue
+        token = _CLASSIFICATION_TO_TOKEN.get(classification)
         if token is None:
             logger.warning("Omitting off-vocabulary classification %r from filter options", entry)
             continue

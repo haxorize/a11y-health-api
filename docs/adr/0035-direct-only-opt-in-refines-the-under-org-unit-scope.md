@@ -22,3 +22,14 @@ the semantics rather than a refinement. `direct_only` without
 `under_org_unit_id` is ignored, not a 400 — it refines the scope, no scope
 means nothing to refine, and an error mode would buy a new `ErrorCode` for a
 well-formed request (the same posture as 0034's brand-scope call).
+
+On a11y-health-ui#57's "adopt only if round trips measurably matter" gate: no
+subtree was measured crossing a page boundary before this landed. What was
+taken as sufficient instead is structural — the cost is one serial round-trip
+per 100 subtree rows *before first paint*, on a listing whose keyset contract
+rules out the parallel prefetch that would otherwise absorb it, so the
+mitigation cannot be added later without the same contract change plus a UI
+rewrite. Being early is bounded here in a way it usually isn't: the parameter
+defaults off, changes no existing response, and the subtree default stays the
+scope's recorded meaning, so an unused `direct_only` costs one query parameter
+rather than a semantics migration.

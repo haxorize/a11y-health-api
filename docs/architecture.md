@@ -89,6 +89,16 @@ Callers follow a **two-tier call rule**:
   "does it exist?" (or to fetch an entity it only reads); that import topology
   is what previously forced function-local imports to dodge cycles.
 
+**Listing parameters split on whether the guard applies at all.** A *scope* —
+`/scores/latest`'s `brand_id` and `under_org_unit_id` — names one entity the
+answer is computed *relative to*, so it is guarded and an unknown id 404s. A
+*filter* — the apps listing's `brand_id`/`org_unit_id`, the org-units listing's
+`parent_id`, `/scores/latest`'s `owner_id` — narrows a set by matching values,
+takes a list, and is not guarded: unknown ids match nothing, and guarding would
+run an existence query per value to reject a request whose answer is already
+well-defined. A new listing parameter picks the side it belongs to rather than
+splitting the difference.
+
 The guard lives in the service/domain layer — not in endpoint dependencies —
 because services are entered from the CLI and scoring orchestration as well as
 from transport; a transport-level check would silently unguard those paths and
@@ -277,12 +287,15 @@ type — `app` serves apps placed exactly on the named unit, `org_unit` its
 depth-1 children, `brand` stays empty — so a caller rendering only a unit's
 direct rows can fetch a response that matches them instead of the whole
 subtree. Without `under_org_unit_id` there is no scope to refine, so
-`direct_only` is ignored. The `brand_id` scope names a *brand*, not owners,
+`direct_only` is ignored
+([ADR 0035](adr/0035-direct-only-opt-in-refines-the-under-org-unit-scope.md)).
+The `brand_id` scope names a *brand*, not owners,
 and resolves the same way: `app` serves the brand's apps wherever they sit in
 the org tree (flat, like the Brand Rollup), while `org_unit` and `brand` serve
 the empty set — org units carry no brand, and the scoping brand's own rollup
 already aggregates the scoped apps (fetch it via `owner_id`). Both scopes and
-`owner_id` intersect when sent together.
+`owner_id` intersect when sent together — never mutually exclusive
+([ADR 0036](adr/0036-brand-scope-resolves-per-owner-type.md)).
 
 A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.

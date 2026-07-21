@@ -1,5 +1,13 @@
 # The under_org_unit_id scope resolves per owner type: inclusive for apps, strict for org units, empty for brands
 
+> **Amended by [ADR 0035](0035-direct-only-opt-in-refines-the-under-org-unit-scope.md):**
+> the per-owner-type resolution below stands as the scope's meaning, and depth-1
+> is still not it. But "clients wanting depth 1 can filter a strict-descendant
+> result" did not survive contact with keyset pagination — cursor pages are
+> sequential, so filtering client-side costs one serial round-trip per page of
+> subtree before first paint. 0035 adds `direct_only` as an opt-in refinement
+> that leaves this default untouched.
+
 `GET /scores/latest?under_org_unit_id=X` — extending the latest-scores read
 ([ADR 0023](0023-scores-latest-read-endpoint.md)) via a subtree helper shared
 under the two-tier call rule ([ADR 0024](0024-existence-guard-core-module-two-tier-rule.md),

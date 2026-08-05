@@ -130,8 +130,7 @@ async def make_score_snapshot(
     total_pages: int = 10,
     snapshot_at: datetime | None = None,
 ) -> ScoreSnapshot:
-    # Exactly one owner kwarg; the unpack fails loudly on zero or several.
-    [(owner_type, owner_id)] = (
+    owners = [
         (t, v)
         for t, v in (
             (ScoreSnapshotOwnerType.APP, app_id),
@@ -139,7 +138,10 @@ async def make_score_snapshot(
             (ScoreSnapshotOwnerType.BRAND, brand_id),
         )
         if v is not None
-    )
+    ]
+    if len(owners) != 1:
+        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
+    [(owner_type, owner_id)] = owners
     snapshot = owned(
         owner_type,
         owner_id,

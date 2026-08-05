@@ -96,9 +96,8 @@ When a mutation triggers cross-service side effects (e.g., score computation + r
 # services/scoring_orchestration.py — coordinates score + rollup side effects
 async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
     await score_snapshot_service.compute_app_score(session, scan_run)
-    app = await app_service.get_app(session, scan_run.app_id)
-    await score_snapshot_service.rollup_org_unit_scores(session, app.org_unit_id)
-    await score_snapshot_service.rollup_brand_scores(session, app.brand_id)
+    app = await existence.get_by_pk(session, App, scan_run.app_id)
+    await on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)  # → owner.rollup(...) per owner
 
 # services/scan_run.py — calls orchestration after status change
 scan_run = await _do_status_update(session, scan_run, data)

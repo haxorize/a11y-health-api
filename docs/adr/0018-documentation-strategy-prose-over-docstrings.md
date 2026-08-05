@@ -17,7 +17,7 @@ by three artifacts with non-overlapping jobs:
 - **Module docstrings**, only on modules whose purpose is not self-evident from
   path + a glance (`core/pagination.py`, `core/database.py`,
   `services/score_snapshot.py`, `services/scoring_orchestration.py`,
-  `services/score.py`, `schemas/axe_payload.py`, `schemas/_tag_parsing.py`),
+  `services/owner.py`, `schemas/axe_payload.py`, `schemas/_tag_parsing.py`),
   orient a reader who lands in the file and point to the relevant narrative-doc
   section rather than re-explaining it.
 

@@ -230,6 +230,17 @@ async def test_list_latest_scores_owner_id_filter_is_exact_match_for_rollup_owne
     assert [(s.org_unit_id, s.id) for s in page.items] == [(parent.id, parent_snapshot.id)]
 
 
+async def test_list_latest_scores_empty_owner_id_list_serves_an_empty_page(db_session: AsyncSession) -> None:
+    # "Exactly these owners: none" — an empty filter must not fall through to
+    # the unfiltered listing and over-serve every owner.
+    org_unit = await make_org_unit(db_session)
+    await make_score_snapshot(db_session, org_unit_id=org_unit.id)
+
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, owner_id=[])
+
+    assert page.items == []
+
+
 async def test_list_latest_scores_filters_by_owner_type(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     app = await make_app_with_org_unit(db_session, org_name="Org A", slug="app-a", brand_id=brand.id)
@@ -608,17 +619,32 @@ def test_score_snapshot_column_set_is_pinned() -> None:
     }
 
 
+# The one scan → ingest → score → rollup flow; the two named wrappers below
+# pick the rollup owner so their call sites stay one-line arrangements.
+async def _complete_score_and_rollup(
+    db_session: AsyncSession,
+    app_id: int,
+    payloads: list[dict],
+    owner_type: ScoreSnapshotOwnerType,
+    owner_id: int,
+    scanned_at: datetime | None = None,
+) -> ScoreSnapshot:
+    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
+    snapshot = await ingest_and_score(db_session, sr.id, payloads)
+    await owner_service.rollup(db_session, owner_type, owner_id)
+    return snapshot
+
+
 async def _complete_and_score(
     db_session: AsyncSession,
     app_id: int,
     payloads: list[dict],
     scanned_at: datetime | None = None,
 ) -> ScoreSnapshot:
-    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    snapshot = await ingest_and_score(db_session, sr.id, payloads)
     app = await app_service.get_app(db_session, app_id)
-    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, app.org_unit_id)
-    return snapshot
+    return await _complete_score_and_rollup(
+        db_session, app_id, payloads, ScoreSnapshotOwnerType.ORG_UNIT, app.org_unit_id, scanned_at
+    )
 
 
 class TestOrgUnitRollup:
@@ -884,10 +910,9 @@ async def _complete_score_and_rollup_brand(
     payloads: list[dict],
     scanned_at: datetime | None = None,
 ) -> ScoreSnapshot:
-    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    snapshot = await ingest_and_score(db_session, sr.id, payloads)
-    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand_id)
-    return snapshot
+    return await _complete_score_and_rollup(
+        db_session, app_id, payloads, ScoreSnapshotOwnerType.BRAND, brand_id, scanned_at
+    )
 
 
 class TestBrandRollup:
@@ -1014,6 +1039,22 @@ class TestRollupSnapshotUniqueness:
             ScoreSnapshot(
                 org_unit_id=org_unit.id,
                 brand_id=brand.id,
+                score=0.8,
+                total_violations=5,
+                total_pages=10,
+                pages_with_violations=2,
+                pages_with_critical_violations=1,
+                snapshot_at=DEFAULT_SNAPSHOT_AT,
+            )
+        )
+        with pytest.raises(IntegrityError, match=CK_SCORE_SNAPSHOT_OWNER):
+            await db_session.flush()
+
+    async def test_schema_rejects_snapshot_with_no_owner(self, db_session: AsyncSession) -> None:
+        # owned() can't express an ownerless row either — build it raw so the
+        # constraint's zero-owner arm stays pinned alongside the two-owner arm.
+        db_session.add(
+            ScoreSnapshot(
                 score=0.8,
                 total_violations=5,
                 total_pages=10,

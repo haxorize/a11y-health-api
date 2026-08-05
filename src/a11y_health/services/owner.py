@@ -6,6 +6,7 @@ table is also the sanctioned test seam (ADR 0037): the rollup-race harness
 swaps the whole table for a test's duration, and consumers resolve it at call
 time.
 
+App-score computation stays outside the charter, in `score_snapshot.py`.
 See `docs/architecture.md` ("The scoring & rollup model").
 """
 
@@ -14,7 +15,7 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import NamedTuple, assert_never
 
-from sqlalchemy import ColumnElement, Select, delete, false, func, select
+from sqlalchemy import ColumnElement, CompoundSelect, Select, delete, false, func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -45,6 +46,13 @@ def brand_apps(brand_id: int) -> Select[tuple[int]]:
     return select(App.id).where(App.brand_id == brand_id)
 
 
+async def _latest_of(
+    session: AsyncSession, snapshots: Select | CompoundSelect, partition_on: list[InstrumentedAttribute]
+) -> list[ScoreSnapshot]:
+    result = await session.execute(select_latest_snapshots(snapshots, partition_on=partition_on))
+    return list(result.scalars().all())
+
+
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
     app_child = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.org_unit_id == org_unit_id)
     ou_child = (
@@ -52,18 +60,14 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
         .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
         .where(OrgUnit.parent_id == org_unit_id)
     )
-    stmt = select_latest_snapshots(
-        app_child.union_all(ou_child), partition_on=[ScoreSnapshot.app_id, ScoreSnapshot.org_unit_id]
+    return await _latest_of(
+        session, app_child.union_all(ou_child), partition_on=[ScoreSnapshot.app_id, ScoreSnapshot.org_unit_id]
     )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
     snapshots = select(ScoreSnapshot).where(ScoreSnapshot.app_id.in_(brand_apps(brand_id)))
-    stmt = select_latest_snapshots(snapshots, partition_on=[ScoreSnapshot.app_id])
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    return await _latest_of(session, snapshots, partition_on=[ScoreSnapshot.app_id])
 
 
 async def _org_unit_parent(session: AsyncSession, org_unit_id: int) -> int | None:
@@ -130,13 +134,11 @@ async def list_latest_scores(
     snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
     if brand_id is not None:
         await existence.get_by_pk(session, Brand, brand_id)
-        snapshots = snapshots.where(_brand_scope(owner_type, owner_col, brand_id))
+        snapshots = snapshots.where(_brand_scope(owner_type, brand_id))
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
-        snapshots = snapshots.where(
-            await _under_org_unit_scope(session, owner_type, owner_col, under_org_unit_id, direct_only)
-        )
-    if owner_id:
+        snapshots = snapshots.where(await _under_org_unit_scope(session, owner_type, under_org_unit_id, direct_only))
+    if owner_id is not None:
         # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
         # owner's snapshot already aggregates everything it covers (an org unit's
         # subtree, a brand's flat app set), so expansion would double-count.
@@ -156,13 +158,11 @@ async def list_latest_scores(
     )
 
 
-def _brand_scope(
-    owner_type: ScoreSnapshotOwnerType, owner_col: InstrumentedAttribute[int | None], brand_id: int
-) -> ColumnElement[bool]:
+def _brand_scope(owner_type: ScoreSnapshotOwnerType, brand_id: int) -> ColumnElement[bool]:
     if owner_type is ScoreSnapshotOwnerType.APP:
         # Brand ownership is flat, like the brand rollup: the one membership
         # predicate decides, wherever the app sits in the org tree.
-        return owner_col.in_(brand_apps(brand_id))
+        return OWNERS[owner_type].id_column.in_(brand_apps(brand_id))
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT or owner_type is ScoreSnapshotOwnerType.BRAND:
         # Only apps carry brand ownership. An org unit has no brand, and a
         # brand isn't owned by a brand — the scoping brand's own rollup
@@ -175,10 +175,10 @@ def _brand_scope(
 async def _under_org_unit_scope(
     session: AsyncSession,
     owner_type: ScoreSnapshotOwnerType,
-    owner_col: InstrumentedAttribute[int | None],
     under_org_unit_id: int,
     direct_only: bool,
 ) -> ColumnElement[bool]:
+    owner_col = OWNERS[owner_type].id_column
     if owner_type is ScoreSnapshotOwnerType.APP:
         # An app placed anywhere in the subtree — including on the named unit
         # itself — is "under" it, matching list_apps' org_unit_id expansion.
@@ -256,7 +256,7 @@ def owned(
 _DEADLOCK_SQLSTATE = "40P01"
 
 
-def _rollup_owner(owner_type: ScoreSnapshotOwnerType) -> tuple[OwnerSpec, RollupSpec]:
+def _require_rollup_spec(owner_type: ScoreSnapshotOwnerType) -> tuple[OwnerSpec, RollupSpec]:
     spec = OWNERS[owner_type]
     if spec.rollup is None:
         raise ValueError(f"{owner_type.value} snapshots come from scoring, not a rollup")
@@ -365,7 +365,7 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
     """Recompute the owner's aggregate from its children's latest snapshots,
     cascading to the parent where the spec defines one. Raises `ValueError` for
     an owner type that doesn't roll up (APP)."""
-    spec, rollup_spec = _rollup_owner(owner_type)
+    spec, rollup_spec = _require_rollup_spec(owner_type)
     await _acquire_rollup_lock(session, owner_type, owner_id)
     children = await rollup_spec.children(session, owner_id)
     await _apply_rollup(session, children, spec, rollup_spec, owner_id)

@@ -8,17 +8,16 @@ from sqlalchemy.types import Text
 
 from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotalledCursorPage, paginate
+from a11y_health.models.classification import (
+    ClassificationToken,
+    classification_options,
+    token_to_stored_classification,
+)
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.schemas._tag_parsing import (
-    ClassificationToken,
-    classification_options,
-    token_to_stored_classification,
-    wcag_criterion_sort_key,
-)
 from a11y_health.schemas.rule_finding import (
     ClassificationFilterOption,
     FindingFilterOptionsRead,
@@ -81,6 +80,18 @@ async def list_findings(
         into=lambda r: RuleFindingRead.from_finding(r.RuleFinding, node_finding_count=r.node_finding_count),
         with_total=True,
     )
+
+
+def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
+    """Numeric segment order, so 1.4.13 sorts between 1.4.3 and 1.10.1.
+
+    The column carries no format constraint (ADR 0014), so an out-of-shape
+    value sorts last instead of failing the read that sorts it.
+    """
+    parts = criterion.split(".")
+    if all(part.isdigit() for part in parts):
+        return (0, tuple(int(part) for part in parts), "")
+    return (1, (), criterion)
 
 
 async def list_filter_options(session: AsyncSession, scan_run_id: int) -> FindingFilterOptionsRead:

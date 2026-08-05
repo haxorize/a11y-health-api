@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
+from a11y_health.models.classification import token_to_stored_classification
 from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus, ScoreSnapshotOwnerType
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
@@ -17,7 +18,6 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import owner as owner_service

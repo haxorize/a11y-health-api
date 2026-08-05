@@ -2,9 +2,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from a11y_health.models.classification import Classification
+from a11y_health.models.classification import Classification, ClassificationToken
 from a11y_health.models.enums import Category, FindingType, Impact
-from a11y_health.schemas._tag_parsing import ClassificationToken
 
 if TYPE_CHECKING:
     from a11y_health.models.rule_finding import RuleFinding

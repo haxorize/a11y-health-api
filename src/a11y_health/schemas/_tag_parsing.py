@@ -1,103 +1,22 @@
-"""Parsing axe's open tag vocabulary into our domain enums.
+"""Parsing axe's tag syntax into our domain values, for ingest.
 
-Maps a rule's raw `tags` list onto a Category, its WCAG Criteria, and its
-Classifications (WCAG version/level pairs or best-practice). `axe_payload.py`
-owns the ingest-side parsing; the findings filter (service and endpoint) reads
-the `ClassificationToken` vocabulary and `token_to_stored_classification` from
-here so query and storage can never disagree, and the filter-options
-enumeration reads `wcag_criterion_sort_key` and `classification_options` so
-response ordering and the token↔Classification pairing stay with the code
-that mints them. Unknown WCAG-shaped tags are dropped
-rather than rejected, since the axe tag set is open-ended.
+Maps a rule's raw `tags` list onto a Category and its WCAG Criteria — the two
+values that have to be read *out of* the tag's shape. Genuinely private to this
+package: `axe_payload.py` is the only importer. Classifications are not here,
+because naming one takes no tag syntax at all, only the closed vocabulary in
+`models/classification.py`, which screens the same list itself. Unknown
+WCAG-shaped tags are dropped rather than rejected, since the axe tag set is
+open-ended.
 
-See `DOMAIN.md` for Category, WCAG Criteria, and Classification.
+See `DOMAIN.md` for Category and WCAG Criteria.
 """
 
-import logging
 import re
-from collections.abc import Iterable
-from typing import Literal, get_args
 
-from pydantic import ValidationError
-
-from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category
-
-logger = logging.getLogger(__name__)
 
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CAT_TAG = re.compile(r"^cat\.(.+)$")
-
-
-ClassificationToken = Literal[
-    "wcag2a",
-    "wcag2aa",
-    "wcag2aaa",
-    "wcag21a",
-    "wcag21aa",
-    "wcag21aaa",
-    "wcag22a",
-    "wcag22aa",
-    "wcag22aaa",
-    "best-practice",
-]
-
-
-_TOKEN_TO_CLASSIFICATION: dict[str, Classification] = {
-    "wcag2a": Classification(standard="wcag", version="2.0", level="A"),
-    "wcag2aa": Classification(standard="wcag", version="2.0", level="AA"),
-    "wcag2aaa": Classification(standard="wcag", version="2.0", level="AAA"),
-    "wcag21a": Classification(standard="wcag", version="2.1", level="A"),
-    "wcag21aa": Classification(standard="wcag", version="2.1", level="AA"),
-    "wcag21aaa": Classification(standard="wcag", version="2.1", level="AAA"),
-    "wcag22a": Classification(standard="wcag", version="2.2", level="A"),
-    "wcag22aa": Classification(standard="wcag", version="2.2", level="AA"),
-    "wcag22aaa": Classification(standard="wcag", version="2.2", level="AAA"),
-    "best-practice": Classification(standard="best-practice"),
-}
-
-# The Literal feeds the OpenAPI enum; the map feeds storage and the filter. A missing
-# map entry would 500 on a contractually valid token, so drift fails at import instead
-# (an explicit raise, not an assert — asserts vanish under python -O).
-if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
-    raise RuntimeError("ClassificationToken and _TOKEN_TO_CLASSIFICATION have drifted")
-
-
-def token_to_stored_classification(token: ClassificationToken) -> dict[str, str]:
-    return _TOKEN_TO_CLASSIFICATION[token].stored()
-
-
-# Classification is frozen, so its own value-equality keys the reverse lookup.
-_CLASSIFICATION_TO_TOKEN: dict[Classification, ClassificationToken] = {
-    _TOKEN_TO_CLASSIFICATION[token]: token for token in get_args(ClassificationToken)
-}
-
-
-def classification_options(
-    stored_entries: Iterable[dict[str, str]],
-) -> list[tuple[ClassificationToken, Classification]]:
-    """Distinct (token, Classification) pairs for the stored entries, in
-    vocabulary order. An entry that earns no token is dropped with a warning —
-    whether invalid (mirroring the tolerant column read, so callers need not
-    pre-clean) or valid but off-vocabulary, e.g. a raw-SQL backfilled WCAG 3.0:
-    the filter can't query what it can't name."""
-    present: set[ClassificationToken] = set()
-    for entry in stored_entries:
-        try:
-            classification = Classification.model_validate(entry)
-        except ValidationError:
-            logger.warning("Omitting invalid classification %r from filter options", entry)
-            continue
-        token = _CLASSIFICATION_TO_TOKEN.get(classification)
-        if token is None:
-            logger.warning("Omitting off-vocabulary classification %r from filter options", entry)
-            continue
-        present.add(token)
-    return [(token, _TOKEN_TO_CLASSIFICATION[token]) for token in get_args(ClassificationToken) if token in present]
-
-
-def extract_classifications(tags: list[str]) -> list[Classification]:
-    return [_TOKEN_TO_CLASSIFICATION[tag] for tag in tags if tag in _TOKEN_TO_CLASSIFICATION]
 
 
 def extract_wcag_criteria(tags: list[str]) -> list[str]:
@@ -107,18 +26,6 @@ def extract_wcag_criteria(tags: list[str]) -> list[str]:
         if m:
             results.append(f"{m.group(1)}.{m.group(2)}.{m.group(3)}")
     return results
-
-
-def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
-    """Numeric segment order, so 1.4.13 sorts between 1.4.3 and 1.10.1.
-
-    The column carries no format constraint (ADR 0014), so an out-of-shape
-    value sorts last instead of failing the read that sorts it.
-    """
-    parts = criterion.split(".")
-    if all(part.isdigit() for part in parts):
-        return (0, tuple(int(part) for part in parts), "")
-    return (1, (), criterion)
 
 
 _CATEGORY_LOOKUP = {c.value: c for c in Category}

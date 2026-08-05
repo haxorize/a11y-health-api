@@ -2,8 +2,8 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.main import app
+from a11y_health.models.classification import token_to_stored_classification
 from a11y_health.models.enums import Category, FindingType, Impact
-from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from tests.factories import (
     make_node_finding,
     make_page_result,

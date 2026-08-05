@@ -1,7 +1,7 @@
 from collections import Counter
 
 from a11y_health.models.enums import Impact, PageHealth
-from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
+from a11y_health.services import scoring_vocabulary
 
 
 def test_rank_is_position_in_worst_to_best_ordering() -> None:

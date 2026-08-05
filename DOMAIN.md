@@ -114,6 +114,7 @@
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.
 - **"Rollup"** now covers two distinct patterns: hierarchical cascading (**Org Unit Rollup**) and flat aggregation (**Brand Rollup**). When unqualified, "rollup" means the general concept. Use **Org Unit Rollup** or **Brand Rollup** when the distinction matters.
 - **"Status"** is overloaded — **Scan Run Status** (Pending/Completed) vs. the health check endpoint's `"healthy"` status. Context usually disambiguates, but prefer **Scan Run Status** when referring to the lifecycle.
+- **"Honesty"** names two unrelated suite-wide invariants: **Declaration Honesty** (an operation declares the 4xx modes it can produce) and import honesty (a private module is reached only from its own package — see ADR 0038). Neither owns the bare word; say **Declaration Honesty** or "import honesty" in full.
 
 ## Cross-repo
 

@@ -61,11 +61,37 @@ foreign keys. **Schemas** (`schemas/`) are Pydantic classes for request and
 response bodies; they are *not* the database models, and keeping them separate is
 what lets the stored shape and the wire shape evolve independently.
 
+`models/` also holds the layer-neutral leaves that every other layer needs and
+none of them owns. `models/classification.py` is the one to know: the
+**Classification** value object *and* the closed **Classification Token**
+vocabulary that names it — the query tokens the findings endpoint declares, the
+canonical mint for the stored shape, and the **Filter Options** enumeration —
+kept together so the import-time drift guard that pins them to each other has
+both halves in front of it. It lives here because its consumers span layers
+(endpoint, filter service, read schema, column type); putting it in either
+`schemas/` or `services/` would make three of the four import across a seam
+([ADR 0031](adr/0031-typed-classification-compact-wire-shape.md)).
+
 **`core/`** holds the cross-cutting machinery every layer leans on: `database.py`
 (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)),
 `exceptions.py` (the domain error types), `error_contract.py` (the **Error
 Contract** — how domain errors become HTTP responses and contract declarations),
 and `existence.py` (the **Existence Guard** — see below).
+
+### Underscore means package-private, and a test says so
+
+A source module whose name starts with `_` may be reached from within its own
+package and nowhere else — `schemas/_tag_parsing.py` is axe-tag ingest parsing
+for `schemas/axe_payload.py`; `services/_latest_snapshot.py` serves the **Owner
+Dispatcher**; `services/_org_subtree.py` serves three consumers inside
+`services/` (`owner.py`, `org_unit.py`, and `app.py`). A private *package* gates
+everything beneath it, so a public module inside one is not a way in.
+`tests/test_import_honesty.py` walks the source tree and fails on any crossing,
+in either import spelling, so the underscore is a checked claim rather than a
+hint. The rule covers the package and nothing else — tests, migrations, and
+scripts sit outside it, which is what lets a private module's own suite import
+it directly. [ADR 0038](adr/0038-package-private-underscore-enforced-repo-wide.md)
+records why this is enforced rather than conventional.
 
 ### The Existence Guard and the two-tier call rule
 
@@ -212,7 +238,7 @@ latest/history score reads, and the rollups. Terms: **Page Health**, **Score**,
 The *meaning* behind the scoring value sets — the health ordering (worst → best,
 each health's rank derived from its position), the health weights, and the total
 Impact → Page Health mapping — has one home: the **Scoring Vocabulary** module,
-`services/_scoring_vocabulary.py`. The scoring engine imports it, and
+`services/scoring_vocabulary.py`. The scoring engine imports it, and
 `GET /scoring-vocabulary` serves the deployed server's copy so no client
 hard-codes it ([ADR 0020](adr/0020-scoring-vocabulary-runtime-endpoint.md)). The
 tables and weights quoted below are illustrations of that vocabulary, not a

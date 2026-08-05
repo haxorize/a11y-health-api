@@ -5,8 +5,8 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import PageParams, TotalledPage
+from a11y_health.models.classification import ClassificationToken
 from a11y_health.models.enums import Category, FindingType, Impact
-from a11y_health.schemas._tag_parsing import ClassificationToken
 from a11y_health.schemas.rule_finding import FindingFilterOptionsRead, RuleFindingDetail, RuleFindingRead
 from a11y_health.services import rule_finding as rule_finding_service
 

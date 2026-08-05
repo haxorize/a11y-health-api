@@ -6,9 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
-from a11y_health.models.classification import Classification
+from a11y_health.models.classification import Classification, token_to_stored_classification
 from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
-from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from a11y_health.services import rule_finding as rule_finding_service
 from tests.factories import (
     make_node_finding,

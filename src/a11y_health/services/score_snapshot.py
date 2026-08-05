@@ -19,8 +19,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
-from a11y_health.services import owner
+from a11y_health.services import owner, scoring_vocabulary
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:

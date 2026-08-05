@@ -1,4 +1,3 @@
-import ast
 import importlib
 import inspect
 from types import ModuleType
@@ -25,6 +24,7 @@ from tests.factories import (
     make_scan_run_with_parents,
     make_violation,
 )
+from tests.import_graph import imported_modules
 
 
 async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[list[PageResult], ScoreSnapshot]:
@@ -166,36 +166,28 @@ class TestScoreIndependentOfPageHealth:
 
 
 def _sibling_service_imports(module: ModuleType) -> set[str]:
-    # AST rather than source substrings: catches every import form and ignores
-    # comments that merely mention the package path.
+    # The shared walk sees every import spelling, including relative ones; this
+    # rule is only the prefix filter over it.
     prefix = "a11y_health.services"
-    siblings: set[str] = set()
-    for node in ast.walk(ast.parse(inspect.getsource(module))):
-        if isinstance(node, ast.Import):
-            siblings.update(
-                alias.name.removeprefix(f"{prefix}.").split(".")[0]
-                for alias in node.names
-                if alias.name.startswith(f"{prefix}.")
-            )
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            if node.module == prefix:
-                siblings.update(alias.name for alias in node.names)
-            elif node.module.startswith(f"{prefix}."):
-                siblings.add(node.module.removeprefix(f"{prefix}.").split(".")[0])
-    return siblings
+    imported = imported_modules(inspect.getsource(module), module.__name__)
+    return {name.removeprefix(f"{prefix}.").split(".")[0] for name in imported if name.startswith(f"{prefix}.")}
 
 
 class TestScoringModuleImports:
     # Entity fetches go through the Existence Guard, not a sibling service (see
     # architecture.md, "The Existence Guard and the two-tier call rule"): a
     # scoring module may cross the services namespace only for the shared
-    # underscore helpers and the Owner Dispatcher named here — never a sibling
-    # resource service, and not another service's private module just because
-    # its name starts with "_".
+    # modules and the Owner Dispatcher named here — never a sibling resource
+    # service. The rule is which shared modules a scoring module may reach, not
+    # whether their names are private. Privacy is no help inside `services/`:
+    # it is one flat package, so every module in it is a permitted importer of
+    # `_latest_snapshot` and `_org_subtree` as far as test_import_honesty.py is
+    # concerned. This allowlist is the only thing holding that line, and only
+    # for the modules named below.
     @pytest.mark.parametrize(
         ("module_name", "shared_helpers"),
         [
-            ("score_snapshot", {"_scoring_vocabulary", "owner"}),
+            ("score_snapshot", {"scoring_vocabulary", "owner"}),
             ("owner", {"_latest_snapshot", "_org_subtree"}),
         ],
     )

@@ -14,13 +14,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
+from a11y_health.models.classification import Classification, classifications_in
 from a11y_health.models.enums import Category, Impact
-from a11y_health.schemas._tag_parsing import (
-    Classification,
-    extract_category,
-    extract_classifications,
-    extract_wcag_criteria,
-)
+from a11y_health.schemas._tag_parsing import extract_category, extract_wcag_criteria
 
 
 class AxeNode(BaseModel):
@@ -59,7 +55,7 @@ class AxeRule(BaseModel):
                 **data,
                 "category": extract_category(tags),
                 "wcag_criteria": extract_wcag_criteria(tags),
-                "classifications": extract_classifications(tags),
+                "classifications": classifications_in(tags),
             }
         return data
 

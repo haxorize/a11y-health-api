@@ -3,8 +3,8 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.models.classification import token_to_stored_classification
 from a11y_health.models.rule_finding import RuleFinding
-from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from tests.factories import make_page_result, make_rule_finding, make_scan_run_with_parents
 
 

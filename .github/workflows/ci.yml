@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  UV_PYTHON: "3.13"
+  UV_PYTHON: "3.14"
 
 jobs:
   lint:
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run ty check
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - run: uv run pytest
 
   migration-drift:
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: Migration roundtrip
         # Roundtrips to the newest irreversible migration, not base — its
         # downgrade() raises by design (b362121027a0, the one-time duplicate

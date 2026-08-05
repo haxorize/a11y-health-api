@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Nick Bourgeois", email = "nick@haxorize.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "asyncpg>=0.31.0",
     "alembic>=1.18.5",
@@ -41,7 +41,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ASYNC"]
@@ -65,11 +65,11 @@ markers = [
 ]
 
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.14"
 
 [tool.coverage.run]
 # The default ctrace core loses line tracking in coroutine frames resumed
 # through the ASGI stack (endpoint returns and post-await service lines report
 # as missed despite tests asserting their output). sys.monitoring measures
-# them correctly on 3.13.
+# them correctly on 3.13 and 3.14.
 core = "sysmon"

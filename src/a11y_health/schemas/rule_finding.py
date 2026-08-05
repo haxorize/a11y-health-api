@@ -49,7 +49,7 @@ class _RuleFindingBase(BaseModel):
     tags: list[str]
 
 
-def _base_fields(finding: "RuleFinding") -> dict[str, Any]:
+def _base_fields(finding: RuleFinding) -> dict[str, Any]:
     return {name: getattr(finding, name) for name in _RuleFindingBase.model_fields}
 
 
@@ -57,7 +57,7 @@ class RuleFindingRead(_RuleFindingBase):
     node_finding_count: int
 
     @classmethod
-    def from_finding(cls, finding: "RuleFinding", *, node_finding_count: int) -> "RuleFindingRead":
+    def from_finding(cls, finding: RuleFinding, *, node_finding_count: int) -> RuleFindingRead:
         return cls(**_base_fields(finding), node_finding_count=node_finding_count)
 
 
@@ -80,5 +80,5 @@ class RuleFindingDetail(_RuleFindingBase):
     node_findings: list[NodeFindingDetail] = Field(default_factory=list)
 
     @classmethod
-    def from_finding(cls, finding: "RuleFinding", *, node_findings: list[NodeFindingDetail]) -> "RuleFindingDetail":
+    def from_finding(cls, finding: RuleFinding, *, node_findings: list[NodeFindingDetail]) -> RuleFindingDetail:
         return cls(**_base_fields(finding), node_findings=node_findings)

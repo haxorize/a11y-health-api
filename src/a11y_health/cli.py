@@ -390,7 +390,7 @@ def _api_error(resp: httpx.Response) -> ApiError:
     try:
         body = resp.json()
         return ApiError(code=body["code"], message=body["message"])
-    except (json.JSONDecodeError, KeyError, TypeError):
+    except json.JSONDecodeError, KeyError, TypeError:
         return ApiError(code=str(resp.status_code), message=resp.text)
 
 

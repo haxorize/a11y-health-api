@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     @model_validator(mode="after")
-    def validate_cors_origins(self) -> "Settings":
+    def validate_cors_origins(self) -> Settings:
         if not self.DEBUG and "*" in self.ALLOWED_ORIGINS:
             raise ValueError("Wildcard '*' is not allowed in ALLOWED_ORIGINS when DEBUG is False")
         return self

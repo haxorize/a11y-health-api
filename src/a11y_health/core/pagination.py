@@ -101,12 +101,12 @@ class Page[T](BaseModel):
     # an `into` aggregate returning the Read model itself (e.g. PageMetricsRead).
     @overload
     @classmethod
-    def from_cursor_page[I](cls, page: CursorPage[I]) -> "Page[I]": ...
+    def from_cursor_page[I](cls, page: CursorPage[I]) -> Page[I]: ...
     @overload
     @classmethod
-    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> "Page[R]": ...
+    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> Page[R]: ...
     @classmethod
-    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> "Page[I] | Page[R]":
+    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> Page[I] | Page[R]:
         if isinstance(page, TotalledCursorPage):
             # A totalled page reaching the plain converter means the count query
             # was paid and its result silently dropped — fail loud instead.
@@ -124,16 +124,16 @@ class TotalledPage[T](Page[T]):
 
     @overload
     @classmethod
-    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> "TotalledPage[I]": ...
+    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> TotalledPage[I]: ...
     @overload
     @classmethod
     def from_totalled_cursor_page[I, R](
         cls, page: TotalledCursorPage[I], item: Callable[[I], R]
-    ) -> "TotalledPage[R]": ...
+    ) -> TotalledPage[R]: ...
     @classmethod
     def from_totalled_cursor_page[I, R](
         cls, page: TotalledCursorPage[I], item: Callable[[I], R] | None = None
-    ) -> "TotalledPage[I] | TotalledPage[R]":
+    ) -> TotalledPage[I] | TotalledPage[R]:
         if item is None:
             return TotalledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
         return TotalledPage(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)

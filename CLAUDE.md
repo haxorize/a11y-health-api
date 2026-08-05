@@ -1,6 +1,6 @@
 # a11y-health-api
 
-FastAPI + async SQLAlchemy + PostgreSQL. Python 3.13.
+FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 ## Tooling
 

@@ -305,13 +305,15 @@ class TestScoringModuleImports:
     # Entity fetches go through the Existence Guard, not a sibling service (see
     # architecture.md, "The Existence Guard and the two-tier call rule"): a
     # scoring module may cross the services namespace only for the shared
-    # underscore helpers named here — never a sibling resource service, and not
-    # another service's private module just because its name starts with "_".
+    # underscore helpers and the Owner Dispatcher named here — never a sibling
+    # resource service, and not another service's private module just because
+    # its name starts with "_".
     @pytest.mark.parametrize(
         ("module_name", "shared_helpers"),
         [
             ("score", {"_latest_snapshot", "_org_subtree"}),
-            ("score_snapshot", {"_scoring_vocabulary", "_latest_snapshot"}),
+            ("score_snapshot", {"_scoring_vocabulary", "owner"}),
+            ("owner", {"_latest_snapshot"}),
         ],
     )
     def test_module_imports_only_shared_helpers(self, module_name: str, shared_helpers: set[str]) -> None:

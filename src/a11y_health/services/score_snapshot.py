@@ -20,7 +20,6 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import ConcurrentRollupError
-from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
 from a11y_health.models.enums import FindingType, Impact, PageHealth, ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
@@ -34,7 +33,7 @@ from a11y_health.models.score_snapshot import (
     ScoreSnapshot,
 )
 from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
-from a11y_health.services._latest_snapshot import select_latest_snapshots
+from a11y_health.services import owner
 
 _DEADLOCK_SQLSTATE = "40P01"
 
@@ -186,20 +185,6 @@ def build_snapshot(
     )
 
 
-async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    app_child = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.org_unit_id == org_unit_id)
-    ou_child = (
-        select(ScoreSnapshot)
-        .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
-        .where(OrgUnit.parent_id == org_unit_id)
-    )
-    stmt = select_latest_snapshots(
-        app_child.union_all(ou_child), partition_on=[ScoreSnapshot.app_id, ScoreSnapshot.org_unit_id]
-    )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
-
-
 def _require_exactly_one_owner(*, app_id: int | None, org_unit_id: int | None, brand_id: int | None) -> None:
     if sum(owner_id is not None for owner_id in (app_id, org_unit_id, brand_id)) != 1:
         raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
@@ -296,24 +281,29 @@ async def _acquire_rollup_lock(session: AsyncSession, owner: ScoreSnapshotOwnerT
         raise _ROLLUP_OWNERS[owner].concurrent_rollup_error(owner_id) from exc
 
 
+# Children and cascade parent resolve through owner.OWNERS at call time — the
+# sanctioned substitution seam (ADR 0037).
+def _rollup_spec(owner_type: ScoreSnapshotOwnerType) -> owner.RollupSpec:
+    spec = owner.OWNERS[owner_type].rollup
+    if spec is None:
+        raise ValueError(f"{owner_type.value} snapshots come from scoring, not a rollup")
+    return spec
+
+
 async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
     await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
-    children = await _latest_child_snapshots(session, org_unit_id)
+    spec = _rollup_spec(ScoreSnapshotOwnerType.ORG_UNIT)
+    children = await spec.children(session, org_unit_id)
     await _apply_rollup(session, children, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
 
-    org_unit = await existence.get_by_pk(session, OrgUnit, org_unit_id)
-    if org_unit.parent_id is not None:
-        await rollup_org_unit_scores(session, org_unit.parent_id)
-
-
-async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    brand_apps = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.brand_id == brand_id)
-    stmt = select_latest_snapshots(brand_apps, partition_on=[ScoreSnapshot.app_id])
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    if spec.cascade_parent is not None:
+        parent_id = await spec.cascade_parent(session, org_unit_id)
+        if parent_id is not None:
+            await rollup_org_unit_scores(session, parent_id)
 
 
 async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
     await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.BRAND, brand_id)
-    children = await _latest_brand_app_snapshots(session, brand_id)
+    spec = _rollup_spec(ScoreSnapshotOwnerType.BRAND)
+    children = await spec.children(session, brand_id)
     await _apply_rollup(session, children, ScoreSnapshotOwnerType.BRAND, brand_id)

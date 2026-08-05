@@ -7,9 +7,10 @@ deadlock test crosses two plain uncommitted sessions instead.
 """
 
 import asyncio
+import dataclasses
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Protocol
+from types import MappingProxyType
 
 import pytest
 from pytest import approx
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.services import owner as owner_service
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
     SessionFactory,
@@ -36,20 +38,12 @@ _NEWER_AT = datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
 _DEADLINE = 5.0
 
 
-class ReadChildren(Protocol):
-    """A named children-read function on the service module (patchable by name)."""
-
-    __name__: str
-
-    def __call__(self, session: AsyncSession, owner_id: int, /) -> Awaitable[list]: ...
-
-
 async def _race_stale_rollup_against_newer_observation(
     committed_session_factory: SessionFactory,
     mocker,
     *,
     app_id: int,
-    read_children: ReadChildren,
+    owner_type: ScoreSnapshotOwnerType,
     run_rollup: Callable[[AsyncSession], Awaitable[None]],
 ) -> None:
     """The #101 interleaving: session A's rollup pauses between its children
@@ -62,8 +56,12 @@ async def _race_stale_rollup_against_newer_observation(
     stale_view_read = asyncio.Event()
     resume_stale_rollup = asyncio.Event()
 
+    spec = owner_service.OWNERS[owner_type]
+    assert spec.rollup is not None
+    read_children = spec.rollup.children
+
     # Freeze session A between its input read and its writes — the window the
-    # interleaving needs. Session B runs the patched function too, so only A
+    # interleaving needs. Session B runs the substituted read too, so only A
     # pauses.
     async def pause_stale_session_after_read(session: AsyncSession, owner_id: int) -> list:
         children = await read_children(session, owner_id)
@@ -72,7 +70,10 @@ async def _race_stale_rollup_against_newer_observation(
             await resume_stale_rollup.wait()
         return children
 
-    mocker.patch.object(score_snapshot_service, read_children.__name__, pause_stale_session_after_read)
+    # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
+    # duration; the rollup resolves OWNERS at call time.
+    paused = dataclasses.replace(spec, rollup=dataclasses.replace(spec.rollup, children=pause_stale_session_after_read))
+    mocker.patch.object(owner_service, "OWNERS", MappingProxyType({**owner_service.OWNERS, owner_type: paused}))
 
     async def stale_rollup() -> None:
         await run_rollup(session_a)
@@ -130,7 +131,7 @@ async def test_stale_org_unit_rollup_cannot_regress_a_newer_committed_observatio
         committed_session_factory,
         mocker,
         app_id=app_id,
-        read_children=score_snapshot_service._latest_child_snapshots,
+        owner_type=ScoreSnapshotOwnerType.ORG_UNIT,
         run_rollup=lambda session: score_snapshot_service.rollup_org_unit_scores(session, org_unit_id),
     )
 
@@ -156,7 +157,7 @@ async def test_stale_brand_rollup_cannot_regress_a_newer_committed_observation(
         committed_session_factory,
         mocker,
         app_id=app.id,
-        read_children=score_snapshot_service._latest_brand_app_snapshots,
+        owner_type=ScoreSnapshotOwnerType.BRAND,
         run_rollup=lambda session: score_snapshot_service.rollup_brand_scores(session, brand_id),
     )
 

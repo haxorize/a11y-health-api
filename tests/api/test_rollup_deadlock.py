@@ -11,6 +11,8 @@ and `committed_session_factory`'s teardown truncates.
 """
 
 import asyncio
+import dataclasses
+from types import MappingProxyType
 
 import pytest
 from httpx import AsyncClient, Response
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from a11y_health.core import database
 from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.services import owner as owner_service
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import SessionFactory, advisory_lock_waiters, assert_error, make_org_unit
 
@@ -58,7 +61,9 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
 
     request_holds_child = asyncio.Event()
     holder_queued_on_child = asyncio.Event()
-    read_children = score_snapshot_service._latest_child_snapshots
+    spec = owner_service.OWNERS[ScoreSnapshotOwnerType.ORG_UNIT]
+    assert spec.rollup is not None
+    read_children = spec.rollup.children
 
     async def pause_after_child_read(session: AsyncSession, owner_id: int) -> list:
         children = await read_children(session, owner_id)
@@ -67,7 +72,14 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
             await holder_queued_on_child.wait()
         return children
 
-    mocker.patch.object(score_snapshot_service, "_latest_child_snapshots", pause_after_child_read)
+    # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
+    # duration; the rollup resolves OWNERS at call time.
+    paused = dataclasses.replace(spec, rollup=dataclasses.replace(spec.rollup, children=pause_after_child_read))
+    mocker.patch.object(
+        owner_service,
+        "OWNERS",
+        MappingProxyType({**owner_service.OWNERS, ScoreSnapshotOwnerType.ORG_UNIT: paused}),
+    )
 
     async def reparent() -> Response:
         return await client.patch(f"/api/v1/org-units/{grandchild.id}", json={"parent_id": root.id})

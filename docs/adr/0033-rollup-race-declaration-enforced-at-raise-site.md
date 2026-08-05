@@ -76,3 +76,25 @@ Known residuals:
   convention escapes instrumentation. The inverse failure is loud, not
   silent — a non-raising `rollup_*` function would over-assert, failing tests
   until it is renamed or its callers declare the mode.
+
+---
+
+**Amended 2026-08-05:** the mechanism consolidates into one home. The
+declaration-audit wing — `assert_declared_mode`,
+`assert_raisable_mode_declared`, `operations_declaring`, `operation_key`, the
+effective-route resolution, and `FRAMEWORK_STATUSES` — moves from
+`core/error_contract.py` into `tests/_declaration_honesty.py`, joining the
+ASGI shim and rollup instrumentation that were its only consumers; module
+references in the text above read historically. `error_contract` keeps the
+served contract and gains one shared name, the `x-error-codes` vendor-key
+constant, written by `error_responses()` and read by the audit — the lockstep
+that colocation used to provide, now carried by a name instead of a file, and
+pinned by the round-trip tests that build declarations via `error_responses()`
+and assert the audit reads them back. `operation_key`'s both-sides-must-agree
+caveat dissolves structurally: declared and observed sides now key in the same
+module. Rejected: a sibling src module (`core/declaration_audit.py`) — an
+honest split on the wrong side of the src/tests seam, still shipping
+suite-only machinery with zero src consumers. The test module's charter is
+closed — this ADR's mechanism, nothing else — and a future *production*
+consumer of declaration introspection promotes the needed function back into
+`error_contract`, never copies it. Residuals above are unchanged by the move.

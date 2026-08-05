@@ -1,4 +1,4 @@
-.PHONY: install dev test lint format clean migrate migrate-create migrate-downgrade ingest import openapi openapi-check
+.PHONY: install dev test coverage lint format clean migrate migrate-create migrate-downgrade ingest import openapi openapi-check
 
 install:
 	uv sync
@@ -9,7 +9,7 @@ dev:
 test:
 	uv run pytest -v
 
-test-cov:
+coverage:
 	uv run pytest --cov=a11y_health --cov-report=term-missing
 
 lint:
@@ -44,4 +44,5 @@ openapi-check: openapi
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -rf .pytest_cache .ruff_cache
+	rm -rf .pytest_cache .ruff_cache htmlcov
+	rm -f .coverage

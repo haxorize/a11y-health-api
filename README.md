@@ -32,7 +32,7 @@ The API will be available at `http://localhost:8000` with interactive docs at `h
 make test
 
 # Run tests with coverage
-make test-cov
+make coverage
 
 # Lint (ruff + ty)
 make lint

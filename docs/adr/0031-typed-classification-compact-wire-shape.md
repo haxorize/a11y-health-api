@@ -10,3 +10,28 @@
 ---
 
 **Amended 2026-07-18 (#114):** the follow-up landed, and it changed both halves of the second consequence. The compact shape is now a column guarantee — `_CompactClassifications` (a `TypeDecorator` in `models/rule_finding.py`) validates and dumps every bound value, covering writers and the filter's GIN containment targets alike — and an invalid entry written past that guard (raw-SQL backfill) — one that fails the `Classification` shape — is dropped from reads with a warning instead of failing the page that renders it, matching the codebase's tolerant-read style (unknown tags dropped at ingest, out-of-shape criteria sorting last). `Classification` itself moved to `models/classification.py`, a layer-neutral leaf, so the column type never imports from schemas; `schemas/_tag_parsing.py` still owns parsing and the token vocabulary.
+
+---
+
+**Amended 2026-08-05:** the vocabulary follows the value object. The token
+vocabulary — the closed token set, the token↔`Classification` map with its
+import-time drift guard, the stored-shape mint, and the filter-options
+enumeration — moves from `schemas/_tag_parsing.py` into
+`models/classification.py`, for the same reason `Classification` moved here:
+its consumers (the findings endpoint's query vocabulary, the filter service,
+the read schema, and the test factories) span layers, and the underscore name
+was a fiction every one of them had to cross. `_tag_parsing.py` shrinks to the
+axe-tag ingest adapter, genuinely private to its package, importing the
+vocabulary from here so query and storage still cannot disagree; the WCAG
+criterion sort key — criteria, not Classification — moves into its single
+consumer, the filter service. Rejected: renaming `_tag_parsing` public in
+place (honest name, wrong seam — cross-layer imports of query vocabulary would
+still point into the schemas layer, with ingest parsing and query vocabulary
+behind one interface) and a sibling vocabulary module beside this one (one
+concept split across two files, and the drift guard's colocation argument
+would span an import edge). The module's charter is closed: the value object
+and the closed vocabulary that names it, nothing else. In the same change
+`services/_scoring_vocabulary.py` is renamed public — the same
+private-name-with-cross-layer-importers shape, served on the wire, both
+importers already aliasing the underscore away — with no record of its own
+because the rename carries no trade-off.

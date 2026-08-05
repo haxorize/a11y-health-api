@@ -28,7 +28,10 @@ def package_of(module: str) -> str:
 
 
 def packages_in(names: Iterable[str]) -> frozenset[str]:
-    """Which of `names` are packages — anything another name sits under."""
+    """Which of `names` are packages — anything another name sits under. A
+    package whose `__init__` is its only module therefore reads as a leaf, and a
+    relative import *from* it would resolve one level high; no such package
+    exists under `src/`."""
     return frozenset(package_of(name) for name in names) - {""}
 
 

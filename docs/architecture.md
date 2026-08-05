@@ -65,11 +65,14 @@ what lets the stored shape and the wire shape evolve independently.
 none of them owns. `models/classification.py` is the one to know: the
 **Classification** value object *and* the closed **Classification Token**
 vocabulary that names it — the query tokens the findings endpoint declares, the
-canonical mint for the stored shape, and the **Filter Options** enumeration —
-kept together so the import-time drift guard that pins them to each other has
-both halves in front of it. It lives here because its consumers span layers
-(endpoint, filter service, read schema, column type); putting it in either
-`schemas/` or `services/` would make three of the four import across a seam
+canonical mint for the stored shape, the **Filter Options** enumeration, and the
+screen that names a rule's raw axe tags at ingest — kept together so the
+import-time drift guard that pins them to each other has both halves in front of
+it. Every read runs the same closed table, so a token cannot mean one thing to a
+query and another to an ingest. It lives here because its consumers span layers
+(findings endpoint, filter service, read schema, column type, axe boundary);
+putting it in `schemas/` would send three of those five across a seam, and
+`services/` four
 ([ADR 0031](adr/0031-typed-classification-compact-wire-shape.md)).
 
 **`core/`** holds the cross-cutting machinery every layer leans on: `database.py`

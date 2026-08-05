@@ -35,3 +35,14 @@ and the closed vocabulary that names it, nothing else. In the same change
 private-name-with-cross-layer-importers shape, served on the wire, both
 importers already aliasing the underscore away — with no record of its own
 because the rename carries no trade-off.
+
+**Amended 2026-08-05 (#131 review):** the ingest screen followed the vocabulary,
+superseding the clause above that has `_tag_parsing.py` importing it.
+`classifications_in` — the read that names a rule's raw axe tags — sits in
+`models/classification.py` beside `classification_options`, which does the same
+job for stored entries: both screen open-ended input against the closed token
+set and drop what it cannot name, and they were one operation split across two
+layers. `_tag_parsing.py` now imports nothing from here and owns axe tag
+*syntax* alone — a Category and its WCAG Criteria, the values that have to be
+read out of a tag's shape. The charter closes around the value object, the
+vocabulary, the drift guard, and the three reads that vocabulary answers.

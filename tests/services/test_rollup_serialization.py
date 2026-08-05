@@ -9,7 +9,6 @@ deadlock test crosses two plain uncommitted sessions instead.
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from types import MappingProxyType
 
 import pytest
 from pytest import approx
@@ -18,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import owner as owner_service
-from a11y_health.services import score_snapshot as score_snapshot_service
+from a11y_health.services.owner import ChildrenRead
 from tests.factories import (
     SessionFactory,
     advisory_lock_waiters,
@@ -28,6 +27,7 @@ from tests.factories import (
     make_brand,
     make_org_unit,
     make_score_snapshot,
+    substitute_children_read,
 )
 
 pytestmark = pytest.mark.integration
@@ -55,24 +55,20 @@ async def _race_stale_rollup_against_newer_observation(
     stale_view_read = asyncio.Event()
     resume_stale_rollup = asyncio.Event()
 
-    spec = owner_service.OWNERS[owner_type]
-    assert spec.rollup is not None
-    read_children = spec.rollup.children
-
     # Freeze session A between its input read and its writes — the window the
     # interleaving needs. Session B runs the substituted read too, so only A
     # pauses.
-    async def pause_stale_session_after_read(session: AsyncSession, owner_id: int) -> list:
-        children = await read_children(session, owner_id)
-        if session is session_a:
-            stale_view_read.set()
-            await resume_stale_rollup.wait()
-        return children
+    def pause_stale_session(read_children: ChildrenRead) -> ChildrenRead:
+        async def pause_after_read(session: AsyncSession, owner_id: int) -> list:
+            children = await read_children(session, owner_id)
+            if session is session_a:
+                stale_view_read.set()
+                await resume_stale_rollup.wait()
+            return children
 
-    # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
-    # duration; the rollup resolves OWNERS at call time.
-    paused = spec._replace(rollup=spec.rollup._replace(children=pause_stale_session_after_read))
-    mocker.patch.object(owner_service, "OWNERS", MappingProxyType({**owner_service.OWNERS, owner_type: paused}))
+        return pause_after_read
+
+    substitute_children_read(mocker, owner_type, pause_stale_session)
 
     async def stale_rollup() -> None:
         await run_rollup(session_a)
@@ -131,7 +127,7 @@ async def test_stale_org_unit_rollup_cannot_regress_a_newer_committed_observatio
         mocker,
         app_id=app_id,
         owner_type=ScoreSnapshotOwnerType.ORG_UNIT,
-        run_rollup=lambda session: score_snapshot_service.rollup_org_unit_scores(session, org_unit_id),
+        run_rollup=lambda session: owner_service.rollup(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id),
     )
 
     # The newest observation survived the stale recompute's prune.
@@ -157,7 +153,7 @@ async def test_stale_brand_rollup_cannot_regress_a_newer_committed_observation(
         mocker,
         app_id=app.id,
         owner_type=ScoreSnapshotOwnerType.BRAND,
-        run_rollup=lambda session: score_snapshot_service.rollup_brand_scores(session, brand_id),
+        run_rollup=lambda session: owner_service.rollup(session, ScoreSnapshotOwnerType.BRAND, brand_id),
     )
 
     latest = await latest_brand_snapshot(setup, brand_id)
@@ -172,15 +168,15 @@ async def test_a_deadlock_loser_surfaces_as_the_retryable_concurrent_rollup_erro
     session_a = AsyncSession(bind=engine)
     session_b = AsyncSession(bind=engine)
     try:
-        await score_snapshot_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 1)
-        await score_snapshot_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 2)
+        await owner_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 1)
+        await owner_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 2)
 
         # Cross acquisitions form the ADR 0029 cycle: each session waits on the lock
         # the other holds, and Postgres fails exactly one transaction (40P01).
         results = await asyncio.wait_for(
             asyncio.gather(
-                score_snapshot_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 2),
-                score_snapshot_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 1),
+                owner_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 2),
+                owner_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 1),
                 return_exceptions=True,
             ),
             timeout=_DEADLINE * 2,
@@ -213,10 +209,10 @@ async def test_rollups_for_different_owners_do_not_serialize_each_other(
     # Hold an org-unit lock whose numeric id equals the brand's: a brand
     # rollup must not wait on it — the owner kind is part of the lock key,
     # and locks are per owner, never global.
-    await score_snapshot_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, brand_id)
+    await owner_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, brand_id)
 
     async def brand_rollup() -> None:
-        await score_snapshot_service.rollup_brand_scores(session_b, brand_id)
+        await owner_service.rollup(session_b, ScoreSnapshotOwnerType.BRAND, brand_id)
         await session_b.commit()
 
     await asyncio.wait_for(brand_rollup(), timeout=_DEADLINE)

@@ -1,66 +1,26 @@
-"""Score computation and rollups — the write side of scoring.
+"""App-score computation: a completed Scan Run's findings become a Page Health
+per page, an App Score, and the App's Score Snapshot.
 
-Turns a completed Scan Run's findings into a Page Health per page, an App Score,
-and a Score Snapshot, then rolls those totals up to Org Units (hierarchical,
-cascading) and Brands (flat). The reading/listing side lives in `score.py`;
-the events that call in here live in `scoring_orchestration.py`.
+Everything per-owner — snapshot construction, rollups, score reads — lives in
+`owner.py` (the Owner Dispatcher); the events that call in here live in
+`scoring_orchestration.py`.
 
 See `docs/architecture.md` ("The scoring & rollup model") for the full walk-through.
 """
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
-from typing import NamedTuple
 
-from sqlalchemy import ColumnElement, delete, func, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
 
-from a11y_health.core import existence, integrity
-from a11y_health.core.exceptions import ConcurrentRollupError
-from a11y_health.models.brand import Brand
 from a11y_health.models.enums import FindingType, Impact, PageHealth, ScoreSnapshotOwnerType
-from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.models.score_snapshot import (
-    OWNER_ID_COLUMNS,
-    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
-    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
-    ScoreSnapshot,
-)
+from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import _scoring_vocabulary as scoring_vocabulary
 from a11y_health.services import owner
-
-_DEADLOCK_SQLSTATE = "40P01"
-
-
-class _RollupOwnerSpec(NamedTuple):
-    label: str
-    unique_index: str
-    snapshot_column: InstrumentedAttribute[int | None]
-
-    def concurrent_rollup_error(self, owner_id: int) -> ConcurrentRollupError:
-        return ConcurrentRollupError(self.label, owner_id)
-
-
-# Exhaustive over the owners that roll up — an APP owner reaching a rollup path
-# would be a bug, and a KeyError here beats a mislabeled error.
-_ROLLUP_OWNERS = {
-    ScoreSnapshotOwnerType.ORG_UNIT: _RollupOwnerSpec(
-        existence.ENTITY_LABELS[OrgUnit],
-        UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
-        OWNER_ID_COLUMNS[ScoreSnapshotOwnerType.ORG_UNIT],
-    ),
-    ScoreSnapshotOwnerType.BRAND: _RollupOwnerSpec(
-        existence.ENTITY_LABELS[Brand],
-        UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
-        OWNER_ID_COLUMNS[ScoreSnapshotOwnerType.BRAND],
-    ),
-}
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -138,172 +98,18 @@ async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSn
     for page in pages:
         page.page_health = score_result.page_healths[page.id]
 
-    snapshot = build_snapshot(
+    snapshot = owner.owned(
+        ScoreSnapshotOwnerType.APP,
+        scan_run.app_id,
+        scan_run_id=scan_run.id,
         score=score_result.score,
         total_violations=score_result.total_violations,
         total_pages=score_result.total_pages,
         pages_with_violations=score_result.pages_with_violations,
         pages_with_critical_violations=score_result.pages_with_critical_violations,
         snapshot_at=scan_run.scanned_at,
-        app_id=scan_run.app_id,
-        scan_run_id=scan_run.id,
     )
     session.add(snapshot)
     await session.flush()
 
     return snapshot
-
-
-def build_snapshot(
-    *,
-    score: float,
-    total_violations: int,
-    total_pages: int,
-    pages_with_violations: int,
-    pages_with_critical_violations: int,
-    snapshot_at: datetime,
-    app_id: int | None = None,
-    scan_run_id: int | None = None,
-    org_unit_id: int | None = None,
-    brand_id: int | None = None,
-) -> ScoreSnapshot:
-    _require_exactly_one_owner(app_id=app_id, org_unit_id=org_unit_id, brand_id=brand_id)
-    if scan_run_id is not None and app_id is None:
-        raise ValueError("scan_run_id requires app_id")
-
-    return ScoreSnapshot(
-        app_id=app_id,
-        scan_run_id=scan_run_id,
-        org_unit_id=org_unit_id,
-        brand_id=brand_id,
-        score=score,
-        total_violations=total_violations,
-        total_pages=total_pages,
-        pages_with_violations=pages_with_violations,
-        pages_with_critical_violations=pages_with_critical_violations,
-        snapshot_at=snapshot_at,
-    )
-
-
-def _require_exactly_one_owner(*, app_id: int | None, org_unit_id: int | None, brand_id: int | None) -> None:
-    if sum(owner_id is not None for owner_id in (app_id, org_unit_id, brand_id)) != 1:
-        raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
-
-
-# Equality basis for the same-observation dedupe: every aggregate the snapshot
-# carries. A column-set canary test pins the model so adding a column forces a
-# decision on whether it joins this tuple. Deriving this from the mapper was
-# tried and reverted (6b721f1): the deny-list it needs drifts silently, and the
-# canary carries the drift-proofing instead.
-def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
-    return (
-        snapshot.score,
-        snapshot.total_violations,
-        snapshot.total_pages,
-        snapshot.pages_with_violations,
-        snapshot.pages_with_critical_violations,
-    )
-
-
-# The #98 indexes allow at most one match; the id-desc pick mirrors the Latest
-# Score Snapshot tie-break as a belt for pre-enforcement databases.
-async def _snapshot_recorded_at_observation(
-    session: AsyncSession, owner: ColumnElement[bool], snapshot_at: datetime
-) -> ScoreSnapshot | None:
-    return (
-        await session.execute(
-            select(ScoreSnapshot)
-            .where(owner, ScoreSnapshot.snapshot_at == snapshot_at)
-            .order_by(ScoreSnapshot.id.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-
-async def _apply_rollup(
-    session: AsyncSession,
-    children: list[ScoreSnapshot],
-    owner: ScoreSnapshotOwnerType,
-    owner_id: int,
-) -> None:
-    spec = _ROLLUP_OWNERS[owner]
-    criterion = spec.snapshot_column == owner_id
-    # No children → nothing to aggregate; every snapshot the owner has is orphaned.
-    if not children:
-        await session.execute(delete(ScoreSnapshot).where(criterion))
-        return
-    # score is the unweighted arithmetic mean of children's scores per DOMAIN.md.
-    # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
-    snapshot_at = max(c.snapshot_at for c in children)
-    await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at > snapshot_at))
-    # Float summation is order-sensitive and the latest-child query has no ORDER BY;
-    # sort so recomputes are bitwise-reproducible and the no-change skip below holds.
-    children = sorted(children, key=lambda c: c.id)
-    count = len(children)
-    snapshot = build_snapshot(
-        score=sum(c.score for c in children) / count,
-        total_violations=sum(c.total_violations for c in children),
-        total_pages=sum(c.total_pages for c in children),
-        pages_with_violations=sum(c.pages_with_violations for c in children),
-        pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
-        snapshot_at=snapshot_at,
-        **{spec.snapshot_column.key: owner_id},
-    )
-    # One snapshot per distinct observation, not one per trigger (#95, ADR 0015).
-    # A newer observation time always appends — even with unchanged values — so
-    # the latest snapshot never claims an observation whose source data is gone.
-    existing = await _snapshot_recorded_at_observation(session, criterion, snapshot_at)
-    if existing is not None:
-        if _aggregate_values(existing) == _aggregate_values(snapshot):
-            return
-        await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at == snapshot_at))
-    # The unique indexes (#98) only decide races: a concurrent rollup landing
-    # between the read above and this insert makes the flush a violation.
-    async with integrity.guard(session, {spec.unique_index: spec.concurrent_rollup_error(owner_id)}):
-        session.add(snapshot)
-
-
-# Different-observation interleavings never collide on a row, so serializing
-# them takes a lock, not a constraint — transaction-scoped, acquired as the
-# rollup's first statement so the children read and the writes sit under one
-# serialization (ADR 0029). Hashing the key avoids int4 overflow on BIGINT
-# owner ids; a collision merely over-serializes.
-async def _acquire_rollup_lock(session: AsyncSession, owner: ScoreSnapshotOwnerType, owner_id: int) -> None:
-    key = func.hashtextextended(f"rollup:{owner.value}:{owner_id}", 0)
-    try:
-        await session.execute(select(func.pg_advisory_xact_lock(key)))
-    except DBAPIError as exc:
-        # A deadlock victim's 40P01 lands on the statement that was waiting —
-        # this one (ADR 0029) — and the loser is semantically a concurrent-rollup
-        # loser (#104). Anything else propagates unchanged, as in ADR 0028.
-        if getattr(exc.orig, "sqlstate", None) != _DEADLOCK_SQLSTATE:
-            raise
-        raise _ROLLUP_OWNERS[owner].concurrent_rollup_error(owner_id) from exc
-
-
-# Children and cascade parent resolve through owner.OWNERS at call time — the
-# sanctioned substitution seam (ADR 0037).
-def _rollup_spec(owner_type: ScoreSnapshotOwnerType) -> owner.RollupSpec:
-    spec = owner.OWNERS[owner_type].rollup
-    if spec is None:
-        raise ValueError(f"{owner_type.value} snapshots come from scoring, not a rollup")
-    return spec
-
-
-async def rollup_org_unit_scores(session: AsyncSession, org_unit_id: int) -> None:
-    await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
-    spec = _rollup_spec(ScoreSnapshotOwnerType.ORG_UNIT)
-    children = await spec.children(session, org_unit_id)
-    await _apply_rollup(session, children, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
-
-    if spec.cascade_parent is not None:
-        parent_id = await spec.cascade_parent(session, org_unit_id)
-        if parent_id is not None:
-            await rollup_org_unit_scores(session, parent_id)
-
-
-async def rollup_brand_scores(session: AsyncSession, brand_id: int) -> None:
-    await _acquire_rollup_lock(session, ScoreSnapshotOwnerType.BRAND, brand_id)
-    spec = _rollup_spec(ScoreSnapshotOwnerType.BRAND)
-    children = await spec.children(session, brand_id)
-    await _apply_rollup(session, children, ScoreSnapshotOwnerType.BRAND, brand_id)

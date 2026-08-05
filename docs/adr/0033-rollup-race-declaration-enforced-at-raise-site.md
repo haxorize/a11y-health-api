@@ -98,3 +98,10 @@ suite-only machinery with zero src consumers. The test module's charter is
 closed — this ADR's mechanism, nothing else — and a future *production*
 consumer of declaration introspection promotes the needed function back into
 `error_contract`, never copies it. Residuals above are unchanged by the move.
+
+**Amendment (2026-08-05, #130).** The instrumented surface moved with the
+rollup machinery: the raisers are now the Owner Dispatcher's rollup
+entrypoint(s) — every public `rollup*` callable on `services/owner.py`
+(today the single unified `rollup()`), patched as module attributes exactly as
+before. The from-import pin in `tests/core/test_error_contract.py` follows the
+same module.

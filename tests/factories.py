@@ -1,6 +1,7 @@
 import itertools
 from collections.abc import Callable
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 
 from httpx import Response
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
-from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
+from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus, ScoreSnapshotOwnerType
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.page_result import PageResult
@@ -19,9 +20,15 @@ from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas._tag_parsing import token_to_stored_classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services import org_unit as org_unit_service
-from a11y_health.services.score_snapshot import build_snapshot
+from a11y_health.services import owner as owner_service
+from a11y_health.services.owner import ChildrenRead, owned
+from a11y_health.services.page_result import create_page_result
+from a11y_health.services.scan_run import get_scan_run
+from a11y_health.services.score_snapshot import compute_app_score
 
 SessionFactory = Callable[[], AsyncSession]
+
+DEFAULT_SNAPSHOT_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
@@ -123,21 +130,56 @@ async def make_score_snapshot(
     total_pages: int = 10,
     snapshot_at: datetime | None = None,
 ) -> ScoreSnapshot:
-    snapshot = build_snapshot(
+    # Exactly one owner kwarg; the unpack fails loudly on zero or several.
+    [(owner_type, owner_id)] = (
+        (t, v)
+        for t, v in (
+            (ScoreSnapshotOwnerType.APP, app_id),
+            (ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id),
+            (ScoreSnapshotOwnerType.BRAND, brand_id),
+        )
+        if v is not None
+    )
+    snapshot = owned(
+        owner_type,
+        owner_id,
+        scan_run_id=scan_run_id,
         score=score,
         total_violations=total_violations,
         total_pages=total_pages,
         pages_with_violations=pages_with_violations,
         pages_with_critical_violations=pages_with_critical_violations,
-        snapshot_at=snapshot_at or datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
-        app_id=app_id,
-        scan_run_id=scan_run_id,
-        org_unit_id=org_unit_id,
-        brand_id=brand_id,
+        snapshot_at=snapshot_at or DEFAULT_SNAPSHOT_AT,
     )
     db.add(snapshot)
     await db.flush()
     return snapshot
+
+
+async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScanRun:
+    for raw in payloads:
+        await create_page_result(db, scan_run_id, parse_axe_payload(raw))
+    sr = await get_scan_run(db, scan_run_id)
+    sr.status = ScanRunStatus.COMPLETED
+    await db.flush()
+    return sr
+
+
+async def ingest_and_score(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScoreSnapshot:
+    sr = await ingest_pages_and_complete(db, scan_run_id, payloads)
+    return await compute_app_score(db, sr)
+
+
+def substitute_children_read(
+    mocker, owner_type: ScoreSnapshotOwnerType, wrap: Callable[[ChildrenRead], ChildrenRead]
+) -> None:
+    """Substitute an owner's rollup children read through the sanctioned seam
+    (ADR 0037): swap the whole OWNERS table for the test's duration — consumers
+    resolve it at call time. `wrap` receives the real read."""
+    spec = owner_service.OWNERS[owner_type]
+    assert spec.rollup is not None
+    substituted = spec._replace(rollup=spec.rollup._replace(children=wrap(spec.rollup.children)))
+    mocker.patch.object(owner_service, "OWNERS", MappingProxyType({**owner_service.OWNERS, owner_type: substituted}))
 
 
 async def make_page_result(

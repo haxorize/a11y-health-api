@@ -4,19 +4,15 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import parse_axe_payload
-from a11y_health.services.page_result import create_page_result
-from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.scoring_orchestration import (
-    on_app_deleted,
+    on_app_latest_snapshot_changed,
     on_app_reassigned,
     on_org_unit_reparented,
     on_scan_run_completed,
-    on_scan_run_deleted,
 )
 from tests.factories import (
+    ingest_pages_and_complete,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -30,11 +26,7 @@ from tests.factories import (
 
 
 async def _complete_scan_run(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> None:
-    for raw in payloads:
-        await create_page_result(db, scan_run_id, parse_axe_payload(raw))
-    sr = await get_scan_run(db, scan_run_id)
-    sr.status = ScanRunStatus.COMPLETED
-    await db.flush()
+    sr = await ingest_pages_and_complete(db, scan_run_id, payloads)
     await on_scan_run_completed(db, sr)
 
 
@@ -121,7 +113,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, org_unit.id, app.brand_id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, app.brand_id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
         app_snapshots = result.scalars().all()
@@ -147,7 +139,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, leaf.id, app.brand_id)
+        await on_app_latest_snapshot_changed(db_session, leaf.id, app.brand_id)
 
         leaf_after = await latest_ou_snapshot(db_session, leaf.id)
         assert leaf_after.score == approx(0.4)
@@ -174,7 +166,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_b)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         brand_after = await latest_brand_snapshot(db_session, brand.id)
         assert brand_after.score == approx(0.4)
@@ -191,7 +183,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_old)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         ou_snap = await latest_ou_snapshot(db_session, org_unit.id)
         assert ou_snap.snapshot_at == datetime(2023, 6, 1, tzinfo=UTC)
@@ -210,7 +202,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr_new)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         cutoff = datetime(2023, 5, 1, tzinfo=UTC)
         ou_snaps = (
@@ -235,7 +227,7 @@ class TestOnScanRunDeleted:
 
         await db_session.delete(sr)
         await db_session.flush()
-        await on_scan_run_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         app_result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
         assert app_result.scalar_one_or_none() is None
@@ -380,7 +372,7 @@ class TestOnAppDeleted:
 
         await db_session.delete(app_a)
         await db_session.flush()
-        await on_app_deleted(db_session, leaf.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, leaf.id, brand.id)
 
         leaf_after = await latest_ou_snapshot(db_session, leaf.id)
         assert leaf_after.score == approx(1.0)
@@ -406,7 +398,7 @@ class TestOnAppDeleted:
 
         await db_session.delete(app_a)
         await db_session.flush()
-        await on_app_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         brand_after = await latest_brand_snapshot(db_session, brand.id)
         assert brand_after.score == approx(1.0)
@@ -421,7 +413,7 @@ class TestOnAppDeleted:
 
         await db_session.delete(app)
         await db_session.flush()
-        await on_app_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
         assert result.scalar_one_or_none() is None
@@ -436,7 +428,7 @@ class TestOnAppDeleted:
 
         await db_session.delete(app)
         await db_session.flush()
-        await on_app_deleted(db_session, org_unit.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, org_unit.id, brand.id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
         assert result.scalar_one_or_none() is None
@@ -466,7 +458,7 @@ class TestOnAppDeleted:
 
         await db_session.delete(app_a)
         await db_session.flush()
-        await on_app_deleted(db_session, branch_a.id, brand.id)
+        await on_app_latest_snapshot_changed(db_session, branch_a.id, brand.id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == branch_a.id))
         assert result.scalar_one_or_none() is None

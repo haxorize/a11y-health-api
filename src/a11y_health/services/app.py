@@ -74,4 +74,4 @@ async def delete_app(session: AsyncSession, app_id: int) -> None:
     brand_id = app.brand_id
     await session.delete(app)
     await session.flush()
-    await scoring_orchestration.on_app_deleted(session, org_unit_id, brand_id)
+    await scoring_orchestration.on_app_latest_snapshot_changed(session, org_unit_id, brand_id)

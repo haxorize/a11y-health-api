@@ -77,3 +77,12 @@ serialization harness at the `OWNERS` seam while production still runs the old
 paths, proven under repeated runs before any behavior moves. The module's
 charter is closed (DOMAIN.md "Owner Dispatcher"): app-score computation stays
 out, and no per-owner dispatch may exist anywhere else.
+
+**Amendment (2026-08-05, during implementation).** The specs are `NamedTuple`s,
+not the frozen dataclasses sketched above: type checkers give a dataclass field
+typed `InstrumentedAttribute` descriptor-typed-field semantics, so `id_column`
+would read back as `int | None` and the table would lose exactly the typing it
+exists to provide. NamedTuple fields keep their declared type; the harness swaps
+specs with `._replace(...)` instead of `dataclasses.replace`. Everything else —
+the `OWNERS` module-attribute seam, resolve-at-call-time, the merged
+`MappingProxyType` — is as decided.

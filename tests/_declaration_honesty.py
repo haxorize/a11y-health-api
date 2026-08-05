@@ -1,7 +1,7 @@
 """ASGI plumbing for suite-wide declaration honesty; the contract knowledge
 lives in `error_contract`. The shim checks every observed error response; the
 rollup instrumentation checks the one mode responses never show organically
-(rollup-race 409s) at its raise site instead.
+(rollup-race 409s) at its raise site — the Owner Dispatcher's rollup entrypoint.
 
 See `docs/architecture.md` ("How errors become HTTP status codes").
 """
@@ -20,7 +20,7 @@ from a11y_health.core.error_contract import (
     operation_key,
     operations_declaring,
 )
-from a11y_health.services import score_snapshot
+from a11y_health.services import owner
 
 _current_request_scope: ContextVar[Any] = ContextVar("_current_request_scope", default=None)
 
@@ -55,19 +55,19 @@ def request_scope(scope: Any) -> Iterator[None]:
 
 
 def instrument_rollup_raisers() -> None:
-    # The raisers are every public rollup_* callable — the module's naming
-    # convention for the surface through which ConcurrentRollupError can escape
-    # (today the #98 same-observation guard and the #104 deadlock translation,
-    # both reachable only via rollup_org_unit_scores / rollup_brand_scores).
-    # A raiser named outside the convention would escape (ADR 0033 residual);
-    # a non-raising rollup_* function would over-assert, which fails loudly.
-    for name in dir(score_snapshot):
-        raiser = getattr(score_snapshot, name)
-        if not name.startswith("rollup_") or not callable(raiser):
+    # The raisers are every public rollup* callable on the Owner Dispatcher —
+    # the naming convention for the surface through which ConcurrentRollupError
+    # can escape (today the #98 same-observation guard and the #104 deadlock
+    # translation, both reachable only via owner.rollup). A raiser named
+    # outside the convention would escape (ADR 0033 residual); a non-raising
+    # rollup* function would over-assert, which fails loudly.
+    for name in dir(owner):
+        raiser = getattr(owner, name)
+        if not name.startswith("rollup") or not callable(raiser):
             continue
         if hasattr(raiser, "__wrapped__"):  # already instrumented
             continue
-        setattr(score_snapshot, name, _enforcing(raiser))
+        setattr(owner, name, _enforcing(raiser))
 
 
 def _enforcing(raiser: Any) -> Any:

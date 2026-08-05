@@ -1,10 +1,10 @@
 """Org-unit subtree expansion shared across resource and scoring services.
 
 A shared underscore helper (like `_latest_snapshot`) so consumers on both
-sides of the two-tier call rule — `app`'s descendant-expanding filter,
-`score`'s `under_org_unit_id` scope, and `org_unit`'s reparent-cycle check —
-get the one recursive-CTE definition without importing a sibling resource
-service.
+sides of the two-tier call rule — `app`'s descendant-expanding filter, the
+Owner Dispatcher's `under_org_unit_id` scope (`owner.py`), and `org_unit`'s
+reparent-cycle check — get the one recursive-CTE definition without importing
+a sibling resource service.
 """
 
 from sqlalchemy import select

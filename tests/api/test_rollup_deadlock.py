@@ -11,7 +11,6 @@ and `committed_session_factory`'s teardown truncates.
 """
 
 import asyncio
-from types import MappingProxyType
 
 import pytest
 from httpx import AsyncClient, Response
@@ -21,8 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from a11y_health.core import database
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import owner as owner_service
-from a11y_health.services import score_snapshot as score_snapshot_service
-from tests.factories import SessionFactory, advisory_lock_waiters, assert_error, make_org_unit
+from a11y_health.services.owner import ChildrenRead
+from tests.factories import (
+    SessionFactory,
+    advisory_lock_waiters,
+    assert_error,
+    make_org_unit,
+    substitute_children_read,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -56,29 +61,22 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
     # waiter, and its one-shot check (engine-wide 50ms, conftest) always finds
     # the closed cycle. The holder's own check is pushed out of the way.
     await holder.execute(text("SET deadlock_timeout = '10s'"))
-    await score_snapshot_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, root.id)
+    await owner_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, root.id)
 
     request_holds_child = asyncio.Event()
     holder_queued_on_child = asyncio.Event()
-    spec = owner_service.OWNERS[ScoreSnapshotOwnerType.ORG_UNIT]
-    assert spec.rollup is not None
-    read_children = spec.rollup.children
 
-    async def pause_after_child_read(session: AsyncSession, owner_id: int) -> list:
-        children = await read_children(session, owner_id)
-        if owner_id == child.id and not holder_queued_on_child.is_set():
-            request_holds_child.set()
-            await holder_queued_on_child.wait()
-        return children
+    def pause_on_child(read_children: ChildrenRead) -> ChildrenRead:
+        async def pause_after_child_read(session: AsyncSession, owner_id: int) -> list:
+            children = await read_children(session, owner_id)
+            if owner_id == child.id and not holder_queued_on_child.is_set():
+                request_holds_child.set()
+                await holder_queued_on_child.wait()
+            return children
 
-    # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
-    # duration; the rollup resolves OWNERS at call time.
-    paused = spec._replace(rollup=spec.rollup._replace(children=pause_after_child_read))
-    mocker.patch.object(
-        owner_service,
-        "OWNERS",
-        MappingProxyType({**owner_service.OWNERS, ScoreSnapshotOwnerType.ORG_UNIT: paused}),
-    )
+        return pause_after_child_read
+
+    substitute_children_read(mocker, ScoreSnapshotOwnerType.ORG_UNIT, pause_on_child)
 
     async def reparent() -> Response:
         return await client.patch(f"/api/v1/org-units/{grandchild.id}", json={"parent_id": root.id})
@@ -89,7 +87,7 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
         await asyncio.wait_for(request_holds_child.wait(), timeout=_DEADLINE)
 
         holder_acquire = asyncio.create_task(
-            score_snapshot_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, child.id)
+            owner_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, child.id)
         )
 
         # The done() guard fails fast if a regression drops the per-owner lock

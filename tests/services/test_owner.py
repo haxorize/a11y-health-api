@@ -2,20 +2,84 @@ from datetime import UTC, datetime
 
 import pytest
 from pytest import approx
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core.exceptions import ConcurrentRollupError, NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.models.score_snapshot import (
+    CK_SCORE_SNAPSHOT_OWNER,
+    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
+    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+    ScoreSnapshot,
+)
+from a11y_health.services import app as app_service
 from a11y_health.services import owner as owner_service
-from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
+    DEFAULT_SNAPSHOT_AT,
+    brand_snapshots,
+    ingest_and_score,
     latest_brand_snapshot,
+    latest_ou_snapshot,
     make_app,
     make_app_with_org_unit,
+    make_axe_payload,
     make_brand,
     make_org_unit,
+    make_scan_run,
     make_score_snapshot,
+    make_violation,
+    ou_snapshots,
 )
+
+
+def _owned(owner_type: ScoreSnapshotOwnerType, owner_id: int, *, scan_run_id: int | None = None) -> ScoreSnapshot:
+    return owner_service.owned(
+        owner_type,
+        owner_id,
+        scan_run_id=scan_run_id,
+        score=0.8,
+        total_violations=5,
+        total_pages=10,
+        pages_with_violations=2,
+        pages_with_critical_violations=1,
+        snapshot_at=DEFAULT_SNAPSHOT_AT,
+    )
+
+
+class TestOwnedConstruction:
+    def test_app_snapshot_links_its_scan_run(self) -> None:
+        snapshot = _owned(ScoreSnapshotOwnerType.APP, 7, scan_run_id=9)
+
+        assert snapshot.app_id == 7
+        assert snapshot.scan_run_id == 9
+        assert snapshot.org_unit_id is None
+        assert snapshot.brand_id is None
+        assert snapshot.score == approx(0.8)
+        assert snapshot.snapshot_at == DEFAULT_SNAPSHOT_AT
+
+    @pytest.mark.parametrize(
+        ("owner_type", "column"),
+        [(ScoreSnapshotOwnerType.ORG_UNIT, "org_unit_id"), (ScoreSnapshotOwnerType.BRAND, "brand_id")],
+    )
+    def test_rollup_owner_snapshot_sets_only_its_column(self, owner_type: ScoreSnapshotOwnerType, column: str) -> None:
+        snapshot = _owned(owner_type, 7)
+
+        assert getattr(snapshot, column) == 7
+        others = {"app_id", "org_unit_id", "brand_id"} - {column}
+        assert all(getattr(snapshot, other) is None for other in others)
+        assert snapshot.scan_run_id is None
+
+    def test_scan_run_link_stays_guarded_to_app_owners(self) -> None:
+        with pytest.raises(ValueError, match="scan_run_id"):
+            _owned(ScoreSnapshotOwnerType.ORG_UNIT, 7, scan_run_id=9)
+
+
+async def test_rollup_refuses_an_app_owner(db_session: AsyncSession) -> None:
+    # APP snapshots come from scoring; reaching a rollup with one is a bug.
+    with pytest.raises(ValueError, match="scoring"):
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.APP, 1)
 
 
 async def test_list_latest_scores_returns_one_latest_snapshot_per_app(db_session: AsyncSession) -> None:
@@ -61,7 +125,7 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
 
     # Parity: the Brand Rollup aggregates exactly the snapshots served above —
     # its score is the mean of theirs (0.9 and 0.6), not of the backfill/tie losers
-    await score_snapshot_service.rollup_brand_scores(db_session, brand.id)
+    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
     brand_snapshot = await latest_brand_snapshot(db_session, brand.id)
     assert brand_snapshot.score == approx((0.9 + 0.6) / 2)
 
@@ -522,3 +586,504 @@ async def test_brand_scope_intersects_with_the_under_org_unit_scope(db_session: 
 async def test_brand_scope_requires_the_brand_to_exist(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
         await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)
+
+
+def test_score_snapshot_column_set_is_pinned() -> None:
+    # Canary: a new column must decide whether it joins the same-observation
+    # equality basis in _aggregate_values — update the tuple there, then here.
+    assert {attr.key for attr in ScoreSnapshot.__mapper__.column_attrs} == {
+        "id",
+        "app_id",
+        "scan_run_id",
+        "org_unit_id",
+        "brand_id",
+        "score",
+        "total_violations",
+        "total_pages",
+        "pages_with_violations",
+        "pages_with_critical_violations",
+        "snapshot_at",
+        "created_at",
+        "updated_at",
+    }
+
+
+async def _complete_and_score(
+    db_session: AsyncSession,
+    app_id: int,
+    payloads: list[dict],
+    scanned_at: datetime | None = None,
+) -> ScoreSnapshot:
+    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
+    snapshot = await ingest_and_score(db_session, sr.id, payloads)
+    app = await app_service.get_app(db_session, app_id)
+    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, app.org_unit_id)
+    return snapshot
+
+
+class TestOrgUnitRollup:
+    async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Parent Org")
+        app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
+        app_snapshot = await _complete_and_score(
+            db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
+        assert ou_snapshot.score == approx(app_snapshot.score)
+        assert ou_snapshot.total_violations == app_snapshot.total_violations
+        assert ou_snapshot.total_pages == app_snapshot.total_pages
+        assert ou_snapshot.pages_with_violations == app_snapshot.pages_with_violations
+        assert ou_snapshot.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
+
+    async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Parent Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app_a.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_and_score(
+            db_session,
+            app_b.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        ou_snapshot = await latest_ou_snapshot(db_session, org_unit.id)
+
+        assert ou_snapshot.score == approx(0.7)
+        assert ou_snapshot.total_violations == 1
+        assert ou_snapshot.total_pages == 2
+        assert ou_snapshot.pages_with_violations == 1
+        assert ou_snapshot.pages_with_critical_violations == 0
+
+    async def test_multi_level_tree_cascades_to_root(self, db_session: AsyncSession) -> None:
+        root = await make_org_unit(db_session, name="Root")
+        middle = await make_org_unit(db_session, name="Middle", parent_id=root.id)
+        leaf = await make_org_unit(db_session, name="Leaf", parent_id=middle.id)
+        app = await make_app(db_session, name="App", slug="app-leaf", org_unit_id=leaf.id)
+
+        app_snapshot = await _complete_and_score(
+            db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        for ou in [leaf, middle, root]:
+            ou_snap = await latest_ou_snapshot(db_session, ou.id)
+            assert ou_snap.score == approx(app_snapshot.score)
+            assert ou_snap.total_violations == app_snapshot.total_violations
+            assert ou_snap.total_pages == app_snapshot.total_pages
+
+    async def test_mixed_children_org_units_and_apps(self, db_session: AsyncSession) -> None:
+        parent = await make_org_unit(db_session, name="Parent")
+        child_ou = await make_org_unit(db_session, name="Child OU", parent_id=parent.id)
+        direct_app = await make_app(db_session, name="Direct App", slug="direct", org_unit_id=parent.id)
+        nested_app = await make_app(db_session, name="Nested App", slug="nested", org_unit_id=child_ou.id)
+
+        await _complete_and_score(
+            db_session,
+            nested_app.id,
+            [make_axe_payload(url="https://example.com/nested")],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_and_score(
+            db_session,
+            direct_app.id,
+            [make_axe_payload(url="https://example.com/direct", violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        assert (await latest_ou_snapshot(db_session, child_ou.id)).score == approx(1.0)
+
+        parent_snap = await latest_ou_snapshot(db_session, parent.id)
+        assert parent_snap.score == approx(0.5)
+        assert parent_snap.total_violations == 1
+        assert parent_snap.total_pages == 2
+        assert parent_snap.pages_with_critical_violations == 1
+
+    async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(1.0)
+
+    async def test_child_app_and_org_unit_with_equal_ids_both_count(self, db_session: AsyncSession) -> None:
+        # app.id and org_unit.id come from separate identity sequences, so a
+        # child App and a child Org Unit can legitimately share an id value —
+        # the latest-per-child partition must keep them apart.
+        parent = await make_org_unit(db_session, name="Collide Parent")
+        brand = await make_brand(db_session)
+        collided_id = 900_000_001
+        await db_session.execute(
+            text(
+                "INSERT INTO org_unit (id, name, parent_id) "
+                "OVERRIDING SYSTEM VALUE VALUES (:id, 'Collide OU', :parent_id)"
+            ),
+            {"id": collided_id, "parent_id": parent.id},
+        )
+        await db_session.execute(
+            text(
+                "INSERT INTO app (id, name, slug, brand_id, org_unit_id) "
+                "OVERRIDING SYSTEM VALUE VALUES (:id, 'Collide App', 'collide-app', :brand_id, :org_unit_id)"
+            ),
+            {"id": collided_id, "brand_id": brand.id, "org_unit_id": parent.id},
+        )
+
+        await make_score_snapshot(
+            db_session, app_id=collided_id, score=0.4, snapshot_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        )
+        await make_score_snapshot(
+            db_session, org_unit_id=collided_id, score=0.8, snapshot_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
+        )
+
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, parent.id)
+
+        assert (await latest_ou_snapshot(db_session, parent.id)).score == approx((0.4 + 0.8) / 2)
+
+    async def test_higher_id_wins_when_snapshot_at_ties(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Tie Org")
+        app = await make_app(db_session, name="Tie App", slug="app-tie", org_unit_id=org_unit.id)
+        tied_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+
+        await make_score_snapshot(db_session, app_id=app.id, score=0.2, snapshot_at=tied_at)
+        await make_score_snapshot(db_session, app_id=app.id, score=0.8, snapshot_at=tied_at)
+
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+        assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.8)
+
+
+class TestRollupNoChangeRecompute:
+    # History keeps one Score Snapshot per distinct observation, not one per trigger (#95).
+
+    async def test_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-nochange", org_unit_id=org_unit.id)
+        await _complete_and_score(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+
+        # deletion and reparent triggers re-run the rollup with unchanged children
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.4)
+
+    async def test_changed_aggregate_at_same_observation_time_replaces(self, db_session: AsyncSession) -> None:
+        scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        org_unit = await make_org_unit(db_session, name="Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app_a.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=scanned_at,
+        )
+        await _complete_and_score(
+            db_session,
+            app_b.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=scanned_at,
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.7)
+        assert snapshots[0].snapshot_at == scanned_at
+
+    async def test_older_scan_completion_reproducing_aggregate_records_nothing_new(
+        self, db_session: AsyncSession
+    ) -> None:
+        # An older scan that doesn't displace the app's latest snapshot leaves the
+        # aggregate — values and observation time — unchanged.
+        latest_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-same-mean", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=latest_scanned_at,
+        )
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].snapshot_at == latest_scanned_at
+
+    async def test_newer_observation_with_unchanged_values_appends(self, db_session: AsyncSession) -> None:
+        # A distinct observation is history even when the value didn't move —
+        # skipping it would leave the latest snapshot claiming an observation
+        # time whose scan may later be deleted.
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-flat-trend", org_unit_id=org_unit.id)
+
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        second_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
+        await _complete_and_score(
+            db_session,
+            app.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=second_scanned_at,
+        )
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 2
+        assert snapshots[-1].snapshot_at == second_scanned_at
+
+    async def test_brand_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-brand", org_unit_id=org_unit.id, brand_id=brand.id)
+        await _complete_score_and_rollup_brand(
+            db_session, app.id, brand.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
+
+        snapshots = await brand_snapshots(db_session, brand.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].score == approx(0.4)
+
+
+async def _complete_score_and_rollup_brand(
+    db_session: AsyncSession,
+    app_id: int,
+    brand_id: int,
+    payloads: list[dict],
+    scanned_at: datetime | None = None,
+) -> ScoreSnapshot:
+    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
+    snapshot = await ingest_and_score(db_session, sr.id, payloads)
+    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand_id)
+    return snapshot
+
+
+class TestBrandRollup:
+    async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        app_snapshot = await _complete_score_and_rollup_brand(
+            db_session, app.id, brand.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(app_snapshot.score)
+        assert brand_snap.total_violations == app_snapshot.total_violations
+        assert brand_snap.total_pages == app_snapshot.total_pages
+        assert brand_snap.pages_with_violations == app_snapshot.pages_with_violations
+        assert brand_snap.pages_with_critical_violations == app_snapshot.pages_with_critical_violations
+
+    async def test_two_apps_rollup_averages_scores_sums_counts(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CenterWell")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_a.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_b.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(0.7)
+        assert brand_snap.total_violations == 1
+        assert brand_snap.total_pages == 2
+        assert brand_snap.pages_with_violations == 1
+        assert brand_snap.pages_with_critical_violations == 0
+
+    async def test_apps_across_different_org_units(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Go365")
+        top = await make_org_unit(db_session, name="Top")
+        ou_a = await make_org_unit(db_session, name="Division A", parent_id=top.id)
+        ou_b = await make_org_unit(db_session, name="Division B", parent_id=top.id)
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=ou_a.id, brand_id=brand.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=ou_b.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_a.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app_b.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        brand_snap = await latest_brand_snapshot(db_session, brand.id)
+        assert brand_snap.score == approx(0.5)
+        assert brand_snap.total_violations == 1
+        assert brand_snap.total_pages == 2
+        assert brand_snap.pages_with_critical_violations == 1
+
+    async def test_only_latest_app_snapshot_counts(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="Humana")
+        org_unit = await make_org_unit(db_session, name="Org")
+        app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app.id,
+            brand.id,
+            [make_axe_payload(violations=[make_violation("r1", "critical")])],
+            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        await _complete_score_and_rollup_brand(
+            db_session,
+            app.id,
+            brand.id,
+            [make_axe_payload(url="https://example.com/b")],
+            scanned_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC),
+        )
+
+        assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(1.0)
+
+    async def test_no_apps_with_scores_skips_snapshot(self, db_session: AsyncSession) -> None:
+        brand = await make_brand(db_session, name="CarePlus")
+        org_unit = await make_org_unit(db_session, name="Org")
+        await make_app(db_session, name="App", slug="app-no-scores", org_unit_id=org_unit.id, brand_id=brand.id)
+
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
+
+        assert await brand_snapshots(db_session, brand.id) == []
+
+
+def _bypass_dedupe_check_to_lose_the_race(mocker) -> None:
+    # The race the constraint decides: the dedupe read saw nothing, but a
+    # concurrent rollup's row lands before our write.
+    mocker.patch.object(
+        owner_service, "_snapshot_recorded_at_observation", new_callable=mocker.AsyncMock, return_value=None
+    )
+
+
+class TestRollupSnapshotUniqueness:
+    async def test_schema_rejects_snapshot_with_two_owners(self, db_session: AsyncSession) -> None:
+        # With the runtime exactly-one-owner guard gone, the check constraint is
+        # the backstop; owned() can't even express this row, so build it raw.
+        org_unit = await make_org_unit(db_session)
+        brand = await make_brand(db_session)
+        db_session.add(
+            ScoreSnapshot(
+                org_unit_id=org_unit.id,
+                brand_id=brand.id,
+                score=0.8,
+                total_violations=5,
+                total_pages=10,
+                pages_with_violations=2,
+                pages_with_critical_violations=1,
+                snapshot_at=DEFAULT_SNAPSHOT_AT,
+            )
+        )
+        with pytest.raises(IntegrityError, match=CK_SCORE_SNAPSHOT_OWNER):
+            await db_session.flush()
+
+    async def test_schema_rejects_duplicate_org_unit_snapshot_at_one_observation_time(
+        self, db_session: AsyncSession
+    ) -> None:
+        org_unit = await make_org_unit(db_session)
+        await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        db_session.add(_owned(ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id))
+        with pytest.raises(IntegrityError, match=UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT):
+            await db_session.flush()
+
+    async def test_schema_rejects_duplicate_brand_snapshot_at_one_observation_time(
+        self, db_session: AsyncSession
+    ) -> None:
+        brand = await make_brand(db_session)
+        await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        db_session.add(_owned(ScoreSnapshotOwnerType.BRAND, brand.id))
+        with pytest.raises(IntegrityError, match=UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT):
+            await db_session.flush()
+
+    async def test_app_snapshots_stay_unconstrained_per_observation_time(self, db_session: AsyncSession) -> None:
+        # Two Scan Runs for one App may share scanned_at; latest selection breaks
+        # the tie. Proven by the second flush not raising.
+        app = await make_app_with_org_unit(db_session)
+        first = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        second = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        assert first.id != second.id
+
+    async def test_org_unit_rollup_losing_the_race_raises_concurrent_rollup_error(
+        self, db_session: AsyncSession, mocker
+    ) -> None:
+        org_unit = await make_org_unit(db_session)
+        app = await make_app(db_session, name="Race App", slug="race-app", org_unit_id=org_unit.id)
+        await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        # The winner's row: landed between our dedupe check and our write.
+        await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        _bypass_dedupe_check_to_lose_the_race(mocker)
+        with pytest.raises(ConcurrentRollupError, match="Org unit.*updated by another request"):
+            await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+    async def test_brand_rollup_losing_the_race_raises_concurrent_rollup_error(
+        self, db_session: AsyncSession, mocker
+    ) -> None:
+        brand = await make_brand(db_session)
+        app = await make_app_with_org_unit(db_session, brand_id=brand.id)
+        await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+        _bypass_dedupe_check_to_lose_the_race(mocker)
+        with pytest.raises(ConcurrentRollupError, match="Brand.*updated by another request"):
+            await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
+
+
+async def test_rollup_lock_non_deadlock_db_error_propagates_unchanged(db_session: AsyncSession, mocker) -> None:
+    # Only a deadlock loss (40P01) translates to the retryable
+    # ConcurrentRollupError; any other driver failure during lock acquisition
+    # must surface unchanged (ADR 0028).
+    org_unit = await make_org_unit(db_session, name="Org")
+    err = DBAPIError("SELECT pg_advisory_xact_lock(...)", None, Exception("connection lost"))
+    mocker.patch.object(db_session, "execute", new_callable=mocker.AsyncMock, side_effect=err)
+
+    with pytest.raises(DBAPIError) as exc_info:
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+    assert exc_info.value is err

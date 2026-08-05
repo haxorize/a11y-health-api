@@ -202,9 +202,12 @@ next green full run.
 
 ## 2. The scoring & rollup model
 
-This is the heart of the system and the part worth reading slowly. The code lives
-in `services/score_snapshot.py`. Terms: **Page Health**, **Score**, **Score
-Snapshot**, **Rollup** — all in `DOMAIN.md`.
+This is the heart of the system and the part worth reading slowly. The code
+splits as computation vs. dispatch: `services/score_snapshot.py` computes the
+app score (findings → Page Health → Score), and `services/owner.py` — the
+**Owner Dispatcher** — owns everything per-owner: snapshot construction, the
+latest/history score reads, and the rollups. Terms: **Page Health**, **Score**,
+**Score Snapshot**, **Rollup**, **Owner Dispatcher** — all in `DOMAIN.md`.
 
 The *meaning* behind the scoring value sets — the health ordering (worst → best,
 each health's rank derived from its position), the health weights, and the total
@@ -257,8 +260,18 @@ when it was uploaded.
 
 Once an app snapshot exists, the totals roll up to the owners. A **Score
 Snapshot** belongs to exactly one of an App, an Org Unit, or a Brand — never more
-than one ([ADR 0002](adr/0002-score-snapshot-mutex-owner.md)). There are two
-rollup shapes:
+than one ([ADR 0002](adr/0002-score-snapshot-mutex-owner.md)) — and construction
+is owner-typed: `owner.owned()` picks the owner column from the spec table, so
+exactly-one-owner holds structurally, with the database check constraint as the
+backstop. Everything per-owner routes through the Owner Dispatcher's `OWNERS`
+spec table, derived from one exhaustive match over the owner enum — a missing
+owner case fails type checking, and adding an owner type touches exactly one
+module. The table is also the sanctioned test seam: the rollup-race harness
+swaps the whole table for a test's duration, and consumers resolve it at call
+time ([ADR 0037](adr/0037-per-owner-variation-concentrates-in-the-owner-dispatcher.md)).
+The module's charter is closed both ways: app-score computation stays out, and
+no per-owner dispatch may exist anywhere else. There are two rollup shapes,
+behind one `owner.rollup(session, owner_type, owner_id)` entrypoint:
 
 - **Org Unit Rollup is hierarchical and cascades.** An org unit recomputes from
   its children's *latest* snapshots (child apps **and** child org units), then

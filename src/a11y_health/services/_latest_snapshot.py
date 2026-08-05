@@ -1,7 +1,7 @@
 """The one definition of Latest Score Snapshot: newest `snapshot_at`, ties broken
-by `id`, per partition. Shared by the rollups (`score_snapshot.py`) and the
-`/scores/latest` read path (`score.py`) so the two can never select differently
-(ADR 0023). See `docs/architecture.md` ("The scoring & rollup model").
+by `id`, per partition. Shared by the Owner Dispatcher's rollup children reads
+and its `/scores/latest` read path (`owner.py`) so the two can never select
+differently (ADR 0023). See `docs/architecture.md` ("The scoring & rollup model").
 """
 
 from collections.abc import Sequence

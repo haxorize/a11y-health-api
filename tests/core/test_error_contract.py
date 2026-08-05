@@ -122,22 +122,22 @@ async def test_rollup_from_operation_without_declared_concurrent_rollup_fails() 
     scope = {"method": "PATCH", "path": "/api/v1/widgets/1", "route": route}
     with request_scope(scope), pytest.raises(AssertionError, match="concurrent_rollup"):
         # session=None proves the check fires before any rollup work runs.
-        await scoring_orchestration.on_app_deleted(None, 1, 2)  # ty: ignore[invalid-argument-type]
+        await scoring_orchestration.on_app_latest_snapshot_changed(None, 1, 2)  # ty: ignore[invalid-argument-type]
 
 
 def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
-    # The instrumentation patches score_snapshot module attributes, so it only
-    # intercepts attribute-access call sites; a `from ...score_snapshot import
-    # rollup_*` binding taken at import time would bypass enforcement entirely
+    # The instrumentation patches owner module attributes, so it only
+    # intercepts attribute-access call sites; a `from ...owner import
+    # rollup*` binding taken at import time would bypass enforcement entirely
     # (ADR 0033). This pins the calling convention the mechanism depends on.
     src_root = Path(scoring_orchestration.__file__).parent.parent
-    pattern = re.compile(r"from\s+[\w.]*score_snapshot\s+import\s+(\([^)]*\)|[^\n]+)")
+    pattern = re.compile(r"from\s+[\w.]*\bowner\s+import\s+(\([^)]*\)|[^\n]+)")
     offenders = [
         str(path.relative_to(src_root))
         for path in src_root.rglob("*.py")
-        if any("rollup_" in match for match in pattern.findall(path.read_text()))
+        if any("rollup" in match for match in pattern.findall(path.read_text()))
     ]
-    assert not offenders, f"rollup raisers must be called as score_snapshot attributes, not from-imported: {offenders}"
+    assert not offenders, f"rollup raisers must be called as owner attributes, not from-imported: {offenders}"
 
 
 # Enforcement depth is the suite's coverage of rollup-triggering variants, so
@@ -243,7 +243,7 @@ class TestIncludeLevelDeclarations:
         # below, which never gets past the assert).
         try:
             with request_scope(scope), pytest.raises(AttributeError):
-                await scoring_orchestration.on_app_deleted(None, 1, 2)  # ty: ignore[invalid-argument-type]
+                await scoring_orchestration.on_app_latest_snapshot_changed(None, 1, 2)  # ty: ignore[invalid-argument-type]
         finally:
             # The observed set is module-global and feeds the sessionfinish
             # stale-diff; a leaked synthetic key would mask a same-keyed stale

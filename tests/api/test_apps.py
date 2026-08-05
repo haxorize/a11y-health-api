@@ -2,7 +2,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError
-from a11y_health.services import score_snapshot as score_snapshot_service
+from a11y_health.services import owner as owner_service
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
 
 
@@ -203,7 +203,7 @@ async def test_reassign_app_losing_a_concurrent_rollup_returns_retryable_409(
     app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
 
     mocker.patch.object(
-        score_snapshot_service,
+        owner_service,
         "_acquire_rollup_lock",
         side_effect=ConcurrentRollupError("Org unit", org_unit.id),
     )
@@ -220,7 +220,7 @@ async def test_delete_app_losing_a_concurrent_rollup_returns_retryable_409(
     app = await make_app(db_session, name="MyHumana", slug="myhumana", brand_id=brand.id, org_unit_id=org_unit.id)
 
     mocker.patch.object(
-        score_snapshot_service,
+        owner_service,
         "_acquire_rollup_lock",
         side_effect=ConcurrentRollupError("Org unit", org_unit.id),
     )

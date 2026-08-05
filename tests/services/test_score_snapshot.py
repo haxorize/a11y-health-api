@@ -311,9 +311,8 @@ class TestScoringModuleImports:
     @pytest.mark.parametrize(
         ("module_name", "shared_helpers"),
         [
-            ("score", {"_latest_snapshot", "_org_subtree"}),
             ("score_snapshot", {"_scoring_vocabulary", "owner"}),
-            ("owner", {"_latest_snapshot"}),
+            ("owner", {"_latest_snapshot", "_org_subtree"}),
         ],
     )
     def test_module_imports_only_shared_helpers(self, module_name: str, shared_helpers: set[str]) -> None:

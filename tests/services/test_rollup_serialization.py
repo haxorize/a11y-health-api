@@ -7,7 +7,6 @@ deadlock test crosses two plain uncommitted sessions instead.
 """
 
 import asyncio
-import dataclasses
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -72,7 +71,7 @@ async def _race_stale_rollup_against_newer_observation(
 
     # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
     # duration; the rollup resolves OWNERS at call time.
-    paused = dataclasses.replace(spec, rollup=dataclasses.replace(spec.rollup, children=pause_stale_session_after_read))
+    paused = spec._replace(rollup=spec.rollup._replace(children=pause_stale_session_after_read))
     mocker.patch.object(owner_service, "OWNERS", MappingProxyType({**owner_service.OWNERS, owner_type: paused}))
 
     async def stale_rollup() -> None:

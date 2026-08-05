@@ -5,10 +5,11 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import OrderParam, Page, PageParams
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import app as app_service
-from a11y_health.services import score as score_service
+from a11y_health.services import owner as owner_service
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 
@@ -57,8 +58,13 @@ async def list_app_scores(
     pagination: PageParams,
     order: OrderParam,
 ) -> Page[ScoreSnapshotRead]:
-    page = await score_service.list_app_scores(
-        db, app_id, cursor=pagination.cursor, limit=pagination.limit, descending=order.descending
+    page = await owner_service.list_scores(
+        db,
+        ScoreSnapshotOwnerType.APP,
+        app_id,
+        cursor=pagination.cursor,
+        limit=pagination.limit,
+        descending=order.descending,
     )
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 

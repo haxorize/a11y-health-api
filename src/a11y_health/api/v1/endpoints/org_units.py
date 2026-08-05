@@ -5,10 +5,11 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import OrderParam, Page, PageParams
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import org_unit as org_unit_service
-from a11y_health.services import score as score_service
+from a11y_health.services import owner as owner_service
 
 router = APIRouter(prefix="/org-units", tags=["org-units"])
 
@@ -41,8 +42,13 @@ async def list_org_unit_scores(
     pagination: PageParams,
     order: OrderParam,
 ) -> Page[ScoreSnapshotRead]:
-    page = await score_service.list_org_unit_scores(
-        db, org_unit_id, cursor=pagination.cursor, limit=pagination.limit, descending=order.descending
+    page = await owner_service.list_scores(
+        db,
+        ScoreSnapshotOwnerType.ORG_UNIT,
+        org_unit_id,
+        cursor=pagination.cursor,
+        limit=pagination.limit,
+        descending=order.descending,
     )
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 

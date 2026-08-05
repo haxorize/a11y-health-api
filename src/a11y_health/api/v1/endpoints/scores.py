@@ -7,7 +7,7 @@ from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
-from a11y_health.services import score as score_service
+from a11y_health.services import owner as owner_service
 
 router = APIRouter(prefix="/scores", tags=["scores"])
 
@@ -22,7 +22,7 @@ async def list_latest_scores(
     under_org_unit_id: int | None = None,
     direct_only: bool = False,
 ) -> Page[ScoreSnapshotRead]:
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db,
         owner_type,
         owner_id=owner_id,

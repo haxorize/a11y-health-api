@@ -11,7 +11,6 @@ and `committed_session_factory`'s teardown truncates.
 """
 
 import asyncio
-import dataclasses
 from types import MappingProxyType
 
 import pytest
@@ -74,7 +73,7 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
 
     # The sanctioned seam (ADR 0037): swap the whole spec table for the test's
     # duration; the rollup resolves OWNERS at call time.
-    paused = dataclasses.replace(spec, rollup=dataclasses.replace(spec.rollup, children=pause_after_child_read))
+    paused = spec._replace(rollup=spec.rollup._replace(children=pause_after_child_read))
     mocker.patch.object(
         owner_service,
         "OWNERS",

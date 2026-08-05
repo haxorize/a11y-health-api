@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
-from a11y_health.services import score as score_service
+from a11y_health.services import owner as owner_service
 from a11y_health.services import score_snapshot as score_snapshot_service
 from tests.factories import (
     latest_brand_snapshot,
@@ -32,7 +32,7 @@ async def test_list_latest_scores_returns_one_latest_snapshot_per_app(db_session
         db_session, app_id=app_b.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
 
     assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, latest_a.id), (app_b.id, latest_b.id)}
     assert page.next_cursor is None
@@ -56,7 +56,7 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
         db_session, app_id=app_b.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
     assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, latest_a.id), (app_b.id, latest_b.id)}
 
     # Parity: the Brand Rollup aggregates exactly the snapshots served above —
@@ -74,13 +74,13 @@ async def test_served_owner_not_repeated_when_import_lands_mid_walk(db_session: 
         db_session, app_id=app_b.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    first = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, limit=1)
+    first = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, limit=1)
     assert [s.app_id for s in first.items] == [app_a.id]
 
     # a scan for the already-served app completes before the next page is fetched
     await make_score_snapshot(db_session, app_id=app_a.id, score=0.9, snapshot_at=datetime(2026, 4, 5, tzinfo=UTC))
 
-    second = await score_service.list_latest_scores(
+    second = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, cursor=first.next_cursor, limit=1
     )
     assert [(s.app_id, s.id) for s in second.items] == [(app_b.id, latest_b.id)]
@@ -100,7 +100,7 @@ async def test_list_latest_scores_owner_id_filter_returns_only_requested_owners(
     )
     await make_score_snapshot(db_session, app_id=app_c.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=[app_a.id, app_b.id])
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=[app_a.id, app_b.id])
 
     assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, snapshot_a.id), (app_b.id, snapshot_b.id)}
     assert page.next_cursor is None
@@ -117,7 +117,7 @@ async def test_list_latest_scores_owner_id_filter_ignores_unknown_and_never_scor
         db_session, app_id=scored.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, owner_id=[scored.id, never_scored.id, 999999]
     )
 
@@ -138,12 +138,12 @@ async def test_list_latest_scores_owner_id_filter_composes_with_cursor_paginatio
     )
 
     requested = [app_a.id, app_c.id]
-    first = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, limit=1)
+    first = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, limit=1)
     assert [(s.app_id, s.id) for s in first.items] == [(app_a.id, latest_a.id)]
     assert first.next_cursor is not None
 
     # the excluded owner sits between the two requested ids in keyset order and must not surface mid-walk
-    second = await score_service.list_latest_scores(
+    second = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, cursor=first.next_cursor, limit=1
     )
     assert [(s.app_id, s.id) for s in second.items] == [(app_c.id, latest_c.id)]
@@ -161,7 +161,7 @@ async def test_list_latest_scores_owner_id_filter_is_exact_match_for_rollup_owne
     )
     await make_score_snapshot(db_session, org_unit_id=child.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, owner_id=[parent.id])
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, owner_id=[parent.id])
 
     assert [(s.org_unit_id, s.id) for s in page.items] == [(parent.id, parent_snapshot.id)]
 
@@ -185,7 +185,7 @@ async def test_list_latest_scores_filters_by_owner_type(db_session: AsyncSession
         (ScoreSnapshotOwnerType.ORG_UNIT, org_unit_snapshot),
         (ScoreSnapshotOwnerType.BRAND, brand_snapshot),
     ]:
-        page = await score_service.list_latest_scores(db_session, owner_type)
+        page = await owner_service.list_latest_scores(db_session, owner_type)
         assert [s.id for s in page.items] == [expected.id]
 
 
@@ -209,7 +209,7 @@ async def test_under_org_unit_scope_serves_apps_across_the_whole_subtree(db_sess
         db_session, app_id=outside_app.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=scoped.id)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=scoped.id)
 
     assert {(s.app_id, s.id) for s in page.items} == {(own_app.id, own_latest.id), (child_app.id, child_latest.id)}
 
@@ -237,7 +237,7 @@ async def test_under_org_unit_scope_serves_strict_descendant_units_not_the_unit_
         db_session, org_unit_id=sibling.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=scoped.id
     )
 
@@ -255,7 +255,7 @@ async def test_under_org_unit_scope_on_a_leaf_unit_serves_an_empty_page(db_sessi
     await make_score_snapshot(db_session, org_unit_id=leaf.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC))
     await make_score_snapshot(db_session, org_unit_id=root.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=leaf.id
     )
 
@@ -271,7 +271,7 @@ async def test_under_org_unit_scope_serves_no_brand_owners(db_session: AsyncSess
     await make_app(db_session, name="In Subtree", slug="in-subtree", brand_id=brand.id, org_unit_id=scoped.id)
     await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, under_org_unit_id=scoped.id)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, under_org_unit_id=scoped.id)
 
     assert page.items == []
 
@@ -295,7 +295,7 @@ async def test_under_org_unit_scope_intersects_with_owner_id_filter(db_session: 
         db_session, app_id=outside_requested.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session,
         ScoreSnapshotOwnerType.APP,
         owner_id=[inside_requested.id, outside_requested.id],
@@ -307,7 +307,7 @@ async def test_under_org_unit_scope_intersects_with_owner_id_filter(db_session: 
 
 async def test_under_org_unit_scope_requires_the_unit_to_exist(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
-        await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=999999)
+        await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=999999)
 
 
 async def test_direct_only_narrows_the_org_unit_scope_to_direct_children(db_session: AsyncSession) -> None:
@@ -332,7 +332,7 @@ async def test_direct_only_narrows_the_org_unit_scope_to_direct_children(db_sess
         db_session, org_unit_id=sibling.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.ORG_UNIT, under_org_unit_id=scoped.id, direct_only=True
     )
 
@@ -356,7 +356,7 @@ async def test_direct_only_narrows_the_app_scope_to_apps_placed_on_the_unit_itse
         db_session, app_id=descendant_app.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, under_org_unit_id=scoped.id, direct_only=True
     )
 
@@ -373,7 +373,7 @@ async def test_direct_only_serves_no_brand_owners_either(db_session: AsyncSessio
     await make_app(db_session, name="On Unit", slug="on-unit", brand_id=brand.id, org_unit_id=scoped.id)
     await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.BRAND, under_org_unit_id=scoped.id, direct_only=True
     )
 
@@ -396,7 +396,7 @@ async def test_direct_only_without_the_scope_is_ignored(db_session: AsyncSession
         db_session, app_id=app_on_child.id, score=0.7, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, direct_only=True)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, direct_only=True)
 
     assert {(s.app_id, s.id) for s in page.items} == {
         (app_on_root.id, root_latest.id),
@@ -426,7 +426,7 @@ async def test_brand_scope_serves_the_brands_apps_wherever_they_sit(db_session: 
     )
     await make_score_snapshot(db_session, app_id=other_app.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=scoped.id)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=scoped.id)
 
     assert {(s.app_id, s.id) for s in page.items} == {
         (app_on_root.id, root_latest.id),
@@ -442,7 +442,7 @@ async def test_brand_scope_serves_no_org_unit_owners(db_session: AsyncSession) -
     await make_app(db_session, name="Hosted", slug="hosted", brand_id=brand.id, org_unit_id=root.id)
     await make_score_snapshot(db_session, org_unit_id=root.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, brand_id=brand.id)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.ORG_UNIT, brand_id=brand.id)
 
     assert page.items == []
 
@@ -454,7 +454,7 @@ async def test_brand_scope_serves_no_brand_owners_not_even_the_scoping_brand(db_
     brand = await make_brand(db_session)
     await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    page = await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, brand_id=brand.id)
+    page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.BRAND, brand_id=brand.id)
 
     assert page.items == []
 
@@ -480,7 +480,7 @@ async def test_brand_scope_intersects_with_owner_id_filter(db_session: AsyncSess
         db_session, app_id=out_of_brand_requested.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session,
         ScoreSnapshotOwnerType.APP,
         owner_id=[in_brand_requested.id, out_of_brand_requested.id],
@@ -512,7 +512,7 @@ async def test_brand_scope_intersects_with_the_under_org_unit_scope(db_session: 
         db_session, app_id=in_subtree_other_brand.id, score=0.5, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
-    page = await score_service.list_latest_scores(
+    page = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, brand_id=brand.id, under_org_unit_id=scoped.id
     )
 
@@ -521,4 +521,4 @@ async def test_brand_scope_intersects_with_the_under_org_unit_scope(db_session: 
 
 async def test_brand_scope_requires_the_brand_to_exist(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
-        await score_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)
+        await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)

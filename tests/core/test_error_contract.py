@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,6 +46,7 @@ from tests.factories import (
     make_page_result,
     make_scan_run_with_parents,
 )
+from tests.import_graph import imported_modules, module_name, packages_in
 
 _MODE_EXAMPLES: list[DomainError] = [
     NotFoundError("App", 42),
@@ -130,13 +130,20 @@ def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
     # intercepts attribute-access call sites; a `from ...owner import
     # rollup*` binding taken at import time would bypass enforcement entirely
     # (ADR 0033). This pins the calling convention the mechanism depends on.
+    # The walk resolves relative spellings and cannot be tripped by a comment
+    # that merely quotes the forbidden import.
     src_root = Path(scoring_orchestration.__file__).parent.parent
-    pattern = re.compile(r"from\s+[\w.]*\bowner\s+import\s+(\([^)]*\)|[^\n]+)")
-    offenders = [
+    owner = "a11y_health.services.owner"
+    sources = {module_name(path, src_root, "a11y_health"): (path, path.read_text()) for path in src_root.rglob("*.py")}
+    packages = packages_in(sources)
+    offenders = sorted(
         str(path.relative_to(src_root))
-        for path in src_root.rglob("*.py")
-        if any("rollup" in match for match in pattern.findall(path.read_text()))
-    ]
+        for importer, (path, source) in sources.items()
+        if any(
+            name.startswith(f"{owner}.") and "rollup" in name.removeprefix(f"{owner}.")
+            for name in imported_modules(source, importer, packages)
+        )
+    )
     assert not offenders, f"rollup raisers must be called as owner attributes, not from-imported: {offenders}"
 
 

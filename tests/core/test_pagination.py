@@ -94,7 +94,15 @@ async def test_paginate_descending_composite_keyset_round_trip(db_session: Async
     assert second.next_cursor is None
 
 
-@pytest.mark.parametrize("bad_cursor", ["not-a-cursor", ""])
+@pytest.mark.parametrize(
+    "bad_cursor",
+    [
+        "not-a-cursor",
+        "",
+        "A" * 513,  # over the decode length cap
+        encode_cursor(1, 2),  # decodes cleanly but doesn't match the keyset width
+    ],
+)
 async def test_paginate_rejects_invalid_cursor(db_session: AsyncSession, bad_cursor: str) -> None:
     with pytest.raises(InvalidCursorError):
         await paginate(db_session, select(Brand), keyset=[Brand.id], cursor=bad_cursor, limit=2)

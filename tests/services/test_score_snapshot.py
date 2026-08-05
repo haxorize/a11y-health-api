@@ -7,7 +7,7 @@ from types import ModuleType
 import pytest
 from pytest import approx
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError
@@ -764,3 +764,17 @@ class TestRollupSnapshotUniqueness:
         _bypass_dedupe_check_to_lose_the_race(mocker)
         with pytest.raises(ConcurrentRollupError, match="Brand.*updated by another request"):
             await rollup_brand_scores(db_session, brand.id)
+
+
+async def test_rollup_lock_non_deadlock_db_error_propagates_unchanged(db_session: AsyncSession, mocker) -> None:
+    # Only a deadlock loss (40P01) translates to the retryable
+    # ConcurrentRollupError; any other driver failure during lock acquisition
+    # must surface unchanged (ADR 0028).
+    org_unit = await make_org_unit(db_session, name="Org")
+    err = DBAPIError("SELECT pg_advisory_xact_lock(...)", None, Exception("connection lost"))
+    mocker.patch.object(db_session, "execute", new_callable=mocker.AsyncMock, side_effect=err)
+
+    with pytest.raises(DBAPIError) as exc_info:
+        await rollup_org_unit_scores(db_session, org_unit.id)
+
+    assert exc_info.value is err

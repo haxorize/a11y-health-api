@@ -66,3 +66,10 @@ markers = [
 
 [tool.ty.environment]
 python-version = "3.13"
+
+[tool.coverage.run]
+# The default ctrace core loses line tracking in coroutine frames resumed
+# through the ASGI stack (endpoint returns and post-await service lines report
+# as missed despite tests asserting their output). sys.monitoring measures
+# them correctly on 3.13.
+core = "sysmon"

@@ -1,11 +1,15 @@
+import logging
+
 import pytest
 
 from a11y_health.models.enums import Category
 from a11y_health.schemas._tag_parsing import (
     Classification,
+    classification_options,
     extract_category,
     extract_classifications,
     extract_wcag_criteria,
+    token_to_stored_classification,
 )
 
 
@@ -103,3 +107,13 @@ def test_category_no_match_raises() -> None:
 def test_category_unknown_raises() -> None:
     with pytest.raises(ValueError, match="Unknown category: bogus"):
         extract_category(["cat.bogus"])
+
+
+def test_classification_options_drop_invalid_entry_with_warning(caplog: pytest.LogCaptureFixture) -> None:
+    # "Callers need not pre-clean": an invalid stored entry is dropped with a
+    # warning, mirroring the tolerant column read, never raised.
+    with caplog.at_level(logging.WARNING):
+        options = classification_options([{"standard": "section508"}, token_to_stored_classification("wcag2aa")])
+
+    assert [token for token, _ in options] == ["wcag2aa"]
+    assert "section508" in caplog.text

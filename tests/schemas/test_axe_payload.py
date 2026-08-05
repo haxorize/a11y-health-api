@@ -61,6 +61,11 @@ class TestAxePayloadBoundary:
         with pytest.raises(ValidationError):
             AxePayload.model_validate(raw)
 
+    def test_non_dict_rule_entry_rejected(self) -> None:
+        raw = make_axe_payload(violations=[42])
+        with pytest.raises(ValidationError):
+            AxePayload.model_validate(raw)
+
     def test_empty_violations_and_incomplete_accepted(self) -> None:
         raw = make_axe_payload(violations=[], incomplete=[])
         payload = AxePayload.model_validate(raw)

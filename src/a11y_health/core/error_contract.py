@@ -9,15 +9,18 @@ domain vocabulary and never touch a status code.
 See `docs/architecture.md` ("How errors become HTTP status codes").
 """
 
-import enum
 from typing import Any, NamedTuple
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute, iter_route_contexts
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from starlette.requests import Request
 
+# Re-exported: `ErrorCode` and `ErrorBody` are declared next to their lenient twin
+# in `error_body`, which carries no web-framework import. Every route still reaches
+# them through this module, which owns what they mean.
+from a11y_health.core.error_body import ErrorBody, ErrorCode
 from a11y_health.core.exceptions import (
     CircularReferenceError,
     ConcurrentRollupError,
@@ -32,25 +35,6 @@ from a11y_health.core.exceptions import (
     ScanRunCompletedError,
 )
 from a11y_health.core.pagination import InvalidCursorError
-
-
-class ErrorCode(enum.StrEnum):
-    NOT_FOUND = enum.auto()
-    DUPLICATE_ROOT = enum.auto()
-    DUPLICATE_SLUG = enum.auto()
-    HAS_DEPENDENTS = enum.auto()
-    INVALID_STATUS_TRANSITION = enum.auto()
-    SCAN_RUN_COMPLETED = enum.auto()
-    EMPTY_SCAN_RUN = enum.auto()
-    CIRCULAR_REFERENCE = enum.auto()
-    CONCURRENT_ROLLUP = enum.auto()
-    INVALID_CURSOR = enum.auto()
-    INVALID_AXE_PAYLOAD = enum.auto()
-
-
-class ErrorBody(BaseModel):
-    code: ErrorCode
-    message: str
 
 
 class _Mode(NamedTuple):

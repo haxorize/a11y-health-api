@@ -71,7 +71,7 @@ Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr
 
 - **Separate comment paragraphs with a bare `#`.** It is what tells a reader — and `test_prose_shape.py` — that a short line ends a thought rather than trailing off.
 
-No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Two checks split the mechanical part: `W505` fails a doc line that is too *long*, and `tests/test_prose_shape.py` fails a comment line left too *short* — one that stopped before the wrap width while the next line still held a word that would have fit. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Docstrings are covered only by the width check, so there the habit is all there is.
+No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Two checks split the mechanical part: `W505` fails a doc line that is too *long*, and `tests/test_prose_shape.py` fails one left too *short* — a line that stopped before the wrap width while the next line still held a word that would have fit, in comments and docstrings alike. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Structured blocks are skipped by both — list items, `Raises:`, examples — because their line breaks are the author's, not the wrap's.
 
 ## Commit style
 

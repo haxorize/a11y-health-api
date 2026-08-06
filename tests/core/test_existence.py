@@ -15,7 +15,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_app_with_org_unit, make_brand
-from tests.import_graph import imported_modules, module_name, packages_in
+from tests.import_graph import source_paths_importing
 
 # Message text is the observable contract — each label must match the wording
 # the entity services raised before the guard existed.
@@ -97,10 +97,10 @@ def _constructs_or_raises_not_found(tree: ast.AST) -> bool:
     )
 
 
-def _imports_existence(source: str, importer: str, packages: frozenset[str]) -> bool:
+def _imports_existence(imports: set[str]) -> bool:
     # The shared walk offers both readings of `from a11y_health.core import
     # existence`, so a membership test covers every spelling including relative.
-    return "a11y_health.core.existence" in imported_modules(source, importer, packages)
+    return "a11y_health.core.existence" in imports
 
 
 class TestTwoTierCallRule:
@@ -145,14 +145,5 @@ class TestTwoTierCallRule:
         import a11y_health.api
 
         api_root = Path(a11y_health.api.__file__).parent
-        sources = {
-            module_name(path, api_root, a11y_health.api.__name__): (path, path.read_text())
-            for path in api_root.rglob("*.py")
-        }
-        packages = packages_in(sources)
-        offenders = sorted(
-            str(path.relative_to(api_root))
-            for importer, (path, source) in sources.items()
-            if _imports_existence(source, importer, packages)
-        )
+        offenders = source_paths_importing(api_root, a11y_health.api.__name__, _imports_existence)
         assert offenders == []

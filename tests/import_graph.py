@@ -1,18 +1,25 @@
-"""Reading a module's imports off its source, for the suite's topology guards.
+"""Reading imports off Python source, for the suite's topology guards.
 
 Several tests ask "what does this module import?" against different rules —
 which private modules are reached from outside their package
 (`test_import_honesty`), which siblings a scoring module may touch
 (`test_score_snapshot`), whether an endpoint reaches the Existence Guard
-(`test_existence`). The rules differ; the walk does not, and a walk that quietly
-missed an import spelling would weaken every rule sharing it at once.
+(`test_existence`), whether any src caller from-imports a rollup raiser
+(`test_declaration_honesty`). The rules differ; the reading does not, and a
+reader that quietly missed an import spelling would weaken every rule sharing
+it at once.
+
+The last two also share the tree walk, in `source_paths_importing`. The first
+two can't and compose the pieces directly: `test_import_honesty` needs the
+importer's name alongside each hit, and `test_score_snapshot` reads a single
+module rather than a tree.
 
 Named publicly because its consumers sit in sibling test packages — see
 [ADR 0038](../docs/adr/0038-package-private-underscore-enforced-repo-wide.md).
 """
 
 import ast
-from collections.abc import Container, Iterable
+from collections.abc import Callable, Container, Iterable
 from pathlib import Path
 
 
@@ -62,3 +69,20 @@ def imported_modules(source: str, importer: str, packages: Container[str] = froz
             modules.add(base)
             modules.update(f"{base}.{alias.name}" for alias in node.names)
     return modules
+
+
+def source_paths_importing(root: Path, root_name: str, matches: Callable[[set[str]], bool]) -> list[str]:
+    """Paths under `root`, relative and sorted, of the files whose import set
+    satisfies `matches` — the tree walk two of the topology guards share, with
+    the rule left to the caller.
+
+    Resolving relative spellings needs the whole tree read first, which is why
+    this walks rather than testing one file at a time.
+    """
+    sources = {module_name(path, root, root_name): (path, path.read_text()) for path in sorted(root.rglob("*.py"))}
+    packages = packages_in(sources)
+    return sorted(
+        str(path.relative_to(root))
+        for importer, (path, source) in sources.items()
+        if matches(imported_modules(source, importer, packages))
+    )

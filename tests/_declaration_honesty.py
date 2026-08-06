@@ -26,17 +26,10 @@ from pydantic import ValidationError
 
 from a11y_health.core.error_contract import (
     ERROR_CODES_KEY,
-    ERROR_MODES,
     ErrorBody,
     ErrorCode,
 )
 from a11y_health.services import owner
-
-# Derived from the contract's public table rather than reaching for its private
-# twin, which would be a second name crossing the seam. Both sides read the one
-# table, and the round-trip tests — declarations built through error_responses()
-# and read back through the audit — are what catch a derivation that drifts.
-_STATUS_BY_CODE: dict[ErrorCode, int] = {mode.code: mode.status for mode in ERROR_MODES.values()}
 
 # 4xx statuses FastAPI/Starlette produce themselves (405 method-not-allowed,
 # 422 request-shape validation) — never coded, never declared per operation.
@@ -50,7 +43,8 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     merged view lives on the route's include context, read here through the
     same iterator OpenAPI generation uses. Falls back to the route itself when
     there is no app or no context (e.g. synthetic test scopes) — a view that
-    can only under-report declarations, so honesty fails loud. A router mounted
+    can only under-report declarations, so Declaration Honesty fails loud. A
+    router mounted
     more than once shares one route object across contexts and the first match
     wins, which could over-report for a less-declaring mount — an ADR 0033
     residual; no router is mounted twice today.
@@ -63,8 +57,13 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     return route
 
 
-def _declared_codes(view: Any, status: int) -> list[ErrorCode]:
-    return getattr(view, "responses", {}).get(status, {}).get(ERROR_CODES_KEY, [])
+def _declared_codes(view: Any) -> set[ErrorCode]:
+    # Read across statuses rather than indexing one. `error_responses()` buckets
+    # each code under exactly one status, so the union answers "is this code
+    # declared here?" identically — without the audit having to derive a second
+    # code-to-status map from the contract's table and keep it in lockstep.
+    responses = getattr(view, "responses", {})
+    return {code for entry in responses.values() for code in entry.get(ERROR_CODES_KEY, [])}
 
 
 def _operation_key(method: str, route: Any) -> tuple[str, str]:
@@ -78,11 +77,10 @@ def _operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]
     merged in) carries `code` — the declared side of the reverse-direction
     rollup diff.
     """
-    status = _STATUS_BY_CODE[code]
     operations: set[tuple[str, str]] = set()
     for context in iter_route_contexts(app.routes):
         route = context.original_route
-        if isinstance(route, APIRoute) and code in _declared_codes(context, status):
+        if isinstance(route, APIRoute) and code in _declared_codes(context):
             operations.update(_operation_key(method, route) for method in route.methods or ())
     return operations
 
@@ -93,8 +91,7 @@ def _assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app
     operation by its route template, not the concrete request path.
     """
     route = _effective_route(app, route)
-    declared_codes = _declared_codes(route, _STATUS_BY_CODE[code])
-    assert code in declared_codes, (
+    assert code in _declared_codes(route), (
         f"{method} {route.path} can produce error code {code} but does not declare it — "
         f"add ErrorCode.{code.name} to the operation's error_responses()"
     )
@@ -128,7 +125,7 @@ def _assert_declared_mode(method: str, path: str, route: Any, status: int, body:
 
 _current_request_scope: ContextVar[Any] = ContextVar("_current_request_scope", default=None)
 
-OBSERVED_ROLLUP_OPERATIONS: set[tuple[str, str]] = set()
+_OBSERVED_ROLLUP_OPERATIONS: set[tuple[str, str]] = set()
 
 
 def stale_rollup_declaration_message(app: Any) -> str | None:
@@ -138,7 +135,7 @@ def stale_rollup_declaration_message(app: Any) -> str | None:
     meaningful after a full suite run — conftest's sessionfinish hook owns that
     gating.
     """
-    stale = _operations_declaring(app, ErrorCode.CONCURRENT_ROLLUP) - OBSERVED_ROLLUP_OPERATIONS
+    stale = _operations_declaring(app, ErrorCode.CONCURRENT_ROLLUP) - _OBSERVED_ROLLUP_OPERATIONS
     if not stale:
         return None
     operations = ", ".join(f"{method} {path}" for method, path in sorted(stale))
@@ -150,7 +147,7 @@ def stale_rollup_declaration_message(app: Any) -> str | None:
 
 
 @contextmanager
-def request_scope(scope: Any) -> Iterator[None]:
+def _request_scope(scope: Any) -> Iterator[None]:
     token = _current_request_scope.set(scope)
     try:
         yield
@@ -181,7 +178,7 @@ def _enforcing(raiser: Any) -> Any:
         route = scope.get("route") if scope is not None else None
         if route is not None:
             _assert_raisable_mode_declared(scope["method"], route, ErrorCode.CONCURRENT_ROLLUP, app=scope.get("app"))
-            OBSERVED_ROLLUP_OPERATIONS.add(_operation_key(scope["method"], route))
+            _OBSERVED_ROLLUP_OPERATIONS.add(_operation_key(scope["method"], route))
         return await raiser(*args, **kwargs)
 
     return wrapper
@@ -212,5 +209,5 @@ class DeclarationHonestyShim:
                     body = b""
             await send(message)
 
-        with request_scope(scope):
+        with _request_scope(scope):
             await self.inner(scope, receive, send_wrapper)

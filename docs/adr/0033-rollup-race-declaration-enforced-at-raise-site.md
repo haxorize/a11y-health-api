@@ -93,7 +93,10 @@ served contract and gains one shared name, the `x-error-codes` vendor-key
 constant, written by `error_responses()` and read by the audit — the lockstep
 that colocation used to provide, now carried by a name instead of a file, and
 pinned by the round-trip tests that build declarations via `error_responses()`
-and assert the audit reads them back. `operation_key`'s both-sides-must-agree
+and assert the audit reads them back. That one name is the whole seam: the
+audit reads an operation's declared codes as the union across its statuses
+rather than indexing the status a code maps to, so no second derivation of the
+contract's table crosses and none can drift. `operation_key`'s both-sides-must-agree
 caveat dissolves structurally: declared and observed sides now key in the same
 module. Rejected: a sibling src module (`core/declaration_audit.py`) — an
 honest split on the wrong side of the src/tests seam, still shipping

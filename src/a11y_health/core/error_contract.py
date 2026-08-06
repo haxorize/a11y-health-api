@@ -9,12 +9,10 @@ domain vocabulary and never touch a status code.
 See `docs/architecture.md` ("How errors become HTTP status codes").
 """
 
-from typing import Any, NamedTuple
+from typing import Any, Final, NamedTuple
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute, iter_route_contexts
-from pydantic import ValidationError
 from starlette.requests import Request
 
 # Re-exported: `ErrorCode` and `ErrorBody` are declared next to their lenient twin
@@ -58,6 +56,14 @@ ERROR_MODES: dict[type[DomainError], _Mode] = {
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {mode.code: mode.status for mode in ERROR_MODES.values()}
 
+# The vendor extension under which a declaration carries its own code set, and
+# the published key downstream clients read off the OpenAPI document. Public
+# because every reader sits outside src: the suite's declaration guards read
+# back what `error_responses()` wrote here. The lockstep that earns the name is
+# with Declaration Honesty, which used to come from the two sides sharing a
+# file; this name is what carries it now that they don't (ADR 0033).
+ERROR_CODES_KEY: Final = "x-error-codes"
+
 
 def response_for(exc: DomainError) -> JSONResponse:
     """Render a domain error as its table-declared status and coded body.
@@ -86,9 +92,8 @@ def register_error_handlers(app: FastAPI) -> None:
 def error_responses(*codes: ErrorCode) -> dict[int | str, dict[str, Any]]:
     """Build a route's `responses=` declaration from the modes that can escape it.
 
-    Codes sharing a status collapse into one declaration; `x-error-codes`
-    carries the per-operation code set machine-readably (the honesty shim in
-    tests checks observed bodies against it).
+    Codes sharing a status collapse into one declaration; `ERROR_CODES_KEY`
+    carries the per-operation code set machine-readably.
     """
     by_status: dict[int, list[ErrorCode]] = {}
     for code in codes:
@@ -97,107 +102,7 @@ def error_responses(*codes: ErrorCode) -> dict[int | str, dict[str, Any]]:
         status: {
             "model": ErrorBody,
             "description": f"Domain error: {' | '.join(sorted(group))}",
-            "x-error-codes": sorted(group),
+            ERROR_CODES_KEY: sorted(group),
         }
         for status, group in sorted(by_status.items())
     }
-
-
-# 4xx statuses FastAPI/Starlette produce themselves (405 method-not-allowed,
-# 422 request-shape validation) — never coded, never declared per operation.
-FRAMEWORK_STATUSES: frozenset[int] = frozenset({405, 422})
-
-
-def _effective_route(app: FastAPI | None, route: Any) -> Any:
-    """Resolve a matched route to the declaration view the OpenAPI document is
-    generated from. FastAPI's non-copying include keeps
-    `include_router(responses=...)` declarations off `route.responses`; the
-    merged view lives on the route's include context, read here through the
-    same iterator OpenAPI generation uses. Falls back to the route itself when
-    there is no app or no context (e.g. synthetic test scopes) — a view that
-    can only under-report declarations, so honesty fails loud. A router mounted
-    more than once shares one route object across contexts and the first match
-    wins, which could over-report for a less-declaring mount — an ADR 0033
-    residual; no router is mounted twice today.
-    """
-    if app is None:
-        return route
-    for context in iter_route_contexts(app.routes):
-        if context.original_route is route:
-            return context
-    return route
-
-
-def _declared_codes(view: Any, status: int) -> list[ErrorCode]:
-    return getattr(view, "responses", {}).get(status, {}).get("x-error-codes", [])
-
-
-def operation_key(method: str, route: Any) -> tuple[str, str]:
-    """The one identity both sides of the reverse-direction rollup diff key on
-    (ADR 0033, #121): the route's own template, include prefix excluded. The
-    declared side (`operations_declaring`) and the observed side (the rollup
-    instrumentation in tests/_declaration_honesty.py) must build keys here or
-    the diff silently degrades.
-    """
-    return (method, route.path)
-
-
-def operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]:
-    """The operations whose effective declaration (include-level responses
-    merged in) carries `code` — the declared side of the reverse-direction
-    rollup diff, keyed by `operation_key`.
-    """
-    status = _STATUS_BY_CODE[code]
-    operations: set[tuple[str, str]] = set()
-    for context in iter_route_contexts(app.routes):
-        route = context.original_route
-        if isinstance(route, APIRoute) and code in _declared_codes(context, status):
-            operations.update(operation_key(method, route) for method in route.methods or ())
-    return operations
-
-
-def assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None) -> None:
-    """Declaration honesty asserted at the raise site instead of the response,
-    for modes no test observes organically — applied suite-wide by the
-    instrumentation in `tests/_declaration_honesty.py`. Checked against the
-    operation's effective declaration (include-level responses merged in);
-    `app=None` (synthetic scopes) degrades to the route-only, under-reporting
-    view, so callers must state which view they mean. The failure message names
-    the operation by its route template, not the concrete request path.
-    """
-    route = _effective_route(app, route)
-    declared_codes = _declared_codes(route, _STATUS_BY_CODE[code])
-    assert code in declared_codes, (
-        f"{method} {route.path} can produce error code {code} but does not declare it — "
-        f"add ErrorCode.{code.name} to the operation's error_responses()"
-    )
-
-
-def assert_declared_mode(method: str, path: str, route: Any, status: int, body: bytes, app: FastAPI | None) -> None:
-    """Declaration honesty, applied suite-wide by the test shim in
-    `tests/_declaration_honesty.py`. Raises `AssertionError` on an observed
-    4xx whose mode is not declared on the operation — checked against the
-    operation's effective declaration (include-level responses merged in);
-    `app=None` (synthetic scopes) degrades to the route-only, under-reporting
-    view, so callers must state which view they mean.
-    """
-    declared = getattr(_effective_route(app, route), "responses", {})
-    assert status in declared, (
-        f"{method} {path} returned {status}, which is not declared on the "
-        f"operation — declare the mode via error_responses()"
-    )
-    declared_codes = declared[status].get("x-error-codes")
-    assert declared_codes is not None, (
-        f"{method} {path} declares {status} without x-error-codes — "
-        f"declare it via error_responses(), not a hand-written responses entry"
-    )
-    try:
-        parsed = ErrorBody.model_validate_json(body)
-    except ValidationError:
-        raise AssertionError(
-            f"{method} {path} returned declared {status} with a body that is not a coded ErrorBody: {body[:200]!r}"
-        ) from None
-    assert parsed.code in declared_codes, (
-        f"{method} {path} produced error code {parsed.code!r}, which is not "
-        f"among the operation's declared modes {declared_codes}"
-    )

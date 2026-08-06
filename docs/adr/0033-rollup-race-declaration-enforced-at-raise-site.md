@@ -85,7 +85,10 @@ declaration-audit wing — `assert_declared_mode`,
 effective-route resolution, and `FRAMEWORK_STATUSES` — moves from
 `core/error_contract.py` into `tests/_declaration_honesty.py`, joining the
 ASGI shim and rollup instrumentation that were its only consumers; module
-references in the text above read historically. `error_contract` keeps the
+references in the text above read historically. Each arrives underscored —
+the wing was public only to cross the seam it no longer crosses, so ADR 0038's
+marker now applies, with the module's own suite reaching them directly under
+that ADR's tests-are-outside-the-walk carve-out. `error_contract` keeps the
 served contract and gains one shared name, the `x-error-codes` vendor-key
 constant, written by `error_responses()` and read by the audit — the lockstep
 that colocation used to provide, now carried by a name instead of a file, and
@@ -97,11 +100,14 @@ honest split on the wrong side of the src/tests seam, still shipping
 suite-only machinery with zero src consumers. The test module's charter is
 closed — this ADR's mechanism, nothing else — and a future *production*
 consumer of declaration introspection promotes the needed function back into
-`error_contract`, never copies it. Residuals above are unchanged by the move.
+`error_contract`, never copies it. The mixed contract suite splits along the
+same line: the mechanism's tests move to `tests/test_declaration_honesty.py`,
+beside the mechanism, and `tests/core/test_error_contract.py` shrinks to the
+served contract. Residuals above are unchanged by the move.
 
 **Amendment (2026-08-05, #130).** The instrumented surface moved with the
 rollup machinery: the raisers are now the Owner Dispatcher's rollup
 entrypoint(s) — every public `rollup*` callable on `services/owner.py`
 (today the single unified `rollup()`), patched as module attributes exactly as
-before. The from-import pin in `tests/core/test_error_contract.py` follows the
-same module.
+before. The from-import pin (since relocated to
+`tests/test_declaration_honesty.py`) follows the same module.

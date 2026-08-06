@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.error_contract import ErrorCode
+from a11y_health.core.error_contract import ERROR_CODES_KEY, ErrorCode
 from a11y_health.core.pagination import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -324,7 +324,7 @@ def test_every_paginated_operation_uses_the_pagination_owned_definition() -> Non
 
 def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
     for op in _paginated_operations():
-        declared_codes = {code for entry in op.responses.values() for code in entry.get("x-error-codes", [])}
+        declared_codes = {code for entry in op.responses.values() for code in entry.get(ERROR_CODES_KEY, [])}
         assert ErrorCode.INVALID_CURSOR in declared_codes, (
             f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not declare "
             f"the invalid-cursor error mode — add ErrorCode.INVALID_CURSOR to its error_responses()"

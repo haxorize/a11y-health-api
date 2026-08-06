@@ -151,7 +151,7 @@ Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts 
 - Every operation declares the modes that can escape it: `@router.get(..., responses=error_responses(ErrorCode.NOT_FOUND, ...))` — declare in domain vocabulary, never write a status code in an endpoint
 - Endpoints never catch or raise `HTTPException` directly
 - 422 belongs to the framework: only FastAPI's own request-shape validation produces it, with the standard body. Well-formed requests failing domain validation return 400 with a coded body (`invalid_cursor`, `invalid_axe_payload`) — do not add app-level `ValidationError` handlers; wrap explicit `model_validate()` calls at the boundary into a domain error instead (see `parse_axe_payload` in `schemas/axe_payload.py`)
-- Adding a mode: subclass `DomainError`, add the `ERROR_MODES` row + `ErrorCode` member, declare it on the operations that raise it. The exhaustiveness test and the suite-wide declaration-honesty shim (`tests/_declaration_honesty.py`, applying `error_contract.assert_declared_mode`) fail on gaps
+- Adding a mode: subclass `DomainError`, add the `ERROR_MODES` row + `ErrorCode` member, declare it on the operations that raise it. The exhaustiveness test and the suite-wide declaration-honesty shim (`tests/_declaration_honesty.py`, which owns the whole mechanism and reads declarations through the contract's `ERROR_CODES_KEY`) fail on gaps
 - Status conventions: 404 for missing resources, 409 for domain conflicts (duplicate slug, invalid state transition, has-dependents), 400 for well-formed-but-domain-invalid data
 
 ## Domain exceptions

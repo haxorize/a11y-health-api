@@ -7,12 +7,20 @@ description: Test conventions for this project. Use when writing tests, adding f
 
 ## Test layout
 
-Mirror the app structure:
+Mirror the app structure — except for a **suite-wide mechanism**, which lives
+at the root beside its implementation rather than under the package it happens
+to guard. A mechanism enforces an invariant across the whole suite (Declaration
+Honesty, import honesty) and has no single mirrored home; filing it under a
+mirrored directory is what produced the mixed contract suite #133 had to split.
 
 ```
 tests/
   conftest.py              # shared fixtures (client, db_session, db_client, committed_session_factory)
   test_config.py           # top-level Settings/config tests
+  _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
+  test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
+  import_graph.py          # shared import-reading helpers for the topology guards
+  test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
   fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py

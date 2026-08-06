@@ -166,7 +166,7 @@ about HTTP. `core/error_contract.py` owns the **Error Contract**: one table
 handler (registered once for `DomainError`), the shared `ErrorBody` response
 shape (`{"code", "message"}`), and each operation's OpenAPI declaration
 (`error_responses(...)` on the route decorator, which also embeds the declared
-codes as `x-error-codes`).
+codes under `ERROR_CODES_KEY` — the vendor extension `x-error-codes`).
 
 | Mode (exception → code) | Status |
 | --- | --- |
@@ -199,33 +199,33 @@ So: to add a new failure mode, subclass `DomainError`, add its row to
 `ERROR_MODES`, and list its code in `error_responses(...)` on the operations
 that can produce it. An exhaustiveness test fails if a `DomainError` subclass
 lacks a table entry, and the test suite's declaration-honesty shim (the ASGI
-wrapper in `tests/_declaration_honesty.py`, applying
-`error_contract.assert_declared_mode`) fails any test that observes an
-undeclared error status or code. The endpoint logic stays untouched.
+wrapper in `tests/_declaration_honesty.py`) fails any test that observes an
+undeclared error status or code. That module holds the whole mechanism — the
+audit that reads a declaration as well as the plumbing that applies it — and
+reads what `error_responses(...)` wrote through the contract's shared
+`ERROR_CODES_KEY`. The endpoint logic stays untouched.
 
 One mode can't be caught at the response: rollup-race 409s
 (`concurrent_rollup`) never fire organically in endpoint tests. The same test
 module closes that gap at the *raise site* instead — it instruments the
 public `rollup*` callables on the Owner Dispatcher (`services/owner.py`)
-through which `ConcurrentRollupError` can escape, and any operation observed reaching one
-during a request fails immediately (via
-`error_contract.assert_raisable_mode_declared`) unless it declares the
-retryable mode. Rollups fire on success paths, so enforcement reaches as deep
+through which `ConcurrentRollupError` can escape, and any operation observed
+reaching one during a request fails immediately unless it declares the retryable
+mode. Rollups fire on success paths, so enforcement reaches as deep
 as the suite drives rollup-triggering variants — each known rollup-triggering
 operation is pinned by an explicit HTTP canary in
-`tests/core/test_error_contract.py`, and a structural test pins the
+`tests/test_declaration_honesty.py`, and a structural test pins the
 attribute-access calling convention the instrumentation relies on (#113; ADR
 0033 records the residuals).
 
 The reverse direction — an operation still declaring `concurrent_rollup`
 after its rollup call is removed — is caught at session finish (#121): on a
 green full-suite run, `conftest.py` diffs the operations declaring the mode
-(`error_contract.operations_declaring`) against those observed reaching a
-rollup and fails the run on any stale declaration. Narrowed runs (positional
-paths, `--ignore`, deselection, or a mode that executes no tests) skip the
-diff, since a subset legitimately observes nothing for the operations it
-never drove; a red run also skips it, so a stale declaration surfaces on the
-next green full run.
+against those observed reaching a rollup and fails the run on any stale
+declaration. Narrowed runs (positional paths, `--ignore`, deselection, or a
+mode that executes no tests) skip the diff, since a subset legitimately
+observes nothing for the operations it never drove; a red run also skips it,
+so a stale declaration surfaces on the next green full run.
 
 ---
 

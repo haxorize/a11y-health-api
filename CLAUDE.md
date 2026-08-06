@@ -35,6 +35,10 @@ commit broken can't be made.
 Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`.
 Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
 
+## Subagent delegation
+
+Subagent delegation is authorized — standing permission, not a per-session ask. A skill specifying subagent fan-out or a fresh-context pass uses it rather than substituting an inline pass: a cold reader sharing the author's context isn't a cold reader, and review lenses that run inline stop being independent.
+
 ## Convention skills
 
 Project-local skills that carry this repo's conventions, organized by the layer they own. The global `tdd`, `implement`, and `feedback-loops` skills discover and invoke these *by role* for whatever layer a slice touches — consult the matching one before writing code at that layer, and `feedback-loops` applies any stack finalization they own (e.g. migrations).

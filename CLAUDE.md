@@ -24,6 +24,12 @@ uv run uvicorn a11y_health.main:app --reload  # dev server
 uv run a11y --help               # onboarding CLI: import/ingest + org-unit/brand lookups (see cli/__init__.py docstring)
 ```
 
+`.githooks/pre-commit` (wired via `core.hooksPath`) runs all four checks on every
+commit — format, lint, `ty check src/`, and the full suite. Two consequences worth
+planning around: a commit takes as long as the suite does, and **every commit in a
+multi-commit split has to pass on its own**, so a split that leaves an intermediate
+commit broken can't be made.
+
 ## Structure
 
 Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`.

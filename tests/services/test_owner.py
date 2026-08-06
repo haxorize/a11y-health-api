@@ -107,8 +107,8 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
     app_a = await make_app_with_org_unit(db_session, org_name="Org A", slug="app-a", brand_id=brand.id)
     app_b = await make_app_with_org_unit(db_session, org_name="Org B", slug="app-b", brand_id=brand.id)
 
-    # App A: newest observation ingested first; a historical backfill arrives later
-    # (higher id, older snapshot_at) and must not displace it
+    # App A: newest observation ingested first; a historical backfill arrives
+    # later (higher id, older snapshot_at) and must not displace it
     latest_a = await make_score_snapshot(
         db_session, app_id=app_a.id, score=0.9, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC)
     )
@@ -124,7 +124,8 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
     assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, latest_a.id), (app_b.id, latest_b.id)}
 
     # Parity: the Brand Rollup aggregates exactly the snapshots served above —
-    # its score is the mean of theirs (0.9 and 0.6), not of the backfill/tie losers
+    # its score is the mean of theirs (0.9 and 0.6), not of the backfill/tie
+    # losers
     await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
     brand_snapshot = await latest_brand_snapshot(db_session, brand.id)
     assert brand_snapshot.score == approx((0.9 + 0.6) / 2)
@@ -141,7 +142,8 @@ async def test_served_owner_not_repeated_when_import_lands_mid_walk(db_session: 
     first = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, limit=1)
     assert [s.app_id for s in first.items] == [app_a.id]
 
-    # a scan for the already-served app completes before the next page is fetched
+    # a scan for the already-served app completes before the next page is
+    # fetched
     await make_score_snapshot(db_session, app_id=app_a.id, score=0.9, snapshot_at=datetime(2026, 4, 5, tzinfo=UTC))
 
     second = await owner_service.list_latest_scores(
@@ -206,7 +208,8 @@ async def test_list_latest_scores_owner_id_filter_composes_with_cursor_paginatio
     assert [(s.app_id, s.id) for s in first.items] == [(app_a.id, latest_a.id)]
     assert first.next_cursor is not None
 
-    # the excluded owner sits between the two requested ids in keyset order and must not surface mid-walk
+    # the excluded owner sits between the two requested ids in keyset order and
+    # must not surface mid-walk
     second = await owner_service.list_latest_scores(
         db_session, ScoreSnapshotOwnerType.APP, owner_id=requested, cursor=first.next_cursor, limit=1
     )
@@ -215,8 +218,9 @@ async def test_list_latest_scores_owner_id_filter_composes_with_cursor_paginatio
 
 
 async def test_list_latest_scores_owner_id_filter_is_exact_match_for_rollup_owners(db_session: AsyncSession) -> None:
-    # No descendant expansion, unlike list_apps' org_unit_id: the parent's rollup
-    # snapshot already aggregates the child's, so the child must not surface.
+    # No descendant expansion, unlike list_apps' org_unit_id: the parent's
+    # rollup snapshot already aggregates the child's, so the child must not
+    # surface.
     parent = await make_org_unit(db_session, name="Parent")
     child = await make_org_unit(db_session, name="Child", parent_id=parent.id)
 
@@ -341,8 +345,9 @@ async def test_under_org_unit_scope_serves_no_brand_owners(db_session: AsyncSess
     root = await make_org_unit(db_session, name="Root")
     scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
     brand = await make_brand(db_session)
-    # the brand even owns an app inside the subtree — still not "under" the unit:
-    # brands have no org-tree placement, so the scoped brand-owner set is empty
+    # the brand even owns an app inside the subtree — still not "under" the
+    # unit: brands have no org-tree placement, so the scoped brand-owner set is
+    # empty
     await make_app(db_session, name="In Subtree", slug="in-subtree", brand_id=brand.id, org_unit_id=scoped.id)
     await make_score_snapshot(db_session, brand_id=brand.id, score=0.8, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
@@ -797,14 +802,16 @@ class TestOrgUnitRollup:
 
 
 class TestRollupNoChangeRecompute:
-    # History keeps one Score Snapshot per distinct observation, not one per trigger (#95).
+    # History keeps one Score Snapshot per distinct observation, not one per
+    # trigger (#95).
 
     async def test_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-nochange", org_unit_id=org_unit.id)
         await _complete_and_score(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
 
-        # deletion and reparent triggers re-run the rollup with unchanged children
+        # deletion and reparent triggers re-run the rollup with unchanged
+        # children
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
 
@@ -839,8 +846,8 @@ class TestRollupNoChangeRecompute:
     async def test_older_scan_completion_reproducing_aggregate_records_nothing_new(
         self, db_session: AsyncSession
     ) -> None:
-        # An older scan that doesn't displace the app's latest snapshot leaves the
-        # aggregate — values and observation time — unchanged.
+        # An older scan that doesn't displace the app's latest snapshot leaves
+        # the aggregate — values and observation time — unchanged.
         latest_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-same-mean", org_unit_id=org_unit.id)
@@ -1085,8 +1092,8 @@ class TestRollupSnapshotUniqueness:
             await db_session.flush()
 
     async def test_app_snapshots_stay_unconstrained_per_observation_time(self, db_session: AsyncSession) -> None:
-        # Two Scan Runs for one App may share scanned_at; latest selection breaks
-        # the tie. Proven by the second flush not raising.
+        # Two Scan Runs for one App may share scanned_at; latest selection
+        # breaks the tie. Proven by the second flush not raising.
         app = await make_app_with_org_unit(db_session)
         first = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
         second = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)

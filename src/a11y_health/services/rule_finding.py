@@ -47,8 +47,8 @@ async def list_findings(
 ) -> TotalledCursorPage[RuleFindingRead]:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
-    # Correlated subquery, not outerjoin + GROUP BY: the count then runs only for
-    # the limit+1 rows the page returns (an index probe each), instead of
+    # Correlated subquery, not outerjoin + GROUP BY: the count then runs only
+    # for the limit+1 rows the page returns (an index probe each), instead of
     # aggregating every Node Finding in the scan run before LIMIT applies.
     node_finding_count = (
         select(func.count())

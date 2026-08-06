@@ -15,9 +15,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
-# Re-exported: `ErrorCode` and `ErrorBody` are declared next to their lenient twin
-# in `error_body`, which carries no web-framework import. Every route still reaches
-# them through this module, which owns what they mean.
+# Re-exported: `ErrorCode` and `ErrorBody` are declared next to their lenient
+# twin in `error_body`, which carries no web-framework import. Every route
+# still reaches them through this module, which owns what they mean.
 from a11y_health.core.error_body import ErrorBody, ErrorCode
 from a11y_health.core.exceptions import (
     CircularReferenceError,
@@ -90,7 +90,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
 
 def error_responses(*codes: ErrorCode) -> dict[int | str, dict[str, Any]]:
-    """Build a route's `responses=` declaration from the modes that can escape it.
+    """Build a route's `responses=` declaration from the modes that escape it.
 
     Codes sharing a status collapse into one declaration; `ERROR_CODES_KEY`
     carries the per-operation code set machine-readably.

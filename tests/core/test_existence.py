@@ -69,7 +69,8 @@ class TestEntityLabels:
     async def test_unlabeled_model_is_rejected(self, db_session: AsyncSession) -> None:
         # The table is closed: guarding a new entity requires adding its label,
         # not silently inventing one — and the label lookup is eager, so the
-        # rejection fires on the entity's first guarded call, not its first miss.
+        # rejection fires on the entity's first guarded call, not its first
+        # miss.
         with pytest.raises(KeyError):
             await existence.get_by_pk(db_session, PageResult, 999999)
 

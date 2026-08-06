@@ -28,8 +28,9 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["impact"] == "serious"
     assert finding["category"] == "color"
     assert finding["wcag_criteria"] == ["1.4.3"]
-    # Deliberately literal — the wire-shape pin for a wcag Classification, like the
-    # best-practice pin below; deriving it would tie the assert to the mint under test.
+    # Deliberately literal — the wire-shape pin for a wcag Classification, like
+    # the best-practice pin below; deriving it would tie the assert to the mint
+    # under test.
     assert finding["classifications"] == [{"standard": "wcag", "version": "2.0", "level": "AA"}]
     assert finding["node_finding_count"] == 1
 
@@ -63,8 +64,8 @@ async def test_best_practice_classification_serializes_without_null_members(
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings")
 
-    # The wire shape must stay identical to the stored JSONB — explicit null members
-    # would break clients generated before Classification was typed.
+    # The wire shape must stay identical to the stored JSONB — explicit null
+    # members would break clients generated before Classification was typed.
     assert response.json()["items"][0]["classifications"] == [{"standard": "best-practice"}]
 
 
@@ -158,8 +159,8 @@ async def test_filter_options_serve_classifications_as_token_plus_structure(
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/filter-options")
 
     assert response.status_code == 200
-    # Deliberately literal — the wire-shape pin the UI derives labels from (#125),
-    # like the classification pins in the listing tests.
+    # Deliberately literal — the wire-shape pin the UI derives labels from
+    # (#125), like the classification pins in the listing tests.
     assert response.json()["classifications"] == [
         {"token": "wcag21aa", "classification": {"standard": "wcag", "version": "2.1", "level": "AA"}},
         {"token": "best-practice", "classification": {"standard": "best-practice"}},

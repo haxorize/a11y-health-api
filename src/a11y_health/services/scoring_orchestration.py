@@ -5,7 +5,8 @@ deleted or reassigned, org unit reparented) to the score computation and rollups
 it must trigger. App-score computation lives in `score_snapshot.py`; the rollups
 in `owner.py` (the Owner Dispatcher).
 
-See `docs/architecture.md` ("What triggers a rollup") for the event-to-rollup table.
+See `docs/architecture.md` ("What triggers a rollup") for the event-to-rollup
+table.
 
 Operations calling in here must declare the retryable `concurrent_rollup` mode —
 enforced structurally by the instrumentation in `tests/_declaration_honesty.py`.
@@ -28,7 +29,8 @@ async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> Non
 
 
 # The one deletion handler: a scan run's or the whole app's snapshots are gone,
-# and the app's latest Score Snapshot may have moved — same rollup pair either way.
+# and the app's latest Score Snapshot may have moved — same rollup pair either
+# way.
 async def on_app_latest_snapshot_changed(session: AsyncSession, org_unit_id: int, brand_id: int) -> None:
     await owner.rollup(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
     await owner.rollup(session, ScoreSnapshotOwnerType.BRAND, brand_id)

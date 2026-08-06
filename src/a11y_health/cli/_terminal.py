@@ -112,13 +112,14 @@ def main() -> None:
         elif args.command == "brands":
             _print_table(_run(args.base_url, lambda c: list_brands(c)), ["id", "name"])
     except CliError as error:
-        # Only the declared operator failures collapse to a line and an exit code.
-        # Anything else is a defect and keeps its traceback.
+        # Only the declared operator failures collapse to a line and an exit
+        # code. Anything else is a defect and keeps its traceback.
         print(f"  ERROR: {error}")
         sys.exit(1)
     except KeyboardInterrupt:
-        # Not an error either way — the operator asked to stop. 130 is the shell's
-        # code for SIGINT. A Scan Run created before the interrupt is left Pending
-        # and unscored, the same state a failed page upload leaves behind.
+        # Not an error either way — the operator asked to stop. 130 is the
+        # shell's code for SIGINT. A Scan Run created before the interrupt is
+        # left Pending and unscored, the same state a failed page upload leaves
+        # behind.
         print("\n  Interrupted.")
         sys.exit(130)

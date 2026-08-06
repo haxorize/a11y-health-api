@@ -31,7 +31,8 @@ def _private_gate(module: str) -> str | None:
     keeps a public module from being a way into a private package."""
     parts = module.split(".")
     for depth, part in enumerate(parts, start=1):
-        # The marker is one leading underscore; dunders are the language's, not ours.
+        # The marker is one leading underscore; dunders are the language's, not
+        # ours.
         if part.startswith("_") and not part.startswith("__"):
             return ".".join(parts[:depth])
     return None
@@ -39,14 +40,14 @@ def _private_gate(module: str) -> str | None:
 
 def _may_reach(importer: str, gate: str) -> bool:
     package = package_of(gate)
-    # The gate's siblings may reach it, and so may that package's own `__init__` —
-    # which *is* the package, and is where a re-export would live.
+    # The gate's siblings may reach it, and so may that package's own
+    # `__init__` — which *is* the package, and is where a re-export would live.
     return package == package_of(importer) or package == importer
 
 
 def _crossings(sources: dict[str, str]) -> list[tuple[str, str]]:
-    """(importer, gate) pairs where one of `sources`' private modules or packages
-    is reached from outside the package that owns it."""
+    """(importer, gate) pairs where one of `sources`' private modules or
+    packages is reached from outside the package that owns it."""
     packages = packages_in(sources)
     gates = {gate for name in sources if (gate := _private_gate(name)) is not None}
     found = {
@@ -65,7 +66,8 @@ class TestCrossingDetection:
         assert _crossings(sources) == [("pkg.b.consumer", "pkg.a._private")]
 
     def test_private_module_named_through_its_package_is_a_crossing(self) -> None:
-        # `from pkg.a import _private` reaches the same module by the other spelling.
+        # `from pkg.a import _private` reaches the same module by the other
+        # spelling.
         sources = {"pkg.a._private": "", "pkg.b.consumer": "from pkg.a import _private"}
 
         assert _crossings(sources) == [("pkg.b.consumer", "pkg.a._private")]
@@ -81,8 +83,8 @@ class TestCrossingDetection:
         assert _crossings(sources) == []
 
     def test_package_init_may_import_its_own_private_member(self) -> None:
-        # A package's `__init__` *is* the package, and re-exporting through it is
-        # the reason a private member exists at all.
+        # A package's `__init__` *is* the package, and re-exporting through it
+        # is the reason a private member exists at all.
         sources = {"pkg.a": "from pkg.a._private import Thing", "pkg.a._private": ""}
 
         assert _crossings(sources) == []

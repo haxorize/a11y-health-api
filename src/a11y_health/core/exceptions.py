@@ -26,8 +26,9 @@ class DuplicateRootError(DomainError):
     def __init__(self, resource: str, existing_root_id: object | None = None) -> None:
         self.resource = resource
         self.existing_root_id = existing_root_id
-        # existing_root_id is None on the create/create race path, where the session
-        # cannot be queried after the failed flush to identify the winner.
+        # existing_root_id is None on the create/create race path, where the
+        # session cannot be queried after the failed flush to identify the
+        # winner.
         if existing_root_id is None:
             message = f"A top-level {resource.lower()} already exists: only one is allowed"
         else:

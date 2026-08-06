@@ -41,8 +41,9 @@ def test_classifications_in_keeps_every_named_standard() -> None:
 
 
 def test_classifications_in_names_an_aaa_only_rule() -> None:
-    # An AAA-only axe rule (e.g. color-contrast-enhanced: cat.color + wcag2aaa +
-    # the 1.4.6 criterion) carries its AAA Classification instead of dropping to [].
+    # An AAA-only axe rule (e.g. color-contrast-enhanced: cat.color + wcag2aaa
+    # + the 1.4.6 criterion) carries its AAA Classification instead of dropping
+    # to [].
     assert classifications_in(["cat.color", "wcag2aaa", "wcag146"]) == [
         Classification(standard="wcag", version="2.0", level="AAA")
     ]

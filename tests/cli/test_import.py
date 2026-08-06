@@ -14,8 +14,9 @@ from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand
 def _write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
     date_dir = app_dir / date
     date_dir.mkdir()
-    # `is not None`, not `or`: an explicit "" is a real case — `_parse_scanned_at`
-    # treats it as absent and falls back to the directory mtime.
+    # `is not None`, not `or`: an explicit "" is a real case —
+    # `_parse_scanned_at` treats it as absent and falls back to the directory
+    # mtime.
     write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
 
 
@@ -225,7 +226,8 @@ async def test_import_name_mismatch_across_date_subdirs_hard_fails(
     assert "bar.com" in message
     assert "2026-03-30" in message
     assert "2026-04-01" in message
-    # The conflict is reported by slug — the unit that actually makes them distinct Apps.
+    # The conflict is reported by slug — the unit that actually makes them
+    # distinct Apps.
     assert "foo-com" in message
     assert "bar-com" in message
 
@@ -428,8 +430,9 @@ async def test_import_mixed_tz_scanned_at_resolves_and_picks_newest(
     app_dir = tmp_path / "tz-drift"
     app_dir.mkdir()
 
-    # The older scan carries a tz-aware endTime; the newer scan's has no offset.
-    # Comparing them to pick the newest must not raise on the awareness mismatch.
+    # The older scan carries a tz-aware endTime; the newer scan's has no
+    # offset. Comparing them to pick the newest must not raise on the awareness
+    # mismatch.
     _write_scan_dir(app_dir, "2026-04-01", name="FOO.COM", end_time="2026-04-01T12:00:00Z")
     _write_scan_dir(app_dir, "2026-05-01", name="foo.com", end_time="2026-05-01T12:00:00")  # offset-less — assumed UTC
 
@@ -452,9 +455,10 @@ async def test_import_missing_name_reported_even_alongside_unslugifiable_name(
     app_dir = tmp_path / "missing-and-unslugifiable"
     app_dir.mkdir()
 
-    # One subdir's payload has no name; another's name is present but derives to an
-    # empty slug. The unslugifiable name must not pre-empt the structured report —
-    # the missing-name diagnostic has to survive rather than be lost to a raw ValueError.
+    # One subdir's payload has no name; another's name is present but derives
+    # to an empty slug. The unslugifiable name must not pre-empt the structured
+    # report — the missing-name diagnostic has to survive rather than be lost
+    # to a raw ValueError.
     (app_dir / "2026-03-30").mkdir()
     nameless = make_axe_payload(name="foo.com", url="https://foo.com/")
     del nameless["name"]

@@ -139,16 +139,18 @@ async def list_latest_scores(
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
         snapshots = snapshots.where(await _under_org_unit_scope(session, owner_type, under_org_unit_id, direct_only))
     if owner_id is not None:
-        # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a rollup
-        # owner's snapshot already aggregates everything it covers (an org unit's
-        # subtree, a brand's flat app set), so expansion would double-count.
+        # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a
+        # rollup owner's snapshot already aggregates everything it covers (an
+        # org unit's subtree, a brand's flat app set), so expansion would
+        # double-count.
         snapshots = snapshots.where(owner_col.in_(owner_id))
     stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
-    # Keyset on the owner id alone: it is unique here (one row per owner), never
-    # NULL (the filter above), and an owner's position can't move when the latest
-    # view recomputes between requests. Keying on snapshot_at — or adding the
-    # usual id tiebreak — would let a mid-walk import re-serve an already-served
-    # owner (its new latest row compares greater than the cursor) or hide one.
+    # Keyset on the owner id alone: it is unique here (one row per owner),
+    # never NULL (the filter above), and an owner's position can't move when
+    # the latest view recomputes between requests. Keying on snapshot_at — or
+    # adding the usual id tiebreak — would let a mid-walk import re-serve an
+    # already-served owner (its new latest row compares greater than the
+    # cursor) or hide one.
     return await paginate(
         session,
         stmt,
@@ -238,7 +240,8 @@ def owned(
 ) -> ScoreSnapshot:
     """Exactly-one-owner is structural — the spec picks the column, and the
     database check constraint stays as the backstop. Raises `ValueError` when a
-    Scan Run is linked to a non-App owner: only App snapshots come from scans."""
+    Scan Run is linked to a non-App owner: only App snapshots come from
+    scans."""
     if scan_run_id is not None and owner_type is not ScoreSnapshotOwnerType.APP:
         raise ValueError("scan_run_id requires an APP owner")
     return ScoreSnapshot(
@@ -305,16 +308,19 @@ async def _apply_rollup(
     owner_id: int,
 ) -> None:
     criterion = spec.id_column == owner_id
-    # No children → nothing to aggregate; every snapshot the owner has is orphaned.
+    # No children → nothing to aggregate; every snapshot the owner has is
+    # orphaned.
     if not children:
         await session.execute(delete(ScoreSnapshot).where(criterion))
         return
-    # score is the unweighted arithmetic mean of children's scores per DOMAIN.md.
-    # Snapshots forward of the new max are orphaned — the data behind them is gone — so prune.
+    # score is the unweighted arithmetic mean of children's scores per
+    # DOMAIN.md. Snapshots forward of the new max are orphaned — the data
+    # behind them is gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)
     await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at > snapshot_at))
-    # Float summation is order-sensitive and the latest-child query has no ORDER BY;
-    # sort so recomputes are bitwise-reproducible and the no-change skip below holds.
+    # Float summation is order-sensitive and the latest-child query has no
+    # ORDER BY; sort so recomputes are bitwise-reproducible and the no-change
+    # skip below holds.
     children = sorted(children, key=lambda c: c.id)
     count = len(children)
     snapshot = owned(
@@ -327,9 +333,10 @@ async def _apply_rollup(
         pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
         snapshot_at=snapshot_at,
     )
-    # One snapshot per distinct observation, not one per trigger (#95, ADR 0015).
-    # A newer observation time always appends — even with unchanged values — so
-    # the latest snapshot never claims an observation whose source data is gone.
+    # One snapshot per distinct observation, not one per trigger (#95, ADR
+    # 0015). A newer observation time always appends — even with unchanged
+    # values — so the latest snapshot never claims an observation whose source
+    # data is gone.
     existing = await _snapshot_recorded_at_observation(session, criterion, snapshot_at)
     if existing is not None:
         if _aggregate_values(existing) == _aggregate_values(snapshot):
@@ -354,8 +361,9 @@ async def _acquire_rollup_lock(session: AsyncSession, owner_type: ScoreSnapshotO
         await session.execute(select(func.pg_advisory_xact_lock(key)))
     except DBAPIError as exc:
         # A deadlock victim's 40P01 lands on the statement that was waiting —
-        # this one (ADR 0029) — and the loser is semantically a concurrent-rollup
-        # loser (#104). Anything else propagates unchanged, as in ADR 0028.
+        # this one (ADR 0029) — and the loser is semantically a
+        # concurrent-rollup loser (#104). Anything else propagates unchanged,
+        # as in ADR 0028.
         if getattr(exc.orig, "sqlstate", None) != _DEADLOCK_SQLSTATE:
             raise
         raise _concurrent_rollup_error(owner_type, owner_id) from exc

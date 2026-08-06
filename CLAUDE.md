@@ -67,8 +67,9 @@ Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr
 - **Cross-cutting behavior and architecture go in [`docs/architecture.md`](docs/architecture.md)** (the layer model, scoring/rollup, scan-run lifecycle, pagination, contract pipeline, operating). `DOMAIN.md` stays a glossary.
 - **Module docstrings only on modules whose job isn't self-evident** (e.g. scoring, pagination, the axe boundary), and they point to the relevant `architecture.md` section rather than re-explaining it.
 - **Function docstrings only for a caller contract the signature can't express** — a precondition or a `Raises:` (see `paginate()`).
+- **Prose wraps at 80 columns**, narrower than the 120 the formatter allows code — a paragraph running the full code width is one nobody re-reads. `ruff`'s `W505` checks it via `lint.pycodestyle.max-doc-length`; shipped migration revisions are exempt, being history the suite runs rather than code to edit.
 
-No ruff `D` rules enforce this; it's judgment, applied here.
+No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Note what `W505` cannot see: it flags a line that is too *long*, never one left too *short*. The formatter does not reflow prose, so an edit that strands a two-word orphan mid-paragraph passes every check — when you change a word inside a comment or docstring, rewrap the whole block, not the line.
 
 ## Commit style
 

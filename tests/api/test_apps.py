@@ -83,9 +83,10 @@ async def test_list_apps(db_client: AsyncClient, db_session: AsyncSession) -> No
     assert slugs == {"myhumana", "go365"}
 
 
-# Cursor pagination mechanics (limit, next_cursor, second-page round-trip) are proven
-# centrally in tests/core/test_pagination.py. This endpoint test keeps only the generic
-# InvalidCursorError -> 400 mapping, which has no other HTTP-layer home.
+# Cursor pagination mechanics (limit, next_cursor, second-page round-trip) are
+# proven centrally in tests/core/test_pagination.py. This endpoint test keeps
+# only the generic InvalidCursorError -> 400 mapping, which has no other
+# HTTP-layer home.
 async def test_list_apps_invalid_cursor(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/apps", params={"cursor": "not-a-cursor"})
     assert response.status_code == 400
@@ -109,7 +110,8 @@ async def test_list_apps_filter_by_multiple_brand_ids(db_client: AsyncClient, db
 
 
 # Pins org_unit_id query-parameter decoding; descendant-expansion semantics
-# live at the service seam (test_list_apps_filter_by_org_unit_id_with_descendants).
+# live at the service seam
+# (test_list_apps_filter_by_org_unit_id_with_descendants).
 async def test_list_apps_filter_by_org_unit_id(db_client: AsyncClient, db_session: AsyncSession) -> None:
     top = await make_org_unit(db_session, name="Top")
     humana_ou = await make_org_unit(db_session, name="Humana", parent_id=top.id)

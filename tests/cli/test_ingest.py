@@ -198,8 +198,8 @@ async def test_ingest_records_per_page_upload_failures(
     assert result.pages_uploaded == 1
     assert len(result.errors) == 1
     assert "b.json" in result.errors[0]
-    # The Error Contract's code, not the bare status — the code names the mode, and
-    # the mode is what the operator has to act on.
+    # The Error Contract's code, not the bare status — the code names the mode,
+    # and the mode is what the operator has to act on.
     assert "invalid_axe_payload" in result.errors[0]
 
     # A partial run is left Pending (unscored), never completed over a subset.
@@ -229,8 +229,8 @@ async def test_ingest_reports_resolved_app_and_scan_run_before_uploading_pages(
 
 
 async def test_ingest_undecodable_scan_file_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:
-    # Not valid UTF-8. `read_text` raises UnicodeDecodeError, a ValueError subclass
-    # that would otherwise escape the loader as a traceback.
+    # Not valid UTF-8. `read_text` raises UnicodeDecodeError, a ValueError
+    # subclass that would otherwise escape the loader as a traceback.
     (tmp_path / "binary.json").write_bytes(b'{"name": "\xff\xfe"}')
 
     with pytest.raises(MalformedScanFileError) as exc_info:
@@ -243,8 +243,9 @@ async def test_ingest_undecodable_scan_file_names_the_file(no_server: AsyncClien
 
 
 async def test_ingest_overlong_app_name_reports_the_length_bound(no_server: AsyncClient, tmp_path: Path) -> None:
-    # The named error forwards derive_slug's own wording, so the operator learns
-    # which derivation rule the name broke rather than a flattened "underivable".
+    # The named error forwards derive_slug's own wording, so the operator
+    # learns which derivation rule the name broke rather than a flattened
+    # "underivable".
     write_scan_file(tmp_path, "a.json", name="a" * 256)
 
     with pytest.raises(UnderivableAppNameError, match="longer than 255 characters"):
@@ -266,8 +267,8 @@ async def test_ingest_non_object_scan_file_names_the_file(no_server: AsyncClient
 
 
 async def test_ingest_underivable_app_name_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:
-    # Every other load failure names its file; across a 30-directory import this is
-    # the difference between a fixable report and a hunt.
+    # Every other load failure names its file; across a 30-directory import
+    # this is the difference between a fixable report and a hunt.
     write_scan_file(tmp_path, "offender.json", name="!!!")
 
     with pytest.raises(UnderivableAppNameError) as exc_info:

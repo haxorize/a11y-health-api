@@ -74,7 +74,8 @@ class NodeFindingDetail(NodeFindingRead):
     checks: dict[str, Any]
 
 
-# Deliberately no node_finding_count here — the detail embeds the Node Findings themselves.
+# Deliberately no node_finding_count here — the detail embeds the Node Findings
+# themselves.
 class RuleFindingDetail(_RuleFindingBase):
     node_findings: list[NodeFindingDetail] = Field(default_factory=list)
 

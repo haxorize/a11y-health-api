@@ -43,7 +43,8 @@ async def test_node_finding_count_zero_for_finding_with_no_node_findings(db_sess
 
 # One case per filter dimension: factory kwargs for a matching finding, for a
 # non-matching one, and the service filter that separates them. Shared by every
-# per-filter parametrized test so a new dimension can't land in one and not the other.
+# per-filter parametrized test so a new dimension can't land in one and not the
+# other.
 FILTER_CASES = [
     pytest.param(
         {"finding_type": FindingType.VIOLATION},

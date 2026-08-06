@@ -97,8 +97,9 @@ class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
 
-    # `item` is omitted only where the internal items are already the public type —
-    # an `into` aggregate returning the Read model itself (e.g. PageMetricsRead).
+    # `item` is omitted only where the internal items are already the public
+    # type — an `into` aggregate returning the Read model itself (e.g.
+    # PageMetricsRead).
     @overload
     @classmethod
     def from_cursor_page[I](cls, page: CursorPage[I]) -> Page[I]: ...
@@ -219,7 +220,7 @@ async def paginate[T](
     into: Callable[[Row], T] | None = None,
     with_total: bool = False,
 ) -> CursorPage[T]:
-    """Apply keyset pagination to `stmt`, returning one page and the next cursor.
+    """Apply keyset pagination to `stmt`, returning a page and the next cursor.
 
     `descending` reverses both the ORDER BY and the keyset comparison so paging
     walks newest→oldest; cursor encoding stays direction-agnostic.
@@ -231,14 +232,16 @@ async def paginate[T](
     make `total` lag the page by the concurrent writes; a refetch corrects it.
 
     Caller contract not captured by the types:
-    - `keyset` columns must be NOT NULL — a NULL makes the row-value `>` comparison
-      return NULL and silently drops rows. Use primary keys or NOT NULL columns.
-    - each keyset column's owning entity must appear in the result row (true for
-      `select(Entity)` and `select(Entity, agg, ...)`); a bare scalar keyset column
-      raises rather than mis-paging.
+    - `keyset` columns must be NOT NULL — a NULL makes the row-value `>`
+      comparison return NULL and silently drops rows. Use primary keys or NOT
+      NULL columns.
+    - each keyset column's owning entity must appear in the result row (true
+      for `select(Entity)` and `select(Entity, agg, ...)`); a bare scalar
+      keyset column raises rather than mis-paging.
 
     Raises `InvalidCursorError` on a malformed cursor (handled as 400) and
-    `UnsupportedKeysetTypeError` if a keyset column's type isn't int/datetime/str.
+    `UnsupportedKeysetTypeError` if a keyset column's type isn't
+    int/datetime/str.
     """
     unpaged = stmt
     order = [col.desc() for col in keyset] if descending else list(keyset)

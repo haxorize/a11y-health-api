@@ -38,7 +38,8 @@ async def list_findings(
     return TotalledPage.from_totalled_cursor_page(page)
 
 
-# Registered before /{finding_id} so the static segment isn't parsed as a finding id.
+# Registered before /{finding_id} so the static segment isn't parsed as a
+# finding id.
 @router.get("/filter-options", responses=error_responses(ErrorCode.NOT_FOUND))
 async def list_finding_filter_options(db: DbSession, scan_run_id: int) -> FindingFilterOptionsRead:
     return await rule_finding_service.list_filter_options(db, scan_run_id)

@@ -1,4 +1,5 @@
-"""Migration-body coverage for revision 8b3a1162eb95 (the #98 uniqueness enforcement).
+"""Migration-body coverage for revision 8b3a1162eb95 (the #98 uniqueness
+enforcement).
 
 Proves the enforcement chain on legacy data: seed pre-#95 duplicate rollup rows,
 run the shipped #97 cleanup, then the shipped enforcement upgrade — which must

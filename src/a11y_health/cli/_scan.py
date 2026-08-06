@@ -39,19 +39,20 @@ class UnderivableAppNameError(CliError):
     def __init__(self, name: str, reason: ValueError, file: Path | None = None) -> None:
         self.name = name
         self.reason = reason
-        # `None` when the name came from `--name` rather than from a document, which
-        # is the only case where there is no file to point at.
+        # `None` when the name came from `--name` rather than from a document,
+        # which is the only case where there is no file to point at.
         self.file = file
-        # The derivation's own wording, not a paraphrase of it — only `derive_slug`
-        # knows whether the name emptied out or ran past the slug length bound.
+        # The derivation's own wording, not a paraphrase of it — only
+        # `derive_slug` knows whether the name emptied out or ran past the slug
+        # length bound.
         super().__init__(f"{file}: {reason}" if file else str(reason))
 
 
 class MalformedScanFileError(CliError):
-    """One unreadable scan file. `detail` completes the sentence "<file> ..." because
-    the three ways a file can be unreadable — bad JSON syntax, bytes that aren't text,
-    a document that isn't an object — are one failure to the operator but three
-    different things to say."""
+    """One unreadable scan file. `detail` completes the sentence "<file> ..."
+    because the three ways a file can be unreadable — bad JSON syntax, bytes
+    that aren't text, a document that isn't an object — are one failure to the
+    operator but three different things to say."""
 
     def __init__(self, file: Path, detail: str) -> None:
         self.file = file
@@ -89,8 +90,9 @@ class NameResolutionError(CliError):
         conflicts: dict[str, list[NameVariant]] | None = None,
     ) -> None:
         self.missing: list[Path] = missing or []
-        # slug -> the name variants that derived to it — keyed on slug because the
-        # slug is the unit of collision; same-slug variants never reach here.
+        # slug -> the name variants that derived to it — keyed on slug because
+        # the slug is the unit of collision; same-slug variants never reach
+        # here.
         self.conflicts: dict[str, list[NameVariant]] = conflicts or {}
         parts: list[str] = []
         if self.missing:
@@ -121,8 +123,9 @@ def _parse_scanned_at(files: list[Path], payloads: list[dict], directory: Path) 
                 parsed = datetime.fromisoformat(end_time)
             except (ValueError, TypeError) as exc:
                 raise UnparseableScanTimestampError(file, end_time, exc) from exc
-            # An offset-less endTime is otherwise uncomparable against the UTC mtime
-            # fallback and against sibling scans (import orders scans by scanned_at) — assume UTC.
+            # An offset-less endTime is otherwise uncomparable against the UTC
+            # mtime fallback and against sibling scans (import orders scans by
+            # scanned_at) — assume UTC.
             return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     mtime = directory.stat().st_mtime
     return datetime.fromtimestamp(mtime, tz=UTC)
@@ -178,7 +181,8 @@ def load_scan(directory: Path) -> LoadedScan:
             raise MalformedScanFileError(file, f"is not valid UTF-8 text: {exc}") from exc
         if not isinstance(payload, dict):
             # Parses, but isn't an axe document. Caught here rather than at the
-            # first `.get()` so the operator learns which file, not which attribute.
+            # first `.get()` so the operator learns which file, not which
+            # attribute.
             raise MalformedScanFileError(
                 file, f"is not an axe scan document: its top level is a JSON {type(payload).__name__}, not an object"
             )
@@ -190,10 +194,11 @@ def load_scan(directory: Path) -> LoadedScan:
 
 def resolve_app_name(scans: list[LoadedScan]) -> str:
     # Identity is the derived slug (ADR 0019), so names that differ only in
-    # presentation but derive to the same slug are the same App — not a conflict.
-    # A genuine conflict is two distinct slugs. Among same-slug variants the display
-    # name is cosmetic; the newest scan's variant (by observation time) wins — equal
-    # scanned_at ties fall to first-seen, harmless because the pick is cosmetic.
+    # presentation but derive to the same slug are the same App — not a
+    # conflict. A genuine conflict is two distinct slugs. Among same-slug
+    # variants the display name is cosmetic; the newest scan's variant (by
+    # observation time) wins — equal scanned_at ties fall to first-seen,
+    # harmless because the pick is cosmetic.
     missing: list[Path] = []
     by_slug: dict[str, list[NameVariant]] = {}
     underivable: tuple[str, ValueError, Path] | None = None
@@ -209,7 +214,8 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
                 slug = derive_slug(name)
             except ValueError as exc:
                 # An unslugifiable name still fails loudly, but only after the
-                # structured missing/conflict report below — never pre-empting it.
+                # structured missing/conflict report below — never pre-empting
+                # it.
                 underivable = underivable or (name, exc, file)
                 continue
             by_slug.setdefault(slug, []).append(NameVariant(name, file))

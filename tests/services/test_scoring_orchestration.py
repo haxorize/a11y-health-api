@@ -318,8 +318,9 @@ class TestOnOrgUnitReparented:
             pages_with_critical_violations=0,
         )
 
-        # old_parent_id=None can no longer arise through the org-unit service (single-root
-        # invariant), but the orchestration seam stays defensive; exercise the skip directly.
+        # old_parent_id=None can no longer arise through the org-unit service
+        # (single-root invariant), but the orchestration seam stays defensive;
+        # exercise the skip directly.
         await on_org_unit_reparented(db_session, orphan.id, None, new_parent.id)
 
         assert (await latest_ou_snapshot(db_session, new_parent.id)).score == approx(0.6)

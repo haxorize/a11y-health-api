@@ -37,7 +37,8 @@ async def test_non_canonical_classification_is_refused_at_flush(
 async def test_invalid_containment_target_is_refused_at_query_time(db_session: AsyncSession) -> None:
     # Containment targets hit the bind-time guard only because the ORM coerces
     # .contains() operands to the column type — the unpinned default behind the
-    # ADR 0031 amendment's coverage claim. If coercion changes, this fails loudly.
+    # ADR 0031 amendment's coverage claim. If coercion changes, this fails
+    # loudly.
     with pytest.raises(StatementError):
         await db_session.execute(
             select(RuleFinding.id).where(RuleFinding.classifications.contains([{"standard": "wcag"}]))

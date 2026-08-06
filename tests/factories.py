@@ -94,8 +94,8 @@ async def make_app_with_org_unit(
     slug: str = "test-app",
     brand_id: int | None = None,
 ) -> App:
-    # Nest under the existing root when one exists — a second parentless org unit
-    # would violate the single-root index (ADR 0026).
+    # Nest under the existing root when one exists — a second parentless org
+    # unit would violate the single-root index (ADR 0026).
     existing_root_id = await org_unit_service.get_root_id(db)
     org_unit = await make_org_unit(db, name=org_name, parent_id=existing_root_id)
     if brand_id is None:

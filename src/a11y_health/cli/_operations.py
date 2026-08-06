@@ -46,9 +46,9 @@ class AppNotFoundError(CliError):
 
 
 class NameOverrideMismatchError(CliError):
-    # Takes both slugs rather than re-deriving them: the caller has just computed
-    # both to discover the mismatch, and an exception that derives in its own
-    # constructor is one that can raise while being raised.
+    # Takes both slugs rather than re-deriving them: the caller has just
+    # computed both to discover the mismatch, and an exception that derives in
+    # its own constructor is one that can raise while being raised.
     def __init__(self, *, name: str, name_slug: str, json_name: str, json_slug: str) -> None:
         self.name = name
         self.name_slug = name_slug
@@ -100,17 +100,18 @@ async def _upload_scan(
                 on_progress(f"Failed {file.name}: {rejection.code}")
 
         if errors:
-            # A partial run must not be scored: completing it would snapshot a score
-            # over whatever subset happened to upload. Leave it Pending (unscored),
-            # so the operator can fix the inputs and re-ingest, then delete it.
+            # A partial run must not be scored: completing it would snapshot a
+            # score over whatever subset happened to upload. Leave it Pending
+            # (unscored), so the operator can fix the inputs and re-ingest,
+            # then delete it.
             on_progress(_left_pending(scan_run_id, f"{len(errors)} of {len(scan.files)} pages failed"))
         else:
             await _client.complete_scan_run(client, scan_run_id=scan_run_id)
             on_progress(f"Scan run {scan_run_id} completed: {pages_uploaded} pages uploaded")
     except CliError as exc:
-        # The run exists and holds whatever uploaded before this failure — the same
-        # Pending state a partial run leaves. Without this it is abandoned unnamed,
-        # and the operator has no id to delete.
+        # The run exists and holds whatever uploaded before this failure — the
+        # same Pending state a partial run leaves. Without this it is abandoned
+        # unnamed, and the operator has no id to delete.
         on_progress(_left_pending(scan_run_id, str(exc)))
         raise
 
@@ -177,8 +178,9 @@ async def import_app(
 
     existing = await _client.find_app_by_slug(client, slug)
     if existing is None:
-        # Equivalence is only enforced when the override actually names the App;
-        # on an existing App the override is ignored below, mismatched or not (AC10).
+        # Equivalence is only enforced when the override actually names the
+        # App; on an existing App the override is ignored below, mismatched or
+        # not (AC10).
         if name is not None:
             try:
                 override_slug = derive_slug(name)

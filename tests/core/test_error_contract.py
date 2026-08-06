@@ -103,7 +103,8 @@ async def test_missing_app_produces_declared_coded_not_found(db_client: AsyncCli
     assert response.status_code == 404
     assert response.json() == {"code": "not_found", "message": "App 999999 not found"}
 
-    # The same mode must be declared on the operation, referencing the shared body schema.
+    # The same mode must be declared on the operation, referencing the shared
+    # body schema.
     spec = app.openapi()
     declared = spec["paths"]["/api/v1/apps/{app_id}"]["get"]["responses"]
     assert "404" in declared

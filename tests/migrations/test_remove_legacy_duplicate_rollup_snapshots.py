@@ -1,4 +1,5 @@
-"""Migration-body coverage for revision b362121027a0 (the #97 legacy-duplicate cleanup).
+"""Migration-body coverage for revision b362121027a0 (the #97 legacy-duplicate
+cleanup).
 
 Exercises the shipped `upgrade()` against real legacy rows: per rollup owner and
 observation time, all but the row Latest Score Snapshot selection keeps (max id

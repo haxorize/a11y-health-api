@@ -99,7 +99,8 @@ async def test_best_practice_classification_stored_without_null_members(db_sessi
     stmt = select(RuleFinding).where(RuleFinding.rule_id == "region")
     finding = (await db_session.execute(stmt)).scalars().one()
 
-    # Compact JSONB, matching the GIN containment targets the classification filter builds.
+    # Compact JSONB, matching the GIN containment targets the classification
+    # filter builds.
     assert finding.classifications == [{"standard": "best-practice"}]
 
 
@@ -111,8 +112,9 @@ async def test_wcag21_classification_stored_from_ingested_tags(db_session: Async
     stmt = select(RuleFinding).where(RuleFinding.rule_id == "target-size")
     finding = (await db_session.execute(stmt)).scalars().one()
 
-    # Deliberately literal — the ingest-path pin for a 2.1 stored shape, independent of
-    # the token map; the fixture-driven wcag2a/wcag2aa asserts above derive from it.
+    # Deliberately literal — the ingest-path pin for a 2.1 stored shape,
+    # independent of the token map; the fixture-driven wcag2a/wcag2aa asserts
+    # above derive from it.
     assert finding.classifications == [{"standard": "wcag", "version": "2.1", "level": "AA"}]
 
 

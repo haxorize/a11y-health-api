@@ -171,8 +171,9 @@ async def test_a_deadlock_loser_surfaces_as_the_retryable_concurrent_rollup_erro
         await owner_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 1)
         await owner_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 2)
 
-        # Cross acquisitions form the ADR 0029 cycle: each session waits on the lock
-        # the other holds, and Postgres fails exactly one transaction (40P01).
+        # Cross acquisitions form the ADR 0029 cycle: each session waits on the
+        # lock the other holds, and Postgres fails exactly one transaction
+        # (40P01).
         results = await asyncio.wait_for(
             asyncio.gather(
                 owner_service._acquire_rollup_lock(session_a, ScoreSnapshotOwnerType.ORG_UNIT, 2),

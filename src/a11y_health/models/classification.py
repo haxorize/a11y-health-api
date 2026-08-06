@@ -57,8 +57,9 @@ class Classification(BaseModel):
 
     @model_serializer(mode="wrap")
     def _omit_none_members(self, handler: SerializerFunctionWrapHandler):
-        # Wire shape == stored shape: clients generated before this model was typed
-        # validate members as strings, so absent members are omitted, never null.
+        # Wire shape == stored shape: clients generated before this model was
+        # typed validate members as strings, so absent members are omitted,
+        # never null.
         return {k: v for k, v in handler(self).items() if v is not None}
 
 
@@ -89,9 +90,10 @@ _TOKEN_TO_CLASSIFICATION: dict[str, Classification] = {
     "best-practice": Classification(standard="best-practice"),
 }
 
-# The Literal feeds the OpenAPI enum; the map feeds storage and the filter. A missing
-# map entry would 500 on a contractually valid token, so drift fails at import instead
-# (an explicit raise, not an assert — asserts vanish under python -O).
+# The Literal feeds the OpenAPI enum; the map feeds storage and the filter. A
+# missing map entry would 500 on a contractually valid token, so drift fails at
+# import instead (an explicit raise, not an assert — asserts vanish under
+# python -O).
 if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
     raise RuntimeError("ClassificationToken and _TOKEN_TO_CLASSIFICATION have drifted")
 

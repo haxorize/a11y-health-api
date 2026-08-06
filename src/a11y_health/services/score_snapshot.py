@@ -5,7 +5,8 @@ Everything per-owner — snapshot construction, rollups, score reads — lives i
 `owner.py` (the Owner Dispatcher); the events that call in here live in
 `scoring_orchestration.py`.
 
-See `docs/architecture.md` ("The scoring & rollup model") for the full walk-through.
+See `docs/architecture.md` ("The scoring & rollup model") for the full
+walk-through.
 """
 
 from collections import defaultdict

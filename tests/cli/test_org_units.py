@@ -42,14 +42,16 @@ async def test_create_org_unit_unknown_parent_surfaces_coded_error(db_client: As
     with pytest.raises(ApiError) as exc_info:
         await create_org_unit(db_client, name="Orphan", parent_id=999999)
 
-    # "not_found" is the API's declared Error Code for the unknown-parent mode, not a recomputation.
+    # "not_found" is the API's declared Error Code for the unknown-parent mode,
+    # not a recomputation.
     assert exc_info.value.code == "not_found"
     assert exc_info.value.message
 
 
 async def test_list_org_units_surfaces_coded_error_on_failure() -> None:
-    # A non-2xx from the list endpoint must raise the coded ApiError every other CLI
-    # call raises (so main() prints a clean ERROR line), not a raw HTTPStatusError.
+    # A non-2xx from the list endpoint must raise the coded ApiError every
+    # other CLI call raises (so main() prints a clean ERROR line), not a raw
+    # HTTPStatusError.
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"code": "service_unavailable", "message": "db down"})
 

@@ -187,13 +187,13 @@ class TestIncludeLevelDeclarations:
 # declaration — the rollup call removed, the retryable 409 still declared — is
 # caught by a full-suite sessionfinish diff in conftest.py. These tests pin its
 # declared side: every operation whose effective declaration carries the code,
-# keyed (method, route template) like _OBSERVED_ROLLUP_OPERATIONS.
-#
-# They are load-bearing for a second reason: each builds its declaration through
+# keyed (method, route template) like _OBSERVED_ROLLUP_OPERATIONS. They are
+# load-bearing for a second reason: each builds its declaration through
 # error_responses() and reads it back through the audit, which makes them the
 # round-trip pin on the ERROR_CODES_KEY seam — the guard that catches the
 # declaration's *shape* drifting while writer and reader still agree on the
-# shared key name. That is why they outlive any refactor of _operations_declaring.
+# shared key name. That is why they outlive any refactor of
+# _operations_declaring.
 class TestOperationsDeclaring:
     def test_route_level_declarer_is_enumerated_by_method_and_template(self) -> None:
         widget_app = FastAPI()

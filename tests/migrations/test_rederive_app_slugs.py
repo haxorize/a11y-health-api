@@ -44,7 +44,8 @@ async def test_migration_no_op_when_all_slugs_already_derived(db_session: AsyncS
     brand = await make_brand(db_session)
     app = await make_app(db_session, name="foo", slug="foo", org_unit_id=org_unit.id, brand_id=brand.id)
 
-    # Nothing changes, so the `if changing:` block is skipped entirely — no UPDATE.
+    # Nothing changes, so the `if changing:` block is skipped entirely — no
+    # UPDATE.
     await run_upgrade(db_session, migration)
 
     row = (await db_session.execute(text("SELECT name, slug FROM app WHERE id = :id"), {"id": app.id})).one()

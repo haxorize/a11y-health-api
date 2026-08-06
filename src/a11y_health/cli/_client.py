@@ -25,9 +25,9 @@ from a11y_health.cli._errors import CliError
 from a11y_health.core.error_body import read_error_body
 from a11y_health.models.enums import ScanRunStatus
 
-# The API this tool speaks is versioned in its path, and no caller has ever had a
-# reason to address a different one — the host varies (--base-url), the contract
-# does not.
+# The API this tool speaks is versioned in its path, and no caller has ever had
+# a reason to address a different one — the host varies (--base-url), the
+# contract does not.
 _API_PREFIX = "/api/v1"
 
 
@@ -35,8 +35,8 @@ class ApiUnreachableError(CliError):
     def __init__(self, base_url: str, reason: httpx.RequestError) -> None:
         self.base_url = base_url
         self.reason = reason
-        # Several httpx transport errors stringify to nothing, which would leave the
-        # sentence with a hole in it — fall back to naming the class.
+        # Several httpx transport errors stringify to nothing, which would
+        # leave the sentence with a hole in it — fall back to naming the class.
         super().__init__(
             f"Could not reach the API at {base_url}: {reason or type(reason).__name__}. "
             "Check that the server is running and that --base-url points at it."
@@ -73,14 +73,15 @@ class ApiError(CliError):
 
 
 async def _send(client: httpx.AsyncClient, method: str, path: str, **kwargs: Any) -> httpx.Response:
-    """Every request the CLI makes, so the API prefix is applied in one place and
-    a transport failure — server down, wrong host, DNS, timeout — becomes one
-    named error instead of an httpx traceback at each call site."""
+    """Every request the CLI makes, so the API prefix is applied in one place
+    and a transport failure — server down, wrong host, DNS, timeout — becomes
+    one named error instead of an httpx traceback at each call site."""
     try:
         return await client.request(method, f"{_API_PREFIX}{path}", **kwargs)
     except httpx.TimeoutException as exc:
-        # Checked before RequestError, which it subclasses: a live-but-slow server
-        # is a different diagnosis from an absent one, and needs a different fix.
+        # Checked before RequestError, which it subclasses: a live-but-slow
+        # server is a different diagnosis from an absent one, and needs a
+        # different fix.
         raise ApiTimeoutError(str(client.base_url), exc) from exc
     except httpx.RequestError as exc:
         raise ApiUnreachableError(str(client.base_url), exc) from exc
@@ -89,9 +90,10 @@ async def _send(client: httpx.AsyncClient, method: str, path: str, **kwargs: Any
 async def _request(
     client: httpx.AsyncClient, method: str, path: str, *, allow: tuple[int, ...] = (), **kwargs: Any
 ) -> httpx.Response:
-    """`_send`, with any unsuccessful status the caller didn't `allow` raised as the
-    API's own coded error — so no operation has to remember the check, and one that
-    forgets it can't fall through to decoding an error body as a result."""
+    """`_send`, with any unsuccessful status the caller didn't `allow` raised
+    as the API's own coded error — so no operation has to remember the check,
+    and one that forgets it can't fall through to decoding an error body as a
+    result."""
     resp = await _send(client, method, path, **kwargs)
     if not resp.is_success and resp.status_code not in allow:
         raise _api_error(resp)
@@ -100,9 +102,10 @@ async def _request(
 
 def _json(resp: httpx.Response) -> Any:
     """The decoded body of a response that already passed its status check. A
-    success status carrying an unreadable body means `--base-url` names something
-    that isn't this API — the operator's to fix, so it fails as a named error
-    rather than as a `ValueError` escaping `main()` into a traceback."""
+    success status carrying an unreadable body means `--base-url` names
+    something that isn't this API — the operator's to fix, so it fails as a
+    named error rather than as a `ValueError` escaping `main()` into a
+    traceback."""
     try:
         return resp.json()
     except ValueError as exc:

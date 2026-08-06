@@ -44,7 +44,8 @@ async def test_schema_rejects_second_root_bypassing_service(db_session: AsyncSes
 
 async def test_create_root_race_translates_integrity_error(db_session: AsyncSession, mocker) -> None:
     await make_org_unit(db_session, name="Humana")
-    # Simulate losing the create/create race: the pre-check saw no root, but one landed before our flush.
+    # Simulate losing the create/create race: the pre-check saw no root, but
+    # one landed before our flush.
     mocker.patch.object(org_unit_service, "_check_no_other_root", new_callable=mocker.AsyncMock)
     with pytest.raises(DuplicateRootError, match="A top-level org unit already exists"):
         await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Shadow Humana"))
@@ -97,7 +98,8 @@ async def test_reparent_to_parentless_rejected_when_root_exists(db_session: Asyn
 async def test_reparent_race_translates_integrity_error(db_session: AsyncSession, mocker) -> None:
     root = await make_org_unit(db_session, name="Humana")
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
-    # Simulate losing the reparent race: the pre-check passed, but a root landed before our flush.
+    # Simulate losing the reparent race: the pre-check passed, but a root
+    # landed before our flush.
     mocker.patch.object(org_unit_service, "_check_no_other_root", new_callable=mocker.AsyncMock)
     with pytest.raises(DuplicateRootError, match="A top-level org unit already exists"):
         await org_unit_service.update_org_unit(db_session, child.id, OrgUnitUpdate(parent_id=None))

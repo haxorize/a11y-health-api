@@ -88,7 +88,8 @@ async def test_paginate_descending_composite_keyset_round_trip(db_session: Async
     first = await paginate(db_session, stmt, keyset=keyset, cursor=None, limit=2, descending=True)
     second = await paginate(db_session, stmt, keyset=keyset, cursor=first.next_cursor, limit=2, descending=True)
 
-    # Newest first, and the cursor continues into older rows (reversed comparison).
+    # Newest first, and the cursor continues into older rows (reversed
+    # comparison).
     assert [s.id for s in first.items] == [snaps[2].id, snaps[1].id]
     assert [s.id for s in second.items] == [snaps[0].id]
     assert second.next_cursor is None
@@ -113,8 +114,9 @@ async def test_paginate_into_transforms_rows_and_keeps_cursor_from_row(db_sessio
     await make_brand(db_session, name="B")
     await make_brand(db_session, name="C")
 
-    # into drops the id entirely — items are plain names, so paging can only work
-    # if the cursor is recovered from the SQL row rather than the returned item.
+    # into drops the id entirely — items are plain names, so paging can only
+    # work if the cursor is recovered from the SQL row rather than the returned
+    # item.
     stmt = select(Brand)
     into = lambda row: row[0].name  # noqa: E731
     first = await paginate(db_session, stmt, keyset=[Brand.id], cursor=None, limit=2, into=into)
@@ -147,7 +149,8 @@ async def test_paginate_limit_zero_returns_empty_without_crashing(db_session: As
 async def test_paginate_decodable_cursor_with_wrong_typed_value_is_rejected(
     db_session: AsyncSession, keyset: list, bad_value: int | str
 ) -> None:
-    # Decodable but wrong-typed cursor must be a 400 (InvalidCursorError), not a 500.
+    # Decodable but wrong-typed cursor must be a 400 (InvalidCursorError), not
+    # a 500.
     cursor = encode_cursor(*([bad_value] + [1] * (len(keyset) - 1)))
     with pytest.raises(InvalidCursorError):
         await paginate(db_session, select(Brand), keyset=keyset, cursor=cursor, limit=2)
@@ -361,7 +364,8 @@ def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> Non
 
 
 # Expected values are the published contract (Story #80): default page size 20,
-# bounds 1..100 — literals here, so a drift in the module is caught, not mirrored.
+# bounds 1..100 — literals here, so a drift in the module is caught, not
+# mirrored.
 class TestPaginationParams:
     def test_defaults_to_no_cursor_and_page_size_twenty(self) -> None:
         params = PaginationParams()

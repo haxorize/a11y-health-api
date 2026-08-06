@@ -1,4 +1,5 @@
-"""Migration-body coverage for revision 8fe96135b4ba (the ADR-0026 single-root index).
+"""Migration-body coverage for revision 8fe96135b4ba (the ADR-0026 single-root
+index).
 
 What's exercised is the guarded rollout: against data that already violates the
 invariant, the migration must abort with the offending ids and remediation

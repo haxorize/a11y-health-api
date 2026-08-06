@@ -13,8 +13,9 @@ class OrgUnit(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("LENGTH(name) <= 255", name=CK_ORG_UNIT_NAME_LENGTH),
         Index("ix_org_unit_parent_id", "parent_id"),
-        # Single-root invariant (ADR 0026): at most one parentless row may exist,
-        # so the index covers only roots and the indexed expression is constant.
+        # Single-root invariant (ADR 0026): at most one parentless row may
+        # exist, so the index covers only roots and the indexed expression is
+        # constant.
         Index(
             UQ_ORG_UNIT_SINGLE_ROOT,
             text("(parent_id IS NULL)"),

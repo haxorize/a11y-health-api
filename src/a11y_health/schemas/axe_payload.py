@@ -48,7 +48,8 @@ class AxeRule(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def classify_tags(cls, data: Any) -> Any:
-        # Unknown WCAG-shaped tags are silently dropped; the axe tag vocabulary is open.
+        # Unknown WCAG-shaped tags are silently dropped; the axe tag vocabulary
+        # is open.
         if isinstance(data, dict):
             tags = data.get("tags", [])
             return {

@@ -46,6 +46,19 @@ target-version = "py314"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "ASYNC"]
 
+[tool.ruff.lint.pycodestyle]
+# Prose wraps narrower than code: comprehension lives in comments and docstrings
+# here (ADR 0018), and a paragraph running to the 120 the formatter allows code
+# is a paragraph nobody re-reads. W505 is the only mechanical check on it — the
+# formatter never reflows prose, so drift is otherwise invisible until review.
+max-doc-length = 80
+
+[tool.ruff.lint.per-file-ignores]
+# A shipped migration's body is history the suite runs, not code to edit; its
+# comments are not worth churning a revision file for (cf. ADR 0038, which puts
+# migrations outside the repo-wide import walk for the same reason).
+"migrations/versions/*" = ["W505"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["a11y_health"]
 

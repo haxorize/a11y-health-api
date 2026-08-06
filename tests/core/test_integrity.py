@@ -28,10 +28,11 @@ async def test_unrecognized_violation_reraises_unchanged(db_session: AsyncSessio
 
 
 async def test_row_values_containing_constraint_name_cannot_misclassify(db_session: AsyncSession) -> None:
-    # Only the parent FK actually fails here, but the row's name value embeds the
-    # mapped constraint's identifier. Classifying from any rendered message (which
-    # appends bound parameters) instead of the parsed constraint identity would
-    # misreport this unrelated violation as the mapped domain error.
+    # Only the parent FK actually fails here, but the row's name value embeds
+    # the mapped constraint's identifier. Classifying from any rendered message
+    # (which appends bound parameters) instead of the parsed constraint
+    # identity would misreport this unrelated violation as the mapped domain
+    # error.
     with pytest.raises(IntegrityError):
         async with guard(db_session, _root_taken()):
             db_session.add(OrgUnit(name=UQ_ORG_UNIT_SINGLE_ROOT, parent_id=999999))
@@ -55,11 +56,12 @@ async def test_transaction_stays_usable_after_caught_violation(db_session: Async
 
 
 async def test_mutation_outside_guard_would_not_be_protected(db_session: AsyncSession) -> None:
-    # begin_nested() flushes pending state before the SAVEPOINT exists, so a write
-    # added before the guard fails outside it and poisons the transaction. This pins
-    # the reason guard() wraps the mutation instead of just the flush — and that the
-    # entry pre-flush is never classified: the raw IntegrityError surfaces, not the
-    # mapped domain error the dead savepoint couldn't back.
+    # begin_nested() flushes pending state before the SAVEPOINT exists, so a
+    # write added before the guard fails outside it and poisons the
+    # transaction. This pins the reason guard() wraps the mutation instead of
+    # just the flush — and that the entry pre-flush is never classified: the
+    # raw IntegrityError surfaces, not the mapped domain error the dead
+    # savepoint couldn't back.
     root = await make_org_unit(db_session, name="Humana")
     db_session.add(OrgUnit(name="Shadow Humana", parent_id=None))
     with pytest.raises(IntegrityError):

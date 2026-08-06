@@ -171,8 +171,9 @@ def test_main_org_units_create_surfaces_coded_error_and_exits(
 def test_main_ingest_surfaces_domain_error_as_clean_line_and_exits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # A local, operator-facing failure (here: the app isn't registered) must print
-    # its guidance as a clean ERROR line and exit non-zero, not dump a traceback.
+    # A local, operator-facing failure (here: the app isn't registered) must
+    # print its guidance as a clean ERROR line and exit non-zero, not dump a
+    # traceback.
     async def fake_ingest(_client, *, directory, on_progress):
         raise AppNotFoundError("unknown.com", "unknown-com")
 
@@ -263,8 +264,8 @@ def test_main_lets_a_bug_traceback_instead_of_printing_an_operator_line(
 def test_main_interrupt_exits_cleanly_without_a_traceback(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # Ctrl-C is neither an operator error nor a defect — it's the operator saying
-    # stop. It gets the shell's SIGINT code and no traceback.
+    # Ctrl-C is neither an operator error nor a defect — it's the operator
+    # saying stop. It gets the shell's SIGINT code and no traceback.
     async def interrupted_ingest(_client, *, directory, on_progress):
         raise KeyboardInterrupt
 
@@ -298,8 +299,8 @@ def test_main_ingest_unreachable_api_prints_error_line_and_exits(
 def test_main_import_missing_directory_prints_error_line_and_exits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # `import` walks the directory instead of loading it, so it needs its own guard
-    # to reach the same ERROR line `ingest` gives for the identical typo.
+    # `import` walks the directory instead of loading it, so it needs its own
+    # guard to reach the same ERROR line `ingest` gives for the identical typo.
     monkeypatch.setattr(
         sys,
         "argv",

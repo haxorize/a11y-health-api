@@ -21,6 +21,7 @@ tests/
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
   import_graph.py          # shared import-reading helpers for the topology guards
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
+  test_prose_shape.py      # comment paragraphs wrap whole; the half W505 can't see
   fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py

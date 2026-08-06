@@ -36,6 +36,7 @@ instrument_rollup_raisers()
 # (recorded in ADR 0033): narrowing the gate doesn't recognize would diff a
 # starved observed set, and an explicit `pytest tests` reads as narrowed and
 # skips the check.
+#
 # Failure sets session.exitstatus instead of raising pytest.exit: wrap_session
 # returns the mutated value, and an exception here would abort the terminal
 # reporter's sessionfinish wrapper before it prints the run summary.

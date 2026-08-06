@@ -69,7 +69,9 @@ Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr
 - **Function docstrings only for a caller contract the signature can't express** — a precondition or a `Raises:` (see `paginate()`).
 - **Prose wraps at 80 columns**, narrower than the 120 the formatter allows code — a paragraph running the full code width is one nobody re-reads. `ruff`'s `W505` checks it via `lint.pycodestyle.max-doc-length`; shipped migration revisions are exempt, being history the suite runs rather than code to edit.
 
-No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Note what `W505` cannot see: it flags a line that is too *long*, never one left too *short*. The formatter does not reflow prose, so an edit that strands a two-word orphan mid-paragraph passes every check — when you change a word inside a comment or docstring, rewrap the whole block, not the line.
+- **Separate comment paragraphs with a bare `#`.** It is what tells a reader — and `test_prose_shape.py` — that a short line ends a thought rather than trailing off.
+
+No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Two checks split the mechanical part: `W505` fails a doc line that is too *long*, and `tests/test_prose_shape.py` fails a comment line left too *short* — one that stopped before the wrap width while the next line still held a word that would have fit. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Docstrings are covered only by the width check, so there the habit is all there is.
 
 ## Commit style
 

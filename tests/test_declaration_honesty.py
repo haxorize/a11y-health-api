@@ -30,12 +30,12 @@ from tests.factories import (
 from tests.import_graph import source_paths_importing
 
 
-# Rollup-race 409s never fire organically in endpoint tests, so the Declaration Honesty
-# shim can't catch a missing concurrent_rollup declaration at the response;
-# the instrumentation asserts it at the raise site instead, on every rollup any
-# test provokes over HTTP (#113). Passthrough outside a request context is
-# proven organically by the service-layer suite, which calls the wrapped rollup
-# functions directly.
+# Rollup-race 409s never fire organically in endpoint tests, so the
+# Declaration Honesty shim can't catch a missing concurrent_rollup declaration
+# at the response; the instrumentation asserts it at the raise site instead, on
+# every rollup any test provokes over HTTP (#113). Passthrough outside a
+# request context is proven organically by the service-layer suite, which calls
+# the wrapped rollup functions directly.
 async def test_rollup_from_operation_without_declared_concurrent_rollup_fails() -> None:
     route = SimpleNamespace(path="/widgets/{widget_id}", responses=error_responses(ErrorCode.NOT_FOUND))
     scope = {"method": "PATCH", "path": "/api/v1/widgets/1", "route": route}
@@ -147,8 +147,8 @@ async def _get_widget_through_shim(widget_app: FastAPI) -> Response:
 
 class TestIncludeLevelDeclarations:
     # FastAPI's non-copying include keeps include_router(responses=...)
-    # declarations off the matched route object, so Declaration Honesty must read the
-    # effective merged view, not route.responses (#120).
+    # declarations off the matched route object, so Declaration Honesty must
+    # read the effective merged view, not route.responses (#120).
     async def test_mode_declared_only_at_include_level_is_honest(self) -> None:
         widget_app = _not_found_raising_app(error_responses(ErrorCode.NOT_FOUND))
 

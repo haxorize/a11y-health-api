@@ -29,6 +29,24 @@ Three scoping decisions are deliberate:
   suite has to import it directly; putting test code inside the rule would make
   the most private modules the least testable.
 
+**Amended 2026-08-06:** the rule above scopes to *modules and packages* — the
+walk reads file names, and a member's underscore is invisible to it. An
+underscored **member** of a module (a function, a constant) says the same thing
+one level down: it is not part of what the module offers its callers, and its
+external interface is the names left unmarked. That is convention, not a
+checked claim, and deliberately so — checking it would mean an import graph over
+symbols rather than files, for a marker whose own suite is the main thing
+reading past it.
+
+The carve-out above therefore extends: a module's own suite may import its
+private members, and doing so does not widen the module's interface. #133
+turned on this — `tests/_declaration_honesty.py` offers three names to
+`conftest.py` and its colocated suite reaches three more directly. Judge such
+an interface by what a *non-test* consumer must learn; a criterion counting
+importers instead would make any thoroughly-tested private module look public,
+and would push suites toward testing through a narrower surface than the one
+they need.
+
 Considered and rejected:
 
 - **Leaving it conventional** — what was in force, and what produced the three

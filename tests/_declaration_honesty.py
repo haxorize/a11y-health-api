@@ -44,10 +44,9 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     same iterator OpenAPI generation uses. Falls back to the route itself when
     there is no app or no context (e.g. synthetic test scopes) — a view that
     can only under-report declarations, so Declaration Honesty fails loud. A
-    router mounted
-    more than once shares one route object across contexts and the first match
-    wins, which could over-report for a less-declaring mount — an ADR 0033
-    residual; no router is mounted twice today.
+    router mounted more than once shares one route object across contexts and
+    the first match wins, which could over-report for a less-declaring mount —
+    an ADR 0033 residual; no router is mounted twice today.
     """
     if app is None:
         return route
@@ -86,7 +85,7 @@ def _operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]
 
 
 def _assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app: FastAPI | None) -> None:
-    """Declaration honesty asserted at the raise site instead of the response,
+    """Declaration Honesty asserted at the raise site instead of the response,
     for modes no test observes organically. The failure message names the
     operation by its route template, not the concrete request path.
     """
@@ -103,9 +102,12 @@ def _assert_declared_mode(method: str, path: str, route: Any, status: int, body:
         f"{method} {path} returned {status}, which is not declared on the "
         f"operation — declare the mode via error_responses()"
     )
-    # Read directly rather than through `_declared_codes`, which defaults a
-    # missing key to []: the next assert has to tell "declared without codes"
-    # apart from "declared with none".
+    # Read by observed status rather than through `_declared_codes`, which
+    # unions across statuses and cannot say which one carried the code — and
+    # which defaults a missing key to [], where the next assert has to tell
+    # "declared without codes" apart from "declared with none". This is the one
+    # reader that still checks a code against the status it actually came back
+    # on; `_declared_codes` deliberately does not.
     declared_codes = declared[status].get(ERROR_CODES_KEY)
     assert declared_codes is not None, (
         f"{method} {path} declares {status} without {ERROR_CODES_KEY} — "

@@ -76,6 +76,26 @@ Known residuals:
   convention escapes instrumentation. The inverse failure is loud, not
   silent — a non-raising `rollup_*` function would over-assert, failing tests
   until it is renamed or its callers declare the mode.
+- **Attribute bindings taken at import time**: the structural pin scans for
+  `from ...owner import rollup*` only, but a module-level `rollup =
+  owner.rollup` or a `functools.partial(owner.rollup, ...)` binds the
+  uninstrumented function just as effectively — the app is imported before
+  `instrument_rollup_raisers()` patches the attributes. Every call site in
+  `src/` is `await owner.rollup(...)` today.
+- **Mis-statused declarations** (added 2026-08-06 with the union read): the
+  audit asks only whether an operation declares a code, not which status
+  carries it, so a hand-written `responses` entry filing `concurrent_rollup`
+  under the wrong status reads as declared. `error_responses()` being the sole
+  writer is what keeps this unreachable — it buckets by `_STATUS_BY_CODE`, so
+  the status is never chosen by hand — and nothing enforces that it stays the
+  sole writer. The response-path reader still checks status, but never fires
+  for `concurrent_rollup`, which by this ADR's premise is never observed
+  organically.
+- **Walk scope**: the shared tree walk the structural pin runs on keys its
+  source map by module name, so a file colliding with a package `__init__` is
+  dropped and its imports never checked — see #138. The walk asserts it
+  descended below the top level, which catches the coarser way it could stop
+  looking.
 
 ---
 
@@ -93,10 +113,13 @@ served contract and gains one shared name, the `x-error-codes` vendor-key
 constant, written by `error_responses()` and read by the audit — the lockstep
 that colocation used to provide, now carried by a name instead of a file, and
 pinned by the round-trip tests that build declarations via `error_responses()`
-and assert the audit reads them back. That one name is the whole seam: the
-audit reads an operation's declared codes as the union across its statuses
-rather than indexing the status a code maps to, so no second derivation of the
-contract's table crosses and none can drift. `operation_key`'s both-sides-must-agree
+and assert the audit reads them back. It is the only name the seam adds — the
+audit also imports `ErrorCode` and `ErrorBody`, the contract's own vocabulary,
+which crossed before the move as well. Nothing *derived* crosses: the audit
+reads an operation's declared codes as the union across its statuses rather
+than indexing the status a code maps to, so no second copy of the contract's
+table exists test-side to drift. The cost is recorded above as the
+mis-statused-declaration residual. `operation_key`'s both-sides-must-agree
 caveat dissolves structurally: declared and observed sides now key in the same
 module. Rejected: a sibling src module (`core/declaration_audit.py`) — an
 honest split on the wrong side of the src/tests seam, still shipping

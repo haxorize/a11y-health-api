@@ -100,7 +100,9 @@ def _constructs_or_raises_not_found(tree: ast.AST) -> bool:
 def _imports_existence(imports: set[str]) -> bool:
     # The shared walk offers both readings of `from a11y_health.core import
     # existence`, so a membership test covers every spelling including relative.
-    return "a11y_health.core.existence" in imports
+    # Named off the module object, so renaming it moves this pin with it rather
+    # than leaving a literal that matches nothing and passes vacuously.
+    return existence.__name__ in imports
 
 
 class TestTwoTierCallRule:

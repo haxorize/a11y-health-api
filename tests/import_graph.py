@@ -81,6 +81,15 @@ def source_paths_importing(root: Path, root_name: str, matches: Callable[[set[st
     """
     sources = {module_name(path, root, root_name): (path, path.read_text()) for path in sorted(root.rglob("*.py"))}
     packages = packages_in(sources)
+    # Its callers assert on an empty offender list, which cannot tell "nothing
+    # violates the rule" from "the walk never looked" — so pin that it
+    # descended. Read off the paths rather than `packages`, which counts a
+    # subpackage holding only an `__init__` as a leaf. Both roots nest; a walk
+    # that stopped descending (a non-recursive glob, a root scoped at the wrong
+    # level) would disarm every rule sharing it while the suite stayed green.
+    assert any(path.parent != root for path, _ in sources.values()), (
+        f"walk under {root} reached nothing below the top level — it is not descending, so its guards pass vacuously"
+    )
     return sorted(
         str(path.relative_to(root))
         for importer, (path, source) in sources.items()

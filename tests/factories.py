@@ -1,6 +1,8 @@
 import itertools
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -333,6 +335,24 @@ def make_axe_payload(
         "inapplicable": [],
     }
     return {"name": name, "testSubject": {"fileName": url}, "findings": findings}
+
+
+def write_scan_file(
+    directory: Path,
+    filename: str,
+    *,
+    name: str,
+    url: str = "https://example.com/a",
+    end_time: Any = "2026-03-30T11:55:52-0400",
+) -> None:
+    """One axe JSON file on disk, for the CLI suites that load a scan directory.
+
+    `end_time` is deliberately untyped: several tests write values the loader is
+    expected to reject.
+    """
+    payload = make_axe_payload(name=name, url=url)
+    payload["endTime"] = end_time
+    (directory / filename).write_text(json.dumps(payload))
 
 
 def make_parsed_axe_payload(

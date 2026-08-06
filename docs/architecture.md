@@ -513,9 +513,15 @@ contract"); the API-side essentials:
 
 ### Getting scan data in: the CLI
 
-`cli.py` (`uv run a11y …`) is a thin client that drives the *public API over
+`cli/` (`uv run a11y …`) is a thin client that drives the *public API over
 HTTP* — it has no direct database access, so anything it does, you could do with
-`curl`. Two commands, chosen by app state:
+`curl`. It splits by concern over the shared error base in `_errors`: `_scan`
+reads directories off disk, `_client` makes the requests (one function per
+call), `_operations` sequences those two into the commands below, and
+`_terminal` parses argv and prints. `_scan` and `_client` never import each
+other, which is what lets a failure that happens before the first request be
+tested with no server at all (`tests/cli/conftest.py`'s `no_server`). Two
+commands, chosen by app state:
 
 - **`a11y ingest <dir>`** — upload one scan to an **existing** app. It reads the
   JSON files in the directory, derives the **Slug** from the `name` field in the
@@ -531,14 +537,26 @@ function in `core/slug.py` — lowercase ASCII, non-alphanumeric runs collapsed
 to hyphens, accents folded — and both name and Slug are immutable after
 creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md),
 [ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)).
-Common CLI failures and what they mean:
+Every failure an operator can cause is a named subclass of `CliError`, which is
+the only *error* `main()` catches: it prints one `ERROR:` line and exits 1.
+Anything else keeps its traceback, because anything else is a bug. Ctrl-C is
+neither — it prints `Interrupted.` and exits 130, leaving any Scan Run created
+before the interrupt Pending and unscored.
 
 | Error | Cause |
 | --- | --- |
 | `AppNotFoundError` | `ingest` against an app that was never imported |
+| `ApiUnreachableError` | the server isn't running, or `--base-url` points somewhere else |
+| `ApiTimeoutError` | the server answered the connection but not the request in time |
+| `UnreadableApiResponseError` | a success status carrying a body that isn't JSON — `--base-url` names something that isn't this API |
 | `NoDateDirsError` | `import` against a directory with no `YYYY-MM-DD/` subdirs |
 | `NameResolutionError` | JSON files missing a `name`, or names that derive to different slugs (different Apps) — presentation-only differences that share a slug resolve to one App, newest scan's variant winning |
 | `NameOverrideMismatchError` | `import --name` that doesn't derive to the same slug as the JSON `name` |
+| `MissingScanDirectoryError` | the scan directory doesn't exist |
+| `EmptyScanDirectoryError` | the scan directory holds no `*.json` |
+| `MalformedScanFileError` | a scan file isn't valid JSON, isn't valid UTF-8, or holds something other than a JSON object |
+| `UnparseableScanTimestampError` | a scan file's `endTime` isn't a readable ISO timestamp |
+| `UnderivableAppNameError` | a `name` (or `import --name`) that derives to an empty or over-long slug |
 
 ### Tracing a request
 

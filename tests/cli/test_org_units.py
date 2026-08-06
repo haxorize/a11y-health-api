@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.cli import ApiError, create_org_unit, list_org_units
+from a11y_health.cli._client import ApiError, create_org_unit, list_org_units
 from tests.factories import make_org_unit
 
 

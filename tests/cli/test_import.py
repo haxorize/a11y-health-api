@@ -5,17 +5,18 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.cli import NameOverrideMismatchError, NameResolutionError, NoDateDirsError, import_app
+from a11y_health.cli._operations import NameOverrideMismatchError, import_app
+from a11y_health.cli._scan import NameResolutionError, NoDateDirsError, UnderivableAppNameError
 from a11y_health.models.enums import ScanRunStatus
-from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand, make_org_unit
+from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand, make_org_unit, write_scan_file
 
 
 def _write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
     date_dir = app_dir / date
     date_dir.mkdir()
-    payload = make_axe_payload(name=name)
-    payload["endTime"] = end_time if end_time is not None else f"{date}T12:00:00Z"
-    (date_dir / "p.json").write_text(json.dumps(payload))
+    # `is not None`, not `or`: an explicit "" is a real case — `_parse_scanned_at`
+    # treats it as absent and falls back to the directory mtime.
+    write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
 
 
 async def test_import_creates_new_app_with_scan_run_per_date_subdir(
@@ -411,7 +412,7 @@ async def test_import_name_deriving_to_empty_slug_fails_loudly(
     app_dir.mkdir()
     _write_scan_dir(app_dir, "2026-03-30", name="!!!")
 
-    with pytest.raises(ValueError, match="empty slug"):
+    with pytest.raises(UnderivableAppNameError, match="empty slug"):
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
     resp = await db_client.get("/api/v1/apps")
@@ -467,3 +468,17 @@ async def test_import_missing_name_reported_even_alongside_unslugifiable_name(
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
     assert "nameless.json" in str(exc_info.value)
+
+
+async def test_import_underivable_name_override_fails_as_operator_error(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+
+    app_dir = tmp_path / "bad-override"
+    app_dir.mkdir()
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+
+    with pytest.raises(UnderivableAppNameError, match="empty slug"):
+        await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="!!!")

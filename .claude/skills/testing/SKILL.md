@@ -24,7 +24,10 @@ tests/
   core/
     test_database.py        # tests for core/database.py helpers (Base, get_db, etc.)
   cli/
-    test_<command>.py       # CLI tool tests (e.g., test_ingest.py, test_import.py)
+    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport
+    test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
+    test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
+    test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
     test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)
 ```

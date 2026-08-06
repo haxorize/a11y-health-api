@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.cli import list_brands
+from a11y_health.cli._client import list_brands
 from tests.factories import make_brand
 
 

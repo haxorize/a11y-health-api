@@ -9,10 +9,9 @@ which private modules are reached from outside their package
 reader that quietly missed an import spelling would weaken every rule sharing
 it at once.
 
-The last two also share the tree walk, in `source_paths_importing`. The first
-two can't and compose the pieces directly: `test_import_honesty` needs the
-importer's name alongside each hit, and `test_score_snapshot` reads a single
-module rather than a tree.
+Three of them share the tree walk in `package_sources`, and two of those share
+`source_paths_importing` on top of it. `test_score_snapshot` reads a single
+module rather than a tree, so it composes `imported_modules` directly.
 
 Named publicly because its consumers sit in sibling test packages — see
 [ADR 0038](../docs/adr/0038-package-private-underscore-enforced-repo-wide.md).
@@ -21,6 +20,14 @@ Named publicly because its consumers sit in sibling test packages — see
 import ast
 from collections.abc import Callable, Container, Iterable
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+
+class Module(NamedTuple):
+    path: Path
+    name: str
+    source: str
 
 
 def module_name(path: Path, root: Path, root_name: str) -> str:
@@ -71,27 +78,53 @@ def imported_modules(source: str, importer: str, packages: Container[str] = froz
     return modules
 
 
-def source_paths_importing(root: Path, root_name: str, matches: Callable[[set[str]], bool]) -> list[str]:
-    """Paths under `root`, relative and sorted, of the files whose import set
-    satisfies `matches` — the tree walk two of the topology guards share, with
+def package_root(package: ModuleType) -> Path:
+    """The directory `package`'s modules live in."""
+    assert package.__file__ is not None, f"{package.__name__} has no __file__ — a namespace package cannot be walked"
+    return Path(package.__file__).parent
+
+
+def package_sources(package: ModuleType) -> list[Module]:
+    """Every module under `package`, sorted by path, each with the name it
+    would be imported as and its source.
+
+    A list, not a mapping keyed by module name: two files can resolve to one
+    name — a stale `owner.py` left beside a new `owner/__init__.py` — and a
+    mapping silently drops one of them, which reads as "nothing to report" to
+    every guard built on it (#138).
+
+    Takes the package rather than a root and a name so the two cannot be
+    mispaired, which would yield wrong dotted names and a guard that passes
+    while looking at the wrong tree.
+    """
+    root = package_root(package)
+    return [
+        Module(path, module_name(path, root, package.__name__), path.read_text()) for path in sorted(root.rglob("*.py"))
+    ]
+
+
+def source_paths_importing(package: ModuleType, matches: Callable[[set[str]], bool]) -> list[str]:
+    """Paths under `package`, relative and sorted, of the modules whose import
+    set satisfies `matches` — the walk two of the topology guards share, with
     the rule left to the caller.
 
     Resolving relative spellings needs the whole tree read first, which is why
     this walks rather than testing one file at a time.
     """
-    sources = {module_name(path, root, root_name): (path, path.read_text()) for path in sorted(root.rglob("*.py"))}
-    packages = packages_in(sources)
+    root = package_root(package)
+    modules = package_sources(package)
+    packages = packages_in(module.name for module in modules)
     # Its callers assert on an empty offender list, which cannot tell "nothing
     # violates the rule" from "the walk never looked" — so pin that it
     # descended. Read off the paths rather than `packages`, which counts a
     # subpackage holding only an `__init__` as a leaf. Both roots nest; a walk
     # that stopped descending (a non-recursive glob, a root scoped at the wrong
     # level) would disarm every rule sharing it while the suite stayed green.
-    assert any(path.parent != root for path, _ in sources.values()), (
+    assert any(module.path.parent != root for module in modules), (
         f"walk under {root} reached nothing below the top level — it is not descending, so its guards pass vacuously"
     )
     return sorted(
-        str(path.relative_to(root))
-        for importer, (path, source) in sources.items()
-        if matches(imported_modules(source, importer, packages))
+        str(module.path.relative_to(root))
+        for module in modules
+        if matches(imported_modules(module.source, module.name, packages))
     )

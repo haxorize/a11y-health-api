@@ -20,6 +20,7 @@ tests/
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
   import_graph.py          # shared import-reading helpers for the topology guards
+  test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
   test_prose_shape.py      # comments and docstrings wrap whole; the half W505 can't see
   fixtures/                # sample axe JSON payloads and other static test data

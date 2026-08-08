@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -61,8 +60,7 @@ def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
     # that merely quotes the forbidden import.
     import a11y_health
 
-    src_root = Path(a11y_health.__file__).parent
-    offenders = source_paths_importing(src_root, a11y_health.__name__, _from_imports_a_rollup_raiser)
+    offenders = source_paths_importing(a11y_health, _from_imports_a_rollup_raiser)
     assert not offenders, f"rollup raisers must be called as owner attributes, not from-imported: {offenders}"
 
 

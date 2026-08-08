@@ -147,6 +147,5 @@ class TestTwoTierCallRule:
         # named accessor; the guard is service-layer machinery.
         import a11y_health.api
 
-        api_root = Path(a11y_health.api.__file__).parent
-        offenders = source_paths_importing(api_root, a11y_health.api.__name__, _imports_existence)
+        offenders = source_paths_importing(a11y_health.api, _imports_existence)
         assert offenders == []

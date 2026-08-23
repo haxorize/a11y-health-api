@@ -5,13 +5,17 @@ which private modules are reached from outside their package
 (`test_import_honesty`), which siblings a scoring module may touch
 (`test_score_snapshot`), whether an endpoint reaches the Existence Guard
 (`test_existence`), whether any src caller from-imports a rollup raiser
-(`test_declaration_honesty`). The rules differ; the reading does not, and a
+(`test_declaration_honesty`), whether every module is reached from an entry
+point (`test_reachability`). The rules differ; the reading does not, and a
 reader that quietly missed an import spelling would weaken every rule sharing
 it at once.
 
-Three of them share the tree walk in `package_sources`, and two of those share
+Four of them share the tree walk in `package_sources`, and two of those share
 `source_paths_importing` on top of it. `test_score_snapshot` reads a single
 module rather than a tree, so it composes `imported_modules` directly.
+`test_reachability` takes the widest surface — the walk, `imported_modules`,
+`resolved_modules`, and the descent pin — because its closure has to read
+every module, not test each one.
 
 Named publicly because its consumers sit in sibling test packages — see
 [ADR 0038](../docs/adr/0038-package-private-underscore-enforced-repo-wide.md).
@@ -78,6 +82,34 @@ def imported_modules(source: str, importer: str, packages: Container[str] = froz
     return modules
 
 
+def resolved_modules(imported: Iterable[str], known: Container[str]) -> set[str]:
+    """The modules in `known` that `imported` reaches. `from a.b import c`
+    offers both `a.b` and `a.b.c`, so only the spellings that exist are kept —
+    and reaching a submodule reaches every package above it, because their
+    `__init__` modules run first."""
+    found: set[str] = set()
+    for name in imported:
+        parts = name.split(".")
+        for depth in range(1, len(parts) + 1):
+            candidate = ".".join(parts[:depth])
+            if candidate in known:
+                found.add(candidate)
+    return found
+
+
+def assert_descends(modules: Iterable[Module], root: Path) -> None:
+    """Pin that a walk under `root` descended. Every guard built on the walk
+    asserts on an empty offender list, which cannot tell "nothing violates the
+    rule" from "the walk never looked". Read off the paths rather than
+    `packages_in`, which counts a subpackage holding only an `__init__` as a
+    leaf. Both roots nest; a walk that stopped descending (a non-recursive
+    glob, a root scoped at the wrong level) would disarm every rule sharing it
+    while the suite stayed green."""
+    assert any(module.path.parent != root for module in modules), (
+        f"walk under {root} reached nothing below the top level — it is not descending, so its guards pass vacuously"
+    )
+
+
 def package_root(package: ModuleType) -> Path:
     """The directory `package`'s modules live in."""
     assert package.__file__ is not None, f"{package.__name__} has no __file__ — a namespace package cannot be walked"
@@ -114,15 +146,7 @@ def source_paths_importing(package: ModuleType, matches: Callable[[set[str]], bo
     root = package_root(package)
     modules = package_sources(package)
     packages = packages_in(module.name for module in modules)
-    # Its callers assert on an empty offender list, which cannot tell "nothing
-    # violates the rule" from "the walk never looked" — so pin that it
-    # descended. Read off the paths rather than `packages`, which counts a
-    # subpackage holding only an `__init__` as a leaf. Both roots nest; a walk
-    # that stopped descending (a non-recursive glob, a root scoped at the wrong
-    # level) would disarm every rule sharing it while the suite stayed green.
-    assert any(module.path.parent != root for module in modules), (
-        f"walk under {root} reached nothing below the top level — it is not descending, so its guards pass vacuously"
-    )
+    assert_descends(modules, root)
     return sorted(
         str(module.path.relative_to(root))
         for module in modules

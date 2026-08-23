@@ -16,12 +16,14 @@ import pytest
 
 import a11y_health
 from tests.import_graph import (
+    assert_descends,
     imported_modules,
     module_name,
     package_of,
     package_root,
     package_sources,
     packages_in,
+    resolved_modules,
     source_paths_importing,
 )
 
@@ -147,3 +149,30 @@ def test_module_is_importable_as_a_sibling() -> None:
     # public precisely because guards in sibling test packages import it; this
     # pins that it stays reachable as one.
     assert "tests.import_graph" in sys.modules
+
+
+class TestResolvedModules:
+    def test_keeps_only_the_spellings_that_exist(self) -> None:
+        known = {"pkg", "pkg.a"}
+
+        assert resolved_modules({"pkg.a.symbol", "pkg.missing"}, known) == {"pkg", "pkg.a"}
+
+    def test_a_submodule_reaches_every_package_above_it(self) -> None:
+        known = {"pkg", "pkg.sub", "pkg.sub.leaf"}
+
+        assert resolved_modules({"pkg.sub.leaf"}, known) == known
+
+
+class TestAssertDescends:
+    def test_a_nested_module_passes(self, tree: Path) -> None:
+        (tree / "sub" / "deep.py").write_text("")
+        modules = package_sources(_fake_package(tree, "pkg"))
+
+        assert_descends(modules, tree)
+
+    def test_a_flat_walk_fails_loudly(self, tmp_path: Path) -> None:
+        (tmp_path / "__init__.py").write_text("")
+        modules = package_sources(_fake_package(tmp_path, "pkg"))
+
+        with pytest.raises(AssertionError, match="not descending"):
+            assert_descends(modules, tmp_path)

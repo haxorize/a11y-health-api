@@ -3,14 +3,20 @@ set -euo pipefail
 
 echo "Running pre-commit checks..."
 
+echo "Scanning staged changes for secrets..."
+gitleaks git --pre-commit --staged --redact --no-banner
+
 echo "Checking formatting..."
 uv run ruff format --check .
 
 echo "Linting..."
 uv run ruff check .
 
+echo "Checking dependencies..."
+uv run deptry src migrations scripts
+
 echo "Type checking..."
-uv run ty check src/
+uv run ty check
 
 echo "Running tests..."
 uv run pytest -v

@@ -6,6 +6,7 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/) package manager
+- [gitleaks](https://github.com/gitleaks/gitleaks) on PATH (`brew install gitleaks`) — the pre-commit hook's first stage
 
 ## Setup
 
@@ -34,7 +35,7 @@ make test
 # Run tests with coverage
 make coverage
 
-# Lint (ruff + ty)
+# Lint (ruff + ty + deptry)
 make lint
 
 # Format code

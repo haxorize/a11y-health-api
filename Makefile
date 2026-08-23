@@ -15,6 +15,7 @@ coverage:
 lint:
 	uv run ruff check .
 	uv run ty check
+	uv run deptry src migrations scripts
 
 format:
 	uv run ruff format .

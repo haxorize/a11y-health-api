@@ -48,4 +48,4 @@ Considered and rejected:
   (`D100`, `D103`) mandate docstrings everywhere, which would force the exact
   universal noise rejected above. The strategy is judgment-based ("is this
   docstring earned?"), which a linter cannot encode — so the convention is
-  recorded (here and in `CLAUDE.md`) rather than linted.
+  recorded (here and in the `code-documentation` skill) rather than linted.

@@ -1,8 +1,8 @@
 # Reachability is a test with two pinned sets, and deptry owns dependencies
 
 `tests/test_reachability.py` extends the walker in `tests/import_graph.py`
-with a transitive closure from the entry points — the FastAPI app module,
-`migrations/env.py`, `scripts/*`, and `tests/` — and asserts two sets. A
+with a transitive closure from the entry points — the test names them in
+one place, and this record does not repeat the list — and asserts two sets. A
 module reachable from nothing fails the test. A module reachable only from
 `tests/` is collected as its own named set and pinned, to empty or to a listed
 set, because code in `src/` that exists for tests is a seam in the wrong

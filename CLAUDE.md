@@ -73,29 +73,6 @@ Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr
 
 No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Two checks split the mechanical part: `W505` fails a doc line that is too *long*, and `tests/test_prose_shape.py` fails one left too *short* — a line that stopped before the wrap width while the next line still held a word that would have fit, in comments and docstrings alike. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Structured blocks are skipped by both — list items, `Raises:`, examples — because their line breaks are the author's, not the wrap's.
 
-## Commit style
-
-Subjects **narrate what the code does**, in declarative present tense — "The
-score reads move into the dispatcher, and three listers become one", not "Move
-score reads" or "refactor: score reads". The subject describes the change's
-effect on the codebase, never the author's action. No conventional-commit
-prefixes, sentence case, no trailing period.
-
-- **Two clauses joined by "and" or ";"** when the change has two halves; one
-  clause when it doesn't. Don't manufacture a second clause.
-- **Ticket refs in parentheses at the end** — `(#129)`, or `(#128,
-  a11y-health-ui#57)` for cross-repo. `Closes #N` goes in the body, where it
-  closes the issue on push to `main`.
-- **Bodies are prose paragraphs, not bullet lists**, and carry a labeled section
-  where one earns its place: `Deliberately not applied:`, `Doc drift the story
-  created, closed:`.
-- **A decision record commits before the code it shapes** — see the lineage rule
-  the `ship` skill applies.
-
-The sibling UI repo does *not* share this convention (it mixes imperative and
-declarative, and refs differ), which is why this lives here rather than in the
-workspace `CLAUDE.md`.
-
 ## Issue tracker
 
 - Tracker: GitHub

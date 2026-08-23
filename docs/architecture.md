@@ -496,8 +496,8 @@ Two things to know if you touch it:
 ## 5. The OpenAPI contract pipeline
 
 The API is the **source of truth** for the contract the UI consumes. The full
-cross-repo flow is documented in the workspace `CLAUDE.md` ("Changing the
-contract"); the API-side essentials:
+cross-repo flow is the `contract-change` skill (`.claude/skills/contract-change/`,
+a copy of the workspace root's); the API-side essentials:
 
 - `make openapi` writes a deterministic `openapi.json`, committed alongside code
   so contract changes show up in PR diffs.

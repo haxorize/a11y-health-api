@@ -16,7 +16,8 @@ paragraph is a run of `#` lines, a docstring's is a run of lines inside the
 quotes. What counts as stranded is the same question in both, so it is asked in
 one place.
 
-See CLAUDE.md ("Code documentation") for the width this pairs with.
+See `.claude/skills/code-documentation/SKILL.md` ("Shape the guards check")
+for the width this pairs with and the rewrap rule a failure here asks for.
 """
 
 import ast

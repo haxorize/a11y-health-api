@@ -13,6 +13,8 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the full env config.
 
+`gitleaks` on PATH (`brew install gitleaks`) — the pre-commit hook's first stage; a commit cannot be made without it.
+
 ## Commands
 
 ```bash
@@ -20,13 +22,15 @@ uv run pytest                    # run tests
 uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
+uv run deptry src                # unused / missing / transitive dependencies
 uv run uvicorn a11y_health.main:app --reload  # dev server
 uv run a11y --help               # onboarding CLI: import/ingest + org-unit/brand lookups (see cli/__init__.py docstring)
+gh run view --log-failed         # a red CI run's failing step output, without opening the browser
 ```
 
-`.githooks/pre-commit` (wired via `core.hooksPath`) runs all four checks on every
-commit — format, lint, `ty check src/`, and the full suite. Two consequences worth
-planning around: a commit takes as long as the suite does, and **every commit in a
+`.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks —
+read the file rather than a summary of it. It ends with the full suite, and two consequences
+are worth planning around: a commit takes as long as the suite does, and **every commit in a
 multi-commit split has to pass on its own**, so a split that leaves an intermediate
 commit broken can't be made.
 
@@ -41,11 +45,13 @@ Subagent delegation is authorized — standing permission, not a per-session ask
 
 ## Convention skills
 
-Project-local skills that carry this repo's conventions, organized by the layer they own. The global `tdd`, `implement`, and `feedback-loops` skills discover and invoke these *by role* for whatever layer a slice touches — consult the matching one before writing code at that layer, and `feedback-loops` applies any stack finalization they own (e.g. migrations).
+Project-local skills that carry this repo's conventions — one per layer, plus the cross-repo `contract-change` procedure. The global `tdd`, `implement`, and `feedback-loops` skills discover and invoke the layer skills *by role* for whatever layer a slice touches — consult the matching one before writing code at that layer, and `feedback-loops` applies any stack finalization they own (e.g. migrations).
 
 - **`database`** — data layer: PostgreSQL schema design, SQLAlchemy models/columns/types, migrations, indexes/constraints, and query patterns. Owns migration finalization after a model change.
 - **`fastapi`** — backend layer: endpoints, schemas, services, and app configuration.
 - **`testing`** — test layer: fixtures, factories, test layout, markers, and mocking.
+- **`code-documentation`** — prose layer: where an explanation lives, when a docstring is written, the 80-column wrap `W505` checks and the short-line shape `test_prose_shape.py` checks, and the rewrap rule a failure from either asks for.
+- **`contract-change`** — the two-repo OpenAPI procedure; a copy of the workspace root's skill, hash-locked in `skills-sync.lock` — edit it at the root and run `scripts/sync-skills.sh` there, never here.
 
 ## Domain language
 
@@ -61,17 +67,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings — see [ADR 0018](docs/adr/0018-documentation-strategy-prose-over-docstrings.md) for the why. The rules:
-
-- **Explain the non-obvious; never restate what types and names already say.** No `Args:`/`Returns:` blocks (the type hints carry that), no docstring on a module whose purpose is clear from its path. Docstrings, when written, are plain prose.
-- **Cross-cutting behavior and architecture go in [`docs/architecture.md`](docs/architecture.md)** (the layer model, scoring/rollup, scan-run lifecycle, pagination, contract pipeline, operating). `DOMAIN.md` stays a glossary.
-- **Module docstrings only on modules whose job isn't self-evident** (e.g. scoring, pagination, the axe boundary), and they point to the relevant `architecture.md` section rather than re-explaining it.
-- **Function docstrings only for a caller contract the signature can't express** — a precondition or a `Raises:` (see `paginate()`).
-- **Prose wraps at 80 columns**, narrower than the 120 the formatter allows code — a paragraph running the full code width is one nobody re-reads. `ruff`'s `W505` checks it via `lint.pycodestyle.max-doc-length`; shipped migration revisions are exempt, being history the suite runs rather than code to edit.
-
-- **Separate comment paragraphs with a bare `#`.** It is what tells a reader — and `test_prose_shape.py` — that a short line ends a thought rather than trailing off.
-
-No ruff `D` rules enforce the rest; shape and content are judgment, applied here. Two checks split the mechanical part: `W505` fails a doc line that is too *long*, and `tests/test_prose_shape.py` fails one left too *short* — a line that stopped before the wrap width while the next line still held a word that would have fit, in comments and docstrings alike. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Structured blocks are skipped by both — list items, `Raises:`, examples — because their line breaks are the author's, not the wrap's.
+Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the two guards that check them are the `code-documentation` skill.
 
 ## Issue tracker
 

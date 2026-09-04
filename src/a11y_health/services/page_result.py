@@ -1,13 +1,21 @@
+"""Page-result ingest: the one service that performs the axe boundary crossing,
+taking the raw document rather than a validated schema. See
+`docs/architecture.md` ("The layers", under **Services**) for why the crossing
+sits here.
+"""
+
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
-from a11y_health.models.enums import FindingType
+from a11y_health.core.exceptions import ScanRunCompletedError
+from a11y_health.models.enums import FindingType, ScanRunStatus
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.schemas.axe_payload import AxePayload, AxeRule
-from a11y_health.services.scan_run import assert_scan_run_pending
+from a11y_health.schemas.axe_payload import AxeRule, parse_axe_payload
 
 
 async def _persist_findings(
@@ -56,14 +64,23 @@ async def _persist_findings(
         await session.flush()
 
 
-async def create_page_result(session: AsyncSession, scan_run_id: int, payload: AxePayload) -> PageResult:
+def _assert_scan_run_pending(scan_run: ScanRun) -> None:
+    # Private to its one consumer. A second consumer promotes this to the
+    # scan-run service rather than copying it — the copy is how two checks
+    # drift.
+    if scan_run.status == ScanRunStatus.COMPLETED:
+        raise ScanRunCompletedError(scan_run.id)
+
+
+async def create_page_result(session: AsyncSession, scan_run_id: int, raw_document: dict[str, Any]) -> PageResult:
+    payload = parse_axe_payload(raw_document)
     scan_run = await existence.get_by_pk(session, ScanRun, scan_run_id)
-    assert_scan_run_pending(scan_run)
+    _assert_scan_run_pending(scan_run)
 
     page_result = PageResult(
         scan_run_id=scan_run_id,
         url=payload.test_subject.file_name,
-        raw_json=payload.source_document,
+        raw_json=raw_document,
         passes_count=len(payload.findings.passes),
         inapplicable_count=len(payload.findings.inapplicable),
     )

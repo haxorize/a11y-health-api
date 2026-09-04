@@ -20,7 +20,6 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import owner as owner_service
 from a11y_health.services.owner import ChildrenRead, owned
@@ -162,7 +161,7 @@ async def make_score_snapshot(
 
 async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScanRun:
     for raw in payloads:
-        await create_page_result(db, scan_run_id, parse_axe_payload(raw))
+        await create_page_result(db, scan_run_id, raw)
     sr = await get_scan_run(db, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
     await db.flush()
@@ -327,14 +326,23 @@ def make_axe_payload(
     url: str = "https://example.com",
     violations: Any = None,
     incomplete: Any = None,
+    end_time: Any = None,
+    unmodeled: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """`end_time` is untyped because several tests hand the boundary values it
+    must reject; `None` leaves the key out. `unmodeled` is for keys the schema
+    does not model, which the stored Raw JSON must still carry — merged first,
+    so it can never shadow a named argument."""
     findings: dict[str, Any] = {
         "violations": violations if violations is not None else [],
         "incomplete": incomplete if incomplete is not None else [],
         "passes": [],
         "inapplicable": [],
     }
-    return {"name": name, "testSubject": {"fileName": url}, "findings": findings}
+    payload: dict[str, Any] = {"name": name, "testSubject": {"fileName": url}, "findings": findings}
+    if end_time is not None:
+        payload["endTime"] = end_time
+    return {**(unmodeled or {}), **payload}
 
 
 def write_scan_file(
@@ -345,24 +353,10 @@ def write_scan_file(
     url: str = "https://example.com/a",
     end_time: Any = "2026-03-30T11:55:52-0400",
 ) -> None:
-    """One axe JSON file on disk, for the CLI suites that load a scan directory.
-
-    `end_time` is deliberately untyped: several tests write values the loader is
-    expected to reject.
-    """
-    payload = make_axe_payload(name=name, url=url)
-    payload["endTime"] = end_time
+    """One axe JSON file on disk, for the CLI suites that load a scan
+    directory."""
+    payload = make_axe_payload(name=name, url=url, end_time=end_time)
     (directory / filename).write_text(json.dumps(payload))
-
-
-def make_parsed_axe_payload(
-    *,
-    url: str = "https://example.com",
-    violations: Any = None,
-    incomplete: Any = None,
-) -> AxePayload:
-    raw = make_axe_payload(url=url, violations=violations, incomplete=incomplete)
-    return parse_axe_payload(raw)
 
 
 async def advisory_lock_waiters(session: AsyncSession) -> int:

@@ -111,8 +111,16 @@ For building in-memory data structures (e.g., axe JSON payloads), use sync helpe
 def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
     return {"id": rule_id, "impact": impact, ...}
 
-def make_axe_payload(*, url: str = "https://example.com", violations: Any = None, incomplete: Any = None) -> dict[str, Any]:
-    return {"testSubject": {"fileName": url}, "findings": {"violations": violations or [], ...}}
+def make_axe_payload(
+    *,
+    name: str = "test-app",
+    url: str = "https://example.com",
+    violations: Any = None,
+    incomplete: Any = None,
+    end_time: Any = None,  # untyped: tests hand it the values the boundary must reject; None omits the key
+    unmodeled: dict[str, Any] | None = None,  # keys the schema doesn't model, which Raw JSON must still carry
+) -> dict[str, Any]:
+    return {**(unmodeled or {}), "name": name, "testSubject": {"fileName": url}, "findings": {...}}
 ```
 
 These don't touch the DB and don't need `async` or `flush()`.

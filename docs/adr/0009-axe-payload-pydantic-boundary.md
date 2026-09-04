@@ -13,7 +13,14 @@
 > axe boundary, and it retains the exact uploaded document on the Axe Payload
 > (`source_document`, a property backed by a private attribute, excluded from
 > the schema's own serialization), from which the service reads the Raw JSON
-> to store.
+> to store. *Retired by the 2026-09-04 amendment at the foot: once the crossing
+> moved behind the service seam, the service holds the raw document itself.*
+
+> **Amended 2026-08-05 (#134):** the crossing now runs behind the service seam
+> (`create_page_result`'s first statement) and again in the CLI at scan load,
+> and the boundary covers the identity fields `name` and `endTime`. The title
+> and the body below describe the original placement; the dated amendments at
+> the foot are the current record.
 
 The axe DevTools JSON shape is fully validated by the `AxePayload` Pydantic
 schema at the API boundary, including semantic checks (impact values,
@@ -49,8 +56,8 @@ today's parser so what parses today keeps parsing. `parse_axe_payload()`
 stays the sole sanctioned crossing, but its call site moves from the endpoint
 into `create_page_result`'s first statement, so the service owns its
 `invalid_axe_payload` error mode and its pending-run precondition (which
-moves in from the scan-run service, retiring the services layer's only
-sibling import). This revisits "the service layer receives a validated
+moves in from the scan-run service, retiring the page-result service's only
+sibling-service import). This revisits "the service layer receives a validated
 `AxePayload`" deliberately: what the original decision rejected was
 validation *scattered inside* service helpers, and none of that returns —
 every rule stays on the schema, and below the crossing only the typed payload
@@ -64,3 +71,43 @@ door. Rejected: a second, shallow crossing for just the identity fields (two
 sanctioned crossings where the module promises one), and widening without
 moving the crossing (the parse stays caller-remembered and the service still
 can't own its error mode).
+
+---
+
+**Amended 2026-09-04 (#134 review):** four corrections to the amendment above,
+each a decision taken on a review finding.
+
+- **"The one behavior change" was three.** Moving the crossing into the CLI
+  validates *every* file's `endTime` at load, where the old resolver parsed
+  only the first file that carried one; a directory whose later file has an
+  unreadable `endTime` failed nowhere before and fails at load now. The server
+  narrowed too: the pages POST now returns `invalid_axe_payload` for a
+  non-string `name` or an unreadable `endTime`, bodies it accepted with 201
+  before, and `openapi.json` cannot express that because the body is declared
+  free-form — so the `contract-change` procedure does not fire and this
+  paragraph is the record. And load-time failure is all-or-nothing for
+  `import` as well as `ingest`: no date directory uploads if any file fails.
+- **An empty-string `endTime` is absent, not unreadable.** "What parses today
+  keeps parsing" is kept literally: the old loader read every falsy value as
+  absent, so `""` falls back to the directory mtime. `0`, `False`, and any
+  string `fromisoformat` rejects stay invalid — none ever parsed.
+- **Every invalid file is reported at once.** `load_scan` collects schema
+  failures instead of stopping at the first, and `import` collects across all
+  date directories, so one re-run fixes everything (`InvalidScanFilesError`,
+  plural). Decode failures (`MalformedScanFileError`) still stop at the first;
+  a file that isn't JSON is rarer and usually a truncated export.
+- **The no-bypass premise, restated.** "CLI and server ship from one package"
+  was the wrong reason: the server at `--base-url` can be any version. The
+  reason that holds is that the CLI runs the schema the server runs, so a file
+  it refuses is one the same server version refuses; when versions differ the
+  fix is matching them, and the message says so after telling the operator to
+  fix the file first.
+
+Two retirements ride along. `source_document` (the #77 mechanism) is gone: the
+service parses the raw document itself now, so the parameter it already holds
+is the Raw JSON to store, and the CLI keeps the decoded document beside the
+typed model in one `LoadedFile` record — the invariant #77 guarded is now
+unrepresentable rather than documented. And `AxePayload` drops
+`populate_by_name`: the document root accepts the axe spellings only, so a
+snake_case `end_time` key is an unmodeled key like any other rather than a
+second spelling that could fail the load.

@@ -1,9 +1,12 @@
+from datetime import UTC, datetime, timedelta, timezone
+
 import pytest
 from pydantic import ValidationError
 
+from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.classification import Classification
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
-from tests.factories import make_axe_payload, make_parsed_axe_payload, make_violation
+from tests.factories import make_axe_payload, make_violation
 
 
 class TestAxePayloadMissingFields:
@@ -175,23 +178,6 @@ class TestAxeRuleSemanticValidation:
         assert Classification(standard="best-practice") in rule.classifications
 
 
-class TestParseAxePayloadSourceRetention:
-    def test_source_document_is_the_exact_uploaded_document(self) -> None:
-        raw = make_axe_payload(violations=[make_violation("color-contrast", "serious")])
-        raw["toolVersion"] = "4.10.2"  # not modeled by the schema
-        payload = parse_axe_payload(raw)
-        assert payload.source_document == raw
-
-    def test_source_document_excluded_from_serialization(self) -> None:
-        payload = make_parsed_axe_payload()
-        assert "source_document" not in payload.model_dump()
-
-    def test_payload_not_from_parse_entry_point_has_no_source_document(self) -> None:
-        payload = AxePayload.model_validate(make_axe_payload())
-        with pytest.raises(AttributeError, match="parse_axe_payload"):
-            _ = payload.source_document
-
-
 class TestAxePayloadValid:
     def test_valid_payload_parses(self) -> None:
         raw = make_axe_payload(
@@ -205,3 +191,82 @@ class TestAxePayloadValid:
         assert len(payload.findings.violations) == 1
         assert payload.findings.violations[0].id == "color-contrast"
         assert len(payload.findings.incomplete) == 1
+
+
+class TestAxePayloadIdentityFields:
+    # `name` and `endTime` are optional at the boundary: absent is fine, present
+    # is validated. Both readers (the CLI at load, the server at upload) get the
+    # same verdict from the same crossing.
+
+    def test_name_present_is_carried(self) -> None:
+        payload = parse_axe_payload(make_axe_payload(name="Humana Home"))
+        assert payload.name == "Humana Home"
+
+    def test_name_absent_is_none(self) -> None:
+        raw = make_axe_payload()
+        del raw["name"]
+        assert parse_axe_payload(raw).name is None
+
+    def test_name_non_string_is_invalid(self) -> None:
+        raw = make_axe_payload()
+        raw["name"] = 42
+        with pytest.raises(InvalidAxePayloadError, match="name"):
+            parse_axe_payload(raw)
+
+    def test_end_time_absent_is_none(self) -> None:
+        raw = make_axe_payload()
+        assert "endTime" not in raw
+        assert parse_axe_payload(raw).end_time is None
+
+    def test_end_time_null_is_none(self) -> None:
+        # Present-but-null is a different branch from absent: pydantic runs
+        # the before-validator only when the key is there.
+        raw = make_axe_payload()
+        raw["endTime"] = None
+        assert parse_axe_payload(raw).end_time is None
+
+    def test_end_time_empty_string_is_absent(self) -> None:
+        # What parsed before the move still parses: the old loader read every
+        # falsy value as absent, and an export with `"endTime": ""` fell back
+        # to the directory mtime.
+        assert parse_axe_payload(make_axe_payload(end_time="")).end_time is None
+
+    @pytest.mark.parametrize("end_time", [1_700_000_000, "last Tuesday", 0, False])
+    def test_end_time_present_but_unreadable_is_invalid(self, end_time: object) -> None:
+        # Strict when present. The message names the field and the accepted
+        # shape, never the value — it reaches the wire verbatim.
+        with pytest.raises(InvalidAxePayloadError, match="endTime: must be an ISO 8601 timestamp$"):
+            parse_axe_payload(make_axe_payload(end_time=end_time))
+
+    def test_snake_case_end_time_is_an_unmodeled_key(self) -> None:
+        # Only the axe spelling is read; a snake_case key can neither supply
+        # the observation time nor fail the load.
+        raw = make_axe_payload(unmodeled={"end_time": "garbage"})
+        assert parse_axe_payload(raw).end_time is None
+
+    def test_non_object_document_is_named_as_such(self) -> None:
+        # No field to point at, so the message names the document rather than
+        # leaking the model class pydantic would mention.
+        with pytest.raises(InvalidAxePayloadError, match="document is not a JSON object"):
+            parse_axe_payload([make_axe_payload()])
+
+
+class TestAxePayloadEndTimeCompatibility:
+    # The forms in use today, pinned so relocating the parser into the schema
+    # shifts nothing: an offset-less value is assumed UTC (the CLI's posture
+    # before the move), a numeric offset is kept, and `Z` is UTC. Reds when
+    # the validator returns a naive datetime for the offset-less form.
+
+    @pytest.mark.parametrize(
+        ("end_time", "expected"),
+        [
+            ("2026-05-01T12:00:00", datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)),
+            ("2026-03-30T11:55:52-0400", datetime(2026, 3, 30, 11, 55, 52, tzinfo=timezone(timedelta(hours=-4)))),
+            ("2026-04-01T12:00:00Z", datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)),
+            ("2026-04-01T12:00:00.123456+00:00", datetime(2026, 4, 1, 12, 0, 0, 123456, tzinfo=UTC)),
+        ],
+    )
+    def test_accepted_form_parses_to_the_same_instant(self, end_time: str, expected: datetime) -> None:
+        parsed = parse_axe_payload(make_axe_payload(end_time=end_time)).end_time
+        assert parsed == expected
+        assert parsed is not None and parsed.utcoffset() == expected.utcoffset()

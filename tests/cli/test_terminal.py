@@ -220,7 +220,7 @@ def test_main_ingest_malformed_scan_file_prints_error_line_and_exits(
     assert "not valid JSON" in out
 
 
-def test_main_ingest_unparseable_scan_timestamp_prints_error_line_and_exits(
+def test_main_ingest_invalid_scan_file_prints_error_line_and_exits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     write_scan_file(tmp_path, "a.json", name="foo.com", end_time="last Tuesday")
@@ -230,7 +230,8 @@ def test_main_ingest_unparseable_scan_timestamp_prints_error_line_and_exits(
     assert code == 1
     assert "ERROR:" in out
     assert "a.json" in out
-    assert "unreadable 'endTime'" in out
+    assert "schema validation" in out
+    assert "endTime" in out
 
 
 def test_main_ingest_underivable_app_name_prints_error_line_and_exits(

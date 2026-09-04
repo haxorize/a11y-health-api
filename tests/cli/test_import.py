@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.cli._operations import NameOverrideMismatchError, import_app
-from a11y_health.cli._scan import NameResolutionError, NoDateDirsError, UnderivableAppNameError
+from a11y_health.cli._scan import InvalidScanFilesError, NameResolutionError, NoDateDirsError, UnderivableAppNameError
 from a11y_health.models.enums import ScanRunStatus
 from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand, make_org_unit, write_scan_file
 
@@ -14,8 +14,8 @@ from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand
 def _write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
     date_dir = app_dir / date
     date_dir.mkdir()
-    # `is not None`, not `or`: an explicit "" is a real case —
-    # `_parse_scanned_at` treats it as absent and falls back to the directory
+    # `is not None`, not `or`: an explicit "" is a real case — the axe
+    # boundary reads it as absent and the scan falls back to the directory
     # mtime.
     write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
 
@@ -200,6 +200,25 @@ async def test_import_no_date_subdirs_hard_fails_with_ingest_pointer(
 
     resp = await db_client.get("/api/v1/apps/slug/no-dates")
     assert resp.status_code == 404
+
+
+async def test_import_reports_invalid_files_across_every_date_subdir_at_once(
+    no_server: AsyncClient, tmp_path: Path
+) -> None:
+    # An onboarding is all-or-nothing at load, so the report has to be complete:
+    # one invalid file in each of two date directories, one error naming both,
+    # and no request made — `no_server` is the proof.
+    app_dir = tmp_path / "history"
+    app_dir.mkdir()
+    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    _write_scan_dir(app_dir, "2026-04-01", name="foo.com", end_time="last Tuesday")
+    _write_scan_dir(app_dir, "2026-04-02", name="foo.com", end_time="yesterday")
+
+    with pytest.raises(InvalidScanFilesError) as exc_info:
+        await import_app(no_server, directory=app_dir, org_unit_id=1, brand_id=1)
+
+    assert [path.parent.name for path, _ in exc_info.value.failures] == ["2026-04-01", "2026-04-02"]
+    assert "2 scan files" in str(exc_info.value)
 
 
 async def test_import_name_mismatch_across_date_subdirs_hard_fails(

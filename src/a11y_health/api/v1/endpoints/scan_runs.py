@@ -5,7 +5,6 @@ from fastapi import APIRouter, Body
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.pagination import Page, PageParams, TotalledPage
-from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.schemas.page_result import PageMetricsRead, PageResultRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
 from a11y_health.services import page_result as page_result_service
@@ -60,8 +59,7 @@ async def create_page_result(
     scan_run_id: int,
     raw_payload: Annotated[dict[str, Any], Body()],
 ) -> PageResultRead:
-    payload = parse_axe_payload(raw_payload)
-    page_result = await page_result_service.create_page_result(db, scan_run_id, payload)
+    page_result = await page_result_service.create_page_result(db, scan_run_id, raw_payload)
     return PageResultRead.model_validate(page_result)
 
 

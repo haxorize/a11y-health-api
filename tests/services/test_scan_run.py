@@ -9,11 +9,9 @@ from a11y_health.core.exceptions import (
     EmptyScanRunError,
     InvalidStatusTransitionError,
     NotFoundError,
-    ScanRunCompletedError,
 )
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.schemas.axe_payload import parse_axe_payload
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
 from a11y_health.services.page_result import create_page_result
@@ -82,7 +80,7 @@ async def test_list_scan_runs_invalid_app(db_session: AsyncSession) -> None:
 
 async def test_update_status_pending_to_completed(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
-    await create_page_result(db_session, scan_run.id, parse_axe_payload(make_axe_payload()))
+    await create_page_result(db_session, scan_run.id, make_axe_payload())
 
     updated = await scan_run_service.update_scan_run_status(
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
@@ -136,7 +134,7 @@ async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -
     scan_run = await make_scan_run(db_session, app_id=app.id)
 
     payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-    await create_page_result(db_session, scan_run.id, parse_axe_payload(payload))
+    await create_page_result(db_session, scan_run.id, payload)
 
     await scan_run_service.update_scan_run_status(
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
@@ -160,10 +158,3 @@ async def test_delete_scan_run(db_session: AsyncSession) -> None:
 async def test_delete_scan_run_not_found(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError, match="Scan run"):
         await scan_run_service.delete_scan_run(db_session, 999999)
-
-
-async def test_completed_run_rejects_page_addition(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session, status=ScanRunStatus.COMPLETED)
-
-    with pytest.raises(ScanRunCompletedError, match="completed"):
-        scan_run_service.assert_scan_run_pending(scan_run)

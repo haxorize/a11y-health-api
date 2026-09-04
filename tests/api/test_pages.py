@@ -1,5 +1,6 @@
 from typing import Any
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,4 +50,32 @@ async def test_reject_invalid_axe_payload(db_client: AsyncClient, db_session: As
         f"/api/v1/scan-runs/{scan_run.id}/pages",
         json={"not": "axe-json"},
     )
+    assert_error(response, 400, "invalid_axe_payload")
+
+
+# The one server-visible narrowing of widening the boundary over the identity
+# fields: a present-but-malformed `name` or `endTime` is now the declared 400,
+# where before the server never looked at either. Pinned over HTTP because the
+# claim is about the wire, not the rule (the rule is at the schema seam).
+@pytest.mark.parametrize(("field", "value"), [("name", 42), ("endTime", "last Tuesday")])
+async def test_reject_malformed_identity_field(
+    db_client: AsyncClient, db_session: AsyncSession, axe_payload: dict[str, Any], field: str, value: object
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    axe_payload[field] = value
+
+    response = await db_client.post(f"/api/v1/scan-runs/{scan_run.id}/pages", json=axe_payload)
+    assert_error(response, 400, "invalid_axe_payload")
+
+
+async def test_reject_upload_to_missing_scan_run(db_client: AsyncClient, axe_payload: dict[str, Any]) -> None:
+    response = await db_client.post("/api/v1/scan-runs/999999/pages", json=axe_payload)
+    assert_error(response, 404, "not_found")
+
+
+async def test_invalid_payload_outranks_missing_scan_run(db_client: AsyncClient) -> None:
+    # The service parses before the existence lookup, so the payload verdict is
+    # the same whichever run it names. Pinned because the order is now three
+    # statements inside a service rather than something visible at the route.
+    response = await db_client.post("/api/v1/scan-runs/999999/pages", json={"not": "axe-json"})
     assert_error(response, 400, "invalid_axe_payload")

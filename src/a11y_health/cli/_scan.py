@@ -2,25 +2,28 @@
 
 Charter: everything between a directory on the operator's disk and the facts
 the client needs before it can talk to the API — directory walking, JSON
-loading, and resolving the App name that identifies the target App. Nothing
-here knows the API exists.
+loading, the axe boundary crossing for every file, and resolving the App name
+that identifies the target App. Nothing here knows the API exists.
 
-Two raw axe fields are read straight from the document rather than through the
-ingest schema, because both are needed *before* any upload exists to validate:
-`name` supplies the Slug that identifies the App (ADR 0019), and `endTime`
-orders Scan Runs by observation time. These are client-side wire facts about
-the axe document — `schemas/axe_payload.py`, the server's axe boundary, models
-neither field, and the two readings share no vocabulary on purpose.
+Every file crosses the axe boundary here, through the same `parse_axe_payload`
+the server uses, so `name` (the Slug that identifies the App, ADR 0019) and
+`endTime` (observation time, which orders Scan Runs) come off the typed model
+rather than raw key reads — and a file the server would reject fails at load,
+before any Scan Run exists to be left pending. The decoded document is kept
+beside the typed model and is what gets uploaded, unmodeled fields and all, so
+the stored Raw JSON is the document as decoded, never the model's own dump.
 """
 
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from a11y_health.cli._errors import CliError
+from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.core.slug import derive_slug
+from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 
 
 class MissingScanDirectoryError(CliError):
@@ -50,9 +53,10 @@ class UnderivableAppNameError(CliError):
 
 class MalformedScanFileError(CliError):
     """One unreadable scan file. `detail` completes the sentence "<file> ..."
-    because the three ways a file can be unreadable — bad JSON syntax, bytes
-    that aren't text, a document that isn't an object — are one failure to the
-    operator but three different things to say."""
+    because the two ways a file can be unreadable — bad JSON syntax, bytes that
+    aren't text — are one failure to the operator but two different things to
+    say. A file that reads but fails the axe boundary is
+    `InvalidScanFilesError`."""
 
     def __init__(self, file: Path, detail: str) -> None:
         self.file = file
@@ -60,12 +64,28 @@ class MalformedScanFileError(CliError):
         super().__init__(f"{file} {detail}")
 
 
-class UnparseableScanTimestampError(CliError):
-    def __init__(self, file: Path, end_time: object, reason: ValueError | TypeError) -> None:
-        self.file = file
-        self.end_time = end_time
-        self.reason = reason
-        super().__init__(f"{file} has an unreadable 'endTime' {end_time!r}: {reason}")
+class InvalidScanFilesError(CliError):
+    """Every file that parsed as JSON but fails the axe boundary, reported
+    together so one re-run fixes all of them (the same posture as
+    `NameResolutionError`); a file that doesn't read at all is
+    `MalformedScanFileError`. There is deliberately no flag to bypass or skip
+    this check: the CLI runs the schema the server runs, so a file it refuses
+    is one the same version of the server refuses. The server at `--base-url`
+    can be a different version, older or newer; then the fix is matching the
+    CLI to it, not a side door around the check."""
+
+    def __init__(self, failures: list[tuple[Path, InvalidAxePayloadError]]) -> None:
+        self.failures = failures
+        # `reason.reason` is the bare `field: problem`; the exception's own
+        # str prefixes it with "Invalid axe payload", which this sentence
+        # already says.
+        detail = "; ".join(f"{file}: {reason.reason}" for file, reason in failures)
+        noun = "file" if len(failures) == 1 else "files"
+        super().__init__(
+            f"{len(failures)} scan {noun} failed axe schema validation: {detail}. "
+            f"Fix the {noun}; if this server accepts {'it' if len(failures) == 1 else 'them'} as-is, "
+            "the CLI and server are different versions: reinstall a11y-health at the server's version."
+        )
 
 
 class NoDateDirsError(CliError):
@@ -116,19 +136,9 @@ def _is_date_dir(name: str) -> bool:
     return True
 
 
-def _parse_scanned_at(files: list[Path], payloads: list[dict], directory: Path) -> datetime:
-    for file, payload in zip(files, payloads, strict=True):
-        if end_time := payload.get("endTime"):
-            try:
-                parsed = datetime.fromisoformat(end_time)
-            except (ValueError, TypeError) as exc:
-                raise UnparseableScanTimestampError(file, end_time, exc) from exc
-            # An offset-less endTime is otherwise uncomparable against the UTC
-            # mtime fallback and against sibling scans (import orders scans by
-            # scanned_at) — assume UTC.
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    mtime = directory.stat().st_mtime
-    return datetime.fromtimestamp(mtime, tz=UTC)
+def _resolve_scanned_at(files: list[LoadedFile], directory: Path) -> datetime:
+    end_time = next((f.payload.end_time for f in files if f.payload.end_time is not None), None)
+    return end_time if end_time is not None else datetime.fromtimestamp(directory.stat().st_mtime, tz=UTC)
 
 
 def find_date_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
@@ -153,11 +163,20 @@ def find_date_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
     return date_dirs, skipped
 
 
+class LoadedFile(NamedTuple):
+    path: Path
+    # The decoded JSON and its typed view travel together: the document is
+    # what gets uploaded and stored as Raw JSON, the payload is what the CLI
+    # reads. Keeping them in one record is what makes them impossible to
+    # misalign.
+    document: dict[str, Any]
+    payload: AxePayload
+
+
 @dataclass
 class LoadedScan:
     directory: Path
-    files: list[Path]
-    payloads: list[dict]
+    files: list[LoadedFile]
     scanned_at: datetime
 
 
@@ -165,31 +184,29 @@ def load_scan(directory: Path) -> LoadedScan:
     if not directory.is_dir():
         raise MissingScanDirectoryError(directory)
 
-    files = sorted(directory.glob("*.json"))
-    if not files:
+    paths = sorted(directory.glob("*.json"))
+    if not paths:
         raise EmptyScanDirectoryError(directory)
 
-    payloads: list[dict] = []
-    for file in files:
+    files: list[LoadedFile] = []
+    failures: list[tuple[Path, InvalidAxePayloadError]] = []
+    for path in paths:
         try:
-            payload = json.loads(file.read_text())
+            document = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise MalformedScanFileError(file, f"is not valid JSON: {exc}") from exc
+            raise MalformedScanFileError(path, f"is not valid JSON: {exc}") from exc
         except UnicodeDecodeError as exc:
             # Also a ValueError, but a different thing to say: the bytes never
             # reached the JSON parser at all.
-            raise MalformedScanFileError(file, f"is not valid UTF-8 text: {exc}") from exc
-        if not isinstance(payload, dict):
-            # Parses, but isn't an axe document. Caught here rather than at the
-            # first `.get()` so the operator learns which file, not which
-            # attribute.
-            raise MalformedScanFileError(
-                file, f"is not an axe scan document: its top level is a JSON {type(payload).__name__}, not an object"
-            )
-        payloads.append(payload)
+            raise MalformedScanFileError(path, f"is not valid UTF-8 text: {exc}") from exc
+        try:
+            files.append(LoadedFile(path, document, parse_axe_payload(document)))
+        except InvalidAxePayloadError as exc:
+            failures.append((path, exc))
+    if failures:
+        raise InvalidScanFilesError(failures)
 
-    scanned_at = _parse_scanned_at(files, payloads, directory)
-    return LoadedScan(directory=directory, files=files, payloads=payloads, scanned_at=scanned_at)
+    return LoadedScan(directory=directory, files=files, scanned_at=_resolve_scanned_at(files, directory))
 
 
 def resolve_app_name(scans: list[LoadedScan]) -> str:
@@ -205,10 +222,10 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
     newest_name: str | None = None
     newest_at: datetime | None = None
     for scan in scans:
-        for file, payload in zip(scan.files, scan.payloads, strict=True):
-            name = payload.get("name")
-            if not isinstance(name, str) or not name:
-                missing.append(file)
+        for file in scan.files:
+            name = file.payload.name
+            if not name:
+                missing.append(file.path)
                 continue
             try:
                 slug = derive_slug(name)
@@ -216,9 +233,9 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
                 # An unslugifiable name still fails loudly, but only after the
                 # structured missing/conflict report below — never pre-empting
                 # it.
-                underivable = underivable or (name, exc, file)
+                underivable = underivable or (name, exc, file.path)
                 continue
-            by_slug.setdefault(slug, []).append(NameVariant(name, file))
+            by_slug.setdefault(slug, []).append(NameVariant(name, file.path))
             if newest_at is None or scan.scanned_at > newest_at:
                 newest_at, newest_name = scan.scanned_at, name
 

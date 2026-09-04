@@ -17,10 +17,11 @@ Other admin mutations (app move/rename/delete, org-unit reparent/delete) stay on
 Swagger `/docs`.
 
 The work splits by concern, over the shared error base in `_errors`: `_scan`
-reads directories, `_client` makes requests, `_operations` sequences those two
-into `ingest` and `import`, and `_terminal` parses argv and prints. `_scan` and
-`_client` never import each other, so each is drivable alone. This module is the
-package's public face: the console entry point and that base type.
+reads directories and crosses the axe boundary per file, `_client` makes
+requests, `_operations` sequences those two into `ingest` and `import`, and
+`_terminal` parses argv and prints. `_scan` and `_client` never import each
+other, so each is drivable alone. This module is the package's public face: the
+console entry point and that base type.
 """
 
 from a11y_health.cli._errors import CliError

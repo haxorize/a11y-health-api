@@ -1,10 +1,11 @@
 """The two onboarding operations — `ingest` and `import`.
 
-Charter: everything that needs both sides at once. `_scan` reads directories and
-knows nothing about the API; `_client` makes requests and knows nothing about
-disk. The read-then-upload order lives here, with the failures only the
-combination can produce — an App the scan names but the server doesn't have, an
-override that disagrees with the document it overrides.
+Charter: everything that needs both sides at once. `_scan` reads directories,
+validates every file at the axe boundary, and knows nothing about the API;
+`_client` makes requests and knows nothing about disk. The read-then-upload
+order lives here, with the failures only the combination can produce — an App
+the scan names but the server doesn't have, an override that disagrees with the
+document it overrides.
 
 Holding this apart is what makes `_scan` and `_client` peers instead of a chain:
 neither imports the other, and each is drivable on its own. It also means a
@@ -20,12 +21,14 @@ import httpx
 from a11y_health.cli import _client
 from a11y_health.cli._errors import CliError
 from a11y_health.cli._scan import (
+    InvalidScanFilesError,
     LoadedScan,
     UnderivableAppNameError,
     find_date_dirs,
     load_scan,
     resolve_app_name,
 )
+from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.core.slug import derive_slug
 
 ProgressCallback = Callable[[str], None]
@@ -90,14 +93,14 @@ async def _upload_scan(
     errors: list[str] = []
     pages_uploaded = 0
     try:
-        for file, payload in zip(scan.files, scan.payloads, strict=True):
-            rejection = await _client.upload_page(client, scan_run_id=scan_run_id, payload=payload)
+        for file in scan.files:
+            rejection = await _client.upload_page(client, scan_run_id=scan_run_id, payload=file.document)
             if rejection is None:
                 pages_uploaded += 1
-                on_progress(f"Uploaded {file.name}")
+                on_progress(f"Uploaded {file.path.name}")
             else:
-                errors.append(f"{file.name}: {rejection}")
-                on_progress(f"Failed {file.name}: {rejection.code}")
+                errors.append(f"{file.path.name}: {rejection}")
+                on_progress(f"Failed {file.path.name}: {rejection.code}")
 
         if errors:
             # A partial run must not be scored: completing it would snapshot a
@@ -172,7 +175,18 @@ async def import_app(
     if skipped:
         on_progress(f"Skipping non-date entries: {', '.join(e.name for e in skipped)}")
 
-    scans = [load_scan(d) for d in date_dirs]
+    # Every date directory is loaded before the first request, and every
+    # schema-invalid file across all of them is reported at once: an import
+    # that failed on one file per run would cost one re-run per bad file.
+    scans: list[LoadedScan] = []
+    failures: list[tuple[Path, InvalidAxePayloadError]] = []
+    for date_dir in date_dirs:
+        try:
+            scans.append(load_scan(date_dir))
+        except InvalidScanFilesError as exc:
+            failures.extend(exc.failures)
+    if failures:
+        raise InvalidScanFilesError(failures)
     json_name = resolve_app_name(scans)
     slug = derive_slug(json_name)
 

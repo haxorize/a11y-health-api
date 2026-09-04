@@ -22,7 +22,7 @@ A request flows through four layers, each with one job. Nothing skips a layer.
 HTTP request
    │
    ▼
-endpoint   api/v1/endpoints/*.py   thin: parse input, call a service, serialize output
+endpoint   api/v1/endpoints/*.py   thin: decode the request, call a service, serialize output
    │
    ▼
 service    services/*.py           all business logic and database access
@@ -35,8 +35,9 @@ PostgreSQL
 ```
 
 **Endpoints** (`api/v1/endpoints/`) are deliberately thin. They declare the URL,
-accept a request validated by a **schema**, hand off to a service, and convert the
-result back into a response schema. A whole endpoint is usually three lines —
+accept a request validated by a **schema** (one exception, page-result ingest,
+is under **Services** below), hand off to a service, and convert the result
+back into a response schema. A whole endpoint is usually three lines —
 e.g. `create_app` in `api/v1/endpoints/apps.py`:
 
 ```python
@@ -54,7 +55,12 @@ rules; if you find logic in an endpoint, it belongs in a service.
 needs the database, and the domain operations (scoring, rollups, status
 transitions). They take a session plus plain arguments and return ORM objects or
 a `CursorPage` — never HTTP types, so tests can call them directly without
-spinning up the web layer.
+spinning up the web layer. One service takes a raw document rather than a
+validated schema: page-result ingest (`services/page_result.py`) performs the
+axe boundary crossing itself, as its first statement, so the
+`invalid_axe_payload` error mode and the pending-run precondition are its own
+and the endpoint passes the request body straight through (ADR 0009, amended
+2026-08-05). The CLI crosses the same boundary at scan load.
 
 **Models** (`models/`) are SQLAlchemy table definitions — the columns, types, and
 foreign keys. **Schemas** (`schemas/`) are Pydantic classes for request and
@@ -516,18 +522,19 @@ a copy of the workspace root's); the API-side essentials:
 `cli/` (`uv run a11y …`) is a thin client that drives the *public API over
 HTTP* — it has no direct database access, so anything it does, you could do with
 `curl`. It splits by concern over the shared error base in `_errors`: `_scan`
-reads directories off disk, `_client` makes the requests (one function per
-call), `_operations` sequences those two into the commands below, and
-`_terminal` parses argv and prints. `_scan` and `_client` never import each
-other, which is what lets a failure that happens before the first request be
-tested with no server at all (`tests/cli/conftest.py`'s `no_server`). Two
-commands, chosen by app state:
+reads directories off disk and crosses the axe boundary once per file,
+`_client` makes the requests (one function per call), `_operations` sequences
+those two into the commands below, and `_terminal` parses argv and prints.
+`_scan` and `_client` never import each other, which is what lets a failure
+that happens before the first request be tested with no server at all
+(`tests/cli/conftest.py`'s `no_server`). Two commands, chosen by app state:
 
-- **`a11y ingest <dir>`** — upload one scan to an **existing** app. It reads the
-  JSON files in the directory, derives the **Slug** from the `name` field in the
-  payload and resolves the app by it, then runs the lifecycle: create Scan Run →
-  POST each page → PATCH to Completed. If the app isn't registered it raises
-  `AppNotFoundError` pointing you to `import`.
+- **`a11y ingest <dir>`** — upload one scan to an **existing** app. It loads
+  every JSON file in the directory through the axe boundary (a file the server
+  would reject fails here, before any upload), derives the **Slug** from the
+  document's `name` and resolves the app by it, then runs the lifecycle: create
+  Scan Run → POST each page → PATCH to Completed. If the app isn't registered
+  it raises `AppNotFoundError` pointing you to `import`.
 - **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** — onboard an app
   from a directory of `YYYY-MM-DD/` subdirectories, creating the app if missing
   and uploading each date subdirectory as its own Scan Run.
@@ -554,8 +561,8 @@ before the interrupt Pending and unscored.
 | `NameOverrideMismatchError` | `import --name` that doesn't derive to the same slug as the JSON `name` |
 | `MissingScanDirectoryError` | the scan directory doesn't exist |
 | `EmptyScanDirectoryError` | the scan directory holds no `*.json` |
-| `MalformedScanFileError` | a scan file isn't valid JSON, isn't valid UTF-8, or holds something other than a JSON object |
-| `UnparseableScanTimestampError` | a scan file's `endTime` isn't a readable ISO timestamp |
+| `MalformedScanFileError` | a scan file isn't valid JSON or isn't valid UTF-8 |
+| `InvalidScanFilesError` | one or more scan files that parse as JSON but are not valid axe documents — not a JSON object, a missing `findings`, a non-string `name`, an unreadable `endTime` — every offender in one message, across all of an `import`'s date directories. The server applies the same rules on upload (a non-object body is FastAPI's 422 there, not this mode); the message says to fix the files first and names the reinstall for a CLI whose version differs from the server's |
 | `UnderivableAppNameError` | a `name` (or `import --name`) that derives to an empty or over-long slug |
 
 ### Tracing a request

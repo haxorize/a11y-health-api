@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
-from a11y_health.core.exceptions import EmptyScanRunError, InvalidStatusTransitionError, ScanRunCompletedError
+from a11y_health.core.exceptions import EmptyScanRunError, InvalidStatusTransitionError
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, TotalledCursorPage, paginate
 from a11y_health.models.app import App
 from a11y_health.models.enums import FindingType, Impact, ScanRunStatus
@@ -127,8 +127,3 @@ async def delete_scan_run(session: AsyncSession, scan_run_id: int) -> None:
     await session.delete(scan_run)
     await session.flush()
     await scoring_orchestration.on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)
-
-
-def assert_scan_run_pending(scan_run: ScanRun) -> None:
-    if scan_run.status == ScanRunStatus.COMPLETED:
-        raise ScanRunCompletedError(scan_run.id)

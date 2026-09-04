@@ -4,19 +4,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Request, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.cli import _client
 from a11y_health.cli._operations import AppNotFoundError, ingest
 from a11y_health.cli._scan import (
     EmptyScanDirectoryError,
+    InvalidScanFilesError,
     MalformedScanFileError,
     MissingScanDirectoryError,
     NameResolutionError,
     UnderivableAppNameError,
-    UnparseableScanTimestampError,
 )
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.page_result import PageResult
 from tests.factories import make_app_with_org_unit, make_axe_payload, write_scan_file
 
 
@@ -142,25 +145,86 @@ async def test_ingest_malformed_scan_file_names_the_file(no_server: AsyncClient,
     assert "truncated.json" in str(exc_info.value)
 
 
-async def test_ingest_unparseable_scan_timestamp_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:
-    write_scan_file(tmp_path, "a.json", name="foo.com", end_time="last Tuesday")
+@pytest.mark.parametrize("end_time", [1_700_000_000, "last Tuesday"])
+async def test_ingest_unreadable_scan_timestamp_names_the_file_and_field(
+    no_server: AsyncClient, tmp_path: Path, end_time: object
+) -> None:
+    # Names the field and the format it wanted, never the value: echoing an
+    # untrusted document's bytes back into an operator line is a reflection
+    # finding, and the operator has the file to look in.
+    write_scan_file(tmp_path, "a.json", name="foo.com", end_time=end_time)
 
-    with pytest.raises(UnparseableScanTimestampError) as exc_info:
+    with pytest.raises(InvalidScanFilesError) as exc_info:
         await ingest(no_server, directory=tmp_path)
 
     message = str(exc_info.value)
     assert "a.json" in message
-    assert "last Tuesday" in message
+    assert "endTime" in message
+    assert "ISO 8601" in message
 
 
-async def test_ingest_non_string_scan_timestamp_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:
-    # The one caller that justifies `write_scan_file`'s untyped `end_time`.
-    write_scan_file(tmp_path, "a.json", name="foo.com", end_time=1_700_000_000)
+async def test_ingest_schema_invalid_scan_file_fails_before_any_upload(no_server: AsyncClient, tmp_path: Path) -> None:
+    # The headline operator-visible change of moving the crossing into the
+    # CLI: a file the server would reject fails here, at load, so no Scan Run
+    # is created and nothing is left pending. `no_server` is the proof, and
+    # the good file sorting first shows a load doesn't stop at the first
+    # success.
+    write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
+    broken = make_axe_payload(name="foo.com", url="https://example.com/b")
+    del broken["findings"]
+    (tmp_path / "b.json").write_text(json.dumps(broken))
 
-    with pytest.raises(UnparseableScanTimestampError) as exc_info:
+    with pytest.raises(InvalidScanFilesError) as exc_info:
         await ingest(no_server, directory=tmp_path)
 
-    assert "a.json" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert "b.json" in message
+    assert "findings" in message
+    # The guidance names what ran, leads with fixing the file, and names the
+    # one remedy for version skew — a reinstall, not a bypass flag.
+    assert "schema" in message
+    assert "Fix the file" in message
+    assert "reinstall" in message
+
+
+async def test_ingest_reports_every_invalid_scan_file_at_once(no_server: AsyncClient, tmp_path: Path) -> None:
+    # One re-run fixes everything: the load doesn't stop at the first invalid
+    # file, and the message names each one with its own reason.
+    write_scan_file(tmp_path, "a.json", name="foo.com", end_time="last Tuesday")
+    write_scan_file(tmp_path, "b.json", name="foo.com", url="https://example.com/b")
+    broken = make_axe_payload(name="foo.com", url="https://example.com/c")
+    del broken["findings"]
+    (tmp_path / "c.json").write_text(json.dumps(broken))
+
+    with pytest.raises(InvalidScanFilesError) as exc_info:
+        await ingest(no_server, directory=tmp_path)
+
+    assert [path.name for path, _ in exc_info.value.failures] == ["a.json", "c.json"]
+    message = str(exc_info.value)
+    assert "2 scan files" in message
+    assert "a.json" in message and "endTime" in message
+    assert "c.json" in message and "findings" in message
+    assert "b.json" not in message
+
+
+async def test_ingest_uploads_the_document_exactly_as_read(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    # Reds when the upload sends the model's own dump instead of the decoded
+    # document kept beside it: the unmodeled key would be gone from Raw JSON.
+    await make_app_with_org_unit(db_session, slug="foo-com")
+    document = make_axe_payload(
+        name="foo.com",
+        url="https://example.com/a",
+        end_time="2026-03-30T11:55:52-0400",
+        unmodeled={"toolVersion": "4.10.2"},
+    )
+    (tmp_path / "a.json").write_text(json.dumps(document))
+
+    result = await ingest(db_client, directory=tmp_path)
+
+    stored = await db_session.scalar(select(PageResult.raw_json).where(PageResult.scan_run_id == result.scan_run_id))
+    assert stored == document
 
 
 async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
@@ -169,7 +233,6 @@ async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
     await make_app_with_org_unit(db_session, slug="foo-com")
 
     payload = make_axe_payload(name="foo.com", url="https://example.com/a")
-    payload.pop("endTime", None)
     file = tmp_path / "a.json"
     file.write_text(json.dumps(payload))
 
@@ -186,21 +249,78 @@ async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
 async def test_ingest_records_per_page_upload_failures(
     db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
 ) -> None:
+    # A rejection only the server can make: every file loads locally, and the
+    # run is completed out from under the CLI after its first page lands, so
+    # the second page meets `scan_run_completed`. (A malformed file no longer
+    # reaches the server — it fails at load, the test above.)
     await make_app_with_org_unit(db_session, slug="foo-com")
-
     write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
+    write_scan_file(tmp_path, "b.json", name="foo.com", url="https://example.com/b")
 
-    malformed = {"name": "foo.com", "endTime": "2026-03-30T11:55:52-0400"}
-    (tmp_path / "b.json").write_text(json.dumps(malformed))
+    # The hook neither removes itself (httpx is iterating that list while it
+    # runs) nor asserts (a failure inside a hook surfaces as a traceback out of
+    # `_upload_scan`, not as this test's assertion): it fires once, records
+    # the PATCH status, and the checks happen after `ingest` returns.
+    completion_status: list[int] = []
 
-    result = await ingest(db_client, directory=tmp_path)
+    async def complete_after_first_page(response: Response) -> None:
+        request: Request = response.request
+        if completion_status or not (
+            request.method == "POST" and request.url.path.endswith("/pages") and response.status_code == 201
+        ):
+            return
+        scan_run_id = request.url.path.split("/")[-2]
+        completed = await db_client.patch(f"/api/v1/scan-runs/{scan_run_id}", json={"status": "completed"})
+        completion_status.append(completed.status_code)
 
+    db_client.event_hooks["response"].append(complete_after_first_page)
+    messages: list[str] = []
+    try:
+        result = await ingest(db_client, directory=tmp_path, on_progress=messages.append)
+    finally:
+        db_client.event_hooks["response"].remove(complete_after_first_page)
+
+    assert completion_status == [200]
     assert result.pages_uploaded == 1
     assert len(result.errors) == 1
     assert "b.json" in result.errors[0]
     # The Error Contract's code, not the bare status — the code names the mode,
     # and the mode is what the operator has to act on.
-    assert "invalid_axe_payload" in result.errors[0]
+    assert "scan_run_completed" in result.errors[0]
+
+    # The CLI never completes a partial run itself: it reports the run as left
+    # pending, by id, for the operator to fix and delete.
+    assert any(f"Scan run {result.scan_run_id} left pending" in m for m in messages)
+    assert not any(m.startswith(f"Scan run {result.scan_run_id} completed") for m in messages)
+
+
+async def test_ingest_leaves_a_partial_run_pending_and_unscored(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The test above's rejection is server-made, but making it completes the
+    # run, so it cannot pin what the CLI leaves behind. Here the second page's
+    # rejection is faked at the client seam and the server is never told, so
+    # the run's state is exactly what the CLI left it in.
+    await make_app_with_org_unit(db_session, slug="foo-com")
+    write_scan_file(tmp_path, "a.json", name="foo.com", url="https://example.com/a")
+    write_scan_file(tmp_path, "b.json", name="foo.com", url="https://example.com/b")
+
+    real_upload_page = _client.upload_page
+    calls = 0
+
+    async def reject_second_page(client: AsyncClient, *, scan_run_id: int, payload: dict) -> _client.ApiError | None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return await real_upload_page(client, scan_run_id=scan_run_id, payload=payload)
+        return _client.ApiError(code="invalid_axe_payload", message="faked at the client seam")
+
+    monkeypatch.setattr(_client, "upload_page", reject_second_page)
+    messages: list[str] = []
+    result = await ingest(db_client, directory=tmp_path, on_progress=messages.append)
+
+    assert result.pages_uploaded == 1
+    assert len(result.errors) == 1
 
     # A partial run is left Pending (unscored), never completed over a subset.
     resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
@@ -254,16 +374,15 @@ async def test_ingest_overlong_app_name_reports_the_length_bound(no_server: Asyn
 
 async def test_ingest_non_object_scan_file_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:
     # Valid JSON, wrong document: an export that wrapped its page in a list. The
-    # bytes parse, so the decode guard never fires and the loader would go on to
-    # call .get() on a list.
+    # bytes parse, so the decode guard never fires; the axe boundary refuses it.
     (tmp_path / "wrapped.json").write_text('[{"name": "foo.com"}]')
 
-    with pytest.raises(MalformedScanFileError) as exc_info:
+    with pytest.raises(InvalidScanFilesError) as exc_info:
         await ingest(no_server, directory=tmp_path)
 
     message = str(exc_info.value)
     assert "wrapped.json" in message
-    assert "object" in message
+    assert "not a JSON object" in message
 
 
 async def test_ingest_underivable_app_name_names_the_file(no_server: AsyncClient, tmp_path: Path) -> None:

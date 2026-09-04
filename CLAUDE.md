@@ -22,7 +22,7 @@ uv run pytest                    # run tests
 uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
-uv run deptry src                # unused / missing / transitive dependencies
+uv run deptry src migrations scripts  # unused / missing / transitive dependencies (same paths as the hook and CI)
 uv run uvicorn a11y_health.main:app --reload  # dev server
 uv run a11y --help               # onboarding CLI: import/ingest + org-unit/brand lookups (see cli/__init__.py docstring)
 gh run view --log-failed         # a red CI run's failing step output, without opening the browser

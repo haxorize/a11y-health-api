@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
@@ -145,6 +145,20 @@ async def test_list_apps_direct_only_serves_apps_placed_on_the_unit_itself(db_se
     assert [a.slug for a in page.items] == ["root-app"]
 
 
+# Reds if direct_only collapses a multi-unit filter to one unit (#139):
+# each listed unit's own apps, none of their descendants'.
+async def test_list_apps_direct_only_with_several_units_serves_each_units_own_apps(db_session: AsyncSession) -> None:
+    top = await make_org_unit(db_session, name="Top")
+    branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=top.id)
+    branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=top.id)
+    under_b = await make_org_unit(db_session, name="Retail", parent_id=branch_b.id)
+    await make_app(db_session, slug="a-app", org_unit_id=branch_a.id)
+    await make_app(db_session, slug="b-app", org_unit_id=branch_b.id)
+    await make_app(db_session, slug="under-b-app", org_unit_id=under_b.id)
+    page = await app_service.list_apps(db_session, org_unit_id=[branch_a.id, branch_b.id], direct_only=True)
+    assert {a.slug for a in page.items} == {"a-app", "b-app"}
+
+
 async def test_list_apps_direct_only_without_org_unit_id_is_ignored(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     leaf = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
@@ -152,6 +166,30 @@ async def test_list_apps_direct_only_without_org_unit_id_is_ignored(db_session: 
     await make_app(db_session, slug="leaf-app", org_unit_id=leaf.id)
     page = await app_service.list_apps(db_session, direct_only=True)
     assert {a.slug for a in page.items} == {"root-app", "leaf-app"}
+
+
+# Reds if the subtree expansion round-trips again: the CTE is embedded in
+# the page statement, so a filtered listing is one statement, not two.
+async def test_list_apps_org_unit_filter_is_one_statement(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    await make_app(db_session, slug="child-app", org_unit_id=child.id)
+    await db_session.flush()
+    statements: list[str] = []
+    connection = (await db_session.connection()).sync_connection
+    assert connection is not None
+
+    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
+        statements.append(statement)
+
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        page = await app_service.list_apps(db_session, org_unit_id=[root.id])
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+
+    assert [a.slug for a in page.items] == ["child-app"]
+    assert len(statements) == 1
 
 
 async def test_list_apps_filter_by_leaf_org_unit(db_session: AsyncSession) -> None:

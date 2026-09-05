@@ -142,10 +142,10 @@ async def list_latest_scores(
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
         snapshots = snapshots.where(_under_org_unit_scope(owner_type, under_org_unit_id, direct_only))
     if owner_id is not None:
-        # Exact-match, unlike list_apps' descendant-expanding org_unit_id: a
-        # rollup owner's snapshot already aggregates everything it covers (an
-        # org unit's subtree, a brand's flat app set), so expansion would
-        # double-count.
+        # Exact-match, unlike list_apps' org_unit_id filter, which expands to
+        # the subtree unless direct_only: a rollup owner's snapshot already
+        # aggregates everything it covers (an org unit's subtree, a brand's
+        # flat app set), so expansion would double-count.
         snapshots = snapshots.where(owner_col.in_(owner_id))
     stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
     # Keyset on the owner id alone: it is unique here (one row per owner),
@@ -187,8 +187,8 @@ def _under_org_unit_scope(
         # An app placed anywhere in the subtree — including on the named unit
         # itself — is "under" it, matching list_apps' org_unit_id expansion.
         # direct_only is that same rule over the one-unit subtree.
-        unit_ids = [under_org_unit_id] if direct_only else select_descendant_ids([under_org_unit_id])
-        return owner_col.in_(select(App.id).where(App.org_unit_id.in_(unit_ids)))
+        unit_scope = [under_org_unit_id] if direct_only else select_descendant_ids([under_org_unit_id])
+        return owner_col.in_(select(App.id).where(App.org_unit_id.in_(unit_scope)))
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
         if direct_only:
             # Depth-1 needs no subtree walk: direct children are one

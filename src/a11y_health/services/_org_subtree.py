@@ -1,10 +1,13 @@
 """Org-unit subtree expansion shared across resource and scoring services.
 
 A shared underscore helper (like `_latest_snapshot`) so consumers on both
-sides of the two-tier call rule — `app`'s descendant-expanding filter, the
-Owner Dispatcher's `under_org_unit_id` scope (`owner.py`), and `org_unit`'s
-reparent-cycle check — get the one recursive-CTE definition without importing
-a sibling resource service.
+sides of the two-tier call rule — `app`'s org-unit filter (subtree-expanding
+by default, exact under `direct_only`), the Owner Dispatcher's
+`under_org_unit_id` scope (`owner.py`), and `org_unit`'s reparent-cycle
+check — get one recursive-CTE definition without importing a sibling
+resource service. Two exports over that one CTE: `select_descendant_ids` to
+embed the subtree inside a statement, `get_descendant_ids` when the caller
+needs the ids as a Python set.
 """
 
 from sqlalchemy import Select, select
@@ -15,9 +18,14 @@ from a11y_health.models.org_unit import OrgUnit
 
 
 def select_descendant_ids(org_unit_ids: list[int]) -> Select[tuple[int]]:
-    # The inclusive subtree as a SELECT, so a filter embeds it as an IN
-    # subquery in its own statement instead of round-tripping the ids.
-    cte = select(OrgUnit.id).where(OrgUnit.id.in_(org_unit_ids)).cte(name="subtree", recursive=True)
+    """The inclusive subtree as a SELECT, for embedding as an IN subquery in
+    the caller's own statement instead of round-tripping the ids.
+
+    `org_unit_ids` must be non-empty: an empty list renders an empty IN, which
+    every caller guards before reaching here. The CTE is left unnamed so two
+    subtrees can sit in one statement — a fixed name collides at compile time.
+    """
+    cte = select(OrgUnit.id).where(OrgUnit.id.in_(org_unit_ids)).cte(recursive=True)
     child = aliased(OrgUnit)
     cte = cte.union_all(select(child.id).where(child.parent_id == cte.c.id))
     return select(cte.c.id)

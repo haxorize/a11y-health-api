@@ -27,8 +27,9 @@ async def list_apps(
         stmt = stmt.where(App.brand_id.in_(brand_id))
     if org_unit_id:
         # The /scores/latest opt-in (ADR 0035); no filter, nothing to refine.
-        unit_ids = org_unit_id if direct_only else select_descendant_ids(org_unit_id)
-        stmt = stmt.where(App.org_unit_id.in_(unit_ids))
+        # With several units, direct_only serves each listed unit's own apps.
+        unit_scope = org_unit_id if direct_only else select_descendant_ids(org_unit_id)
+        stmt = stmt.where(App.org_unit_id.in_(unit_scope))
     return await paginate(session, stmt, keyset=[App.id], cursor=cursor, limit=limit)
 
 

@@ -1,11 +1,19 @@
 # direct_only is an opt-in refinement of the under_org_unit_id scope, not a new default
 
-> **Extended to the apps listing (a11y-health-api#139):** `GET /apps?org_unit_id=X`
-> takes the same `direct_only`, with the same name, default, and
-> ignored-without-a-scope posture, so `direct_only` is the cross-listing
-> spelling for "exact placement" rather than one endpoint's. The reasoning
-> below applies unchanged: the listing is keyset-paged, so a client wanting one
-> unit's rows otherwise walks the subtree serially before first paint.
+> **Amended by #139:** `GET /apps?org_unit_id=X` takes the same `direct_only`,
+> with the same name, default, and ignored-without-a-scope posture, so
+> `direct_only` is the cross-listing spelling for "one step narrower than the
+> default" — exact placement for apps, depth-1 children for org units, as the
+> body rules per owner type — rather than one endpoint's. The title and the
+> body below name only `under_org_unit_id`; this amendment is the record for
+> the apps listing. Two things the body has no case for: `org_unit_id` is a
+> list, and `direct_only` over several units serves each listed unit's own
+> apps (`tests/services/test_app.py` pins it); and the two listings share the
+> spelling by convention, not by a shared definition — a third listing taking
+> the parameter is the trigger for one. The consumer half, retiring the UI's
+> client-side narrowing, is a11y-health-ui#71. The reasoning below applies
+> unchanged: the listing is keyset-paged, so a client wanting one unit's rows
+> otherwise walks the subtree serially before first paint.
 
 `GET /scores/latest?under_org_unit_id=X&direct_only=true` narrows [ADR 0034](0034-under-org-unit-scope-resolves-per-owner-type.md)'s
 resolution one step per owner type — `app` serves apps placed exactly on X,

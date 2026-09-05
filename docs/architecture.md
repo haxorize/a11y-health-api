@@ -363,7 +363,9 @@ fetch a response that matches them instead of the whole subtree. Without
 ([ADR 0035](adr/0035-direct-only-opt-in-refines-the-under-org-unit-scope.md)).
 The apps listing's `org_unit_id` filter takes the same `direct_only`, with the
 same name, default, and ignored-without-a-scope posture, so the rows a client
-lists for one unit and the scores it fetches for them answer one question.
+lists for one unit and the scores it fetches for them narrow the same way.
+They still sit on opposite sides of the scope/filter split above: an unknown
+`under_org_unit_id` 404s, an unknown `org_unit_id` matches nothing.
 The `brand_id` scope names a *brand*, not owners, and resolves the same way:
 `app` serves the brand's apps wherever they sit in the org tree (flat, like the
 Brand Rollup), while `org_unit` and `brand` serve the empty set — org units

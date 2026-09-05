@@ -6,7 +6,9 @@
 > result" did not survive contact with keyset pagination — cursor pages are
 > sequential, so filtering client-side costs one serial round-trip per page of
 > subtree before first paint. 0035 adds `direct_only` as an opt-in refinement
-> that leaves this default untouched.
+> that leaves this default untouched — and, since #139, the apps listing's
+> `org_unit_id` takes the same opt-in, so "descendant-expanding" below is that
+> filter's default rather than its only behavior.
 
 `GET /scores/latest?under_org_unit_id=X` — extending the latest-scores read
 ([ADR 0023](0023-scores-latest-read-endpoint.md)) via a subtree helper shared

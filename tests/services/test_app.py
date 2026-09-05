@@ -133,6 +133,27 @@ async def test_list_apps_filter_by_org_unit_id_with_descendants(db_session: Asyn
     assert slugs == {"root-app", "child-app", "grandchild-app"}
 
 
+# Reds if direct_only stops gating the descendant expansion.
+async def test_list_apps_direct_only_serves_apps_placed_on_the_unit_itself(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    grandchild = await make_org_unit(db_session, name="Primary Care", parent_id=child.id)
+    await make_app(db_session, slug="root-app", org_unit_id=root.id)
+    await make_app(db_session, slug="child-app", org_unit_id=child.id)
+    await make_app(db_session, slug="grandchild-app", org_unit_id=grandchild.id)
+    page = await app_service.list_apps(db_session, org_unit_id=[root.id], direct_only=True)
+    assert [a.slug for a in page.items] == ["root-app"]
+
+
+async def test_list_apps_direct_only_without_org_unit_id_is_ignored(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    leaf = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    await make_app(db_session, slug="root-app", org_unit_id=root.id)
+    await make_app(db_session, slug="leaf-app", org_unit_id=leaf.id)
+    page = await app_service.list_apps(db_session, direct_only=True)
+    assert {a.slug for a in page.items} == {"root-app", "leaf-app"}
+
+
 async def test_list_apps_filter_by_leaf_org_unit(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     leaf = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)

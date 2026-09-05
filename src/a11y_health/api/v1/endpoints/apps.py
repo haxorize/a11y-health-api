@@ -26,9 +26,15 @@ async def list_apps(
     pagination: PageParams,
     brand_id: Annotated[list[int] | None, Query()] = None,
     org_unit_id: Annotated[list[int] | None, Query()] = None,
+    direct_only: bool = False,
 ) -> Page[AppRead]:
     page = await app_service.list_apps(
-        db, brand_id=brand_id, org_unit_id=org_unit_id, cursor=pagination.cursor, limit=pagination.limit
+        db,
+        brand_id=brand_id,
+        org_unit_id=org_unit_id,
+        direct_only=direct_only,
+        cursor=pagination.cursor,
+        limit=pagination.limit,
     )
     return Page.from_cursor_page(page, AppRead.model_validate)
 

@@ -18,6 +18,7 @@ async def list_apps(
     *,
     brand_id: list[int] | None = None,
     org_unit_id: list[int] | None = None,
+    direct_only: bool = False,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[App]:
@@ -25,8 +26,9 @@ async def list_apps(
     if brand_id:
         stmt = stmt.where(App.brand_id.in_(brand_id))
     if org_unit_id:
-        expanded = await get_descendant_ids(session, org_unit_id)
-        stmt = stmt.where(App.org_unit_id.in_(expanded))
+        # The /scores/latest opt-in (ADR 0035); no filter, nothing to refine.
+        unit_ids = org_unit_id if direct_only else await get_descendant_ids(session, org_unit_id)
+        stmt = stmt.where(App.org_unit_id.in_(unit_ids))
     return await paginate(session, stmt, keyset=[App.id], cursor=cursor, limit=limit)
 
 

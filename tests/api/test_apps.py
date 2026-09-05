@@ -126,6 +126,24 @@ async def test_list_apps_filter_by_org_unit_id(db_client: AsyncClient, db_sessio
     assert [a["slug"] for a in items] == ["humana-app"]
 
 
+# Pins direct_only query-parameter decoding; the narrowing lives at the
+# service seam
+# (test_list_apps_direct_only_serves_apps_placed_on_the_unit_itself).
+async def test_list_apps_direct_only_param_decodes_to_exact_placement(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    scoped = await make_org_unit(db_session, name="Scoped", parent_id=root.id)
+    child = await make_org_unit(db_session, name="Child", parent_id=scoped.id)
+    await make_app(db_session, slug="own", org_unit_id=scoped.id)
+    await make_app(db_session, slug="deep", org_unit_id=child.id)
+
+    response = await db_client.get("/api/v1/apps", params={"org_unit_id": scoped.id, "direct_only": "true"})
+
+    assert response.status_code == 200
+    assert [a["slug"] for a in response.json()["items"]] == ["own"]
+
+
 async def test_get_app(db_client: AsyncClient, db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)

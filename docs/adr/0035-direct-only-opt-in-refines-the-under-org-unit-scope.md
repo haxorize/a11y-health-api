@@ -1,5 +1,12 @@
 # direct_only is an opt-in refinement of the under_org_unit_id scope, not a new default
 
+> **Extended to the apps listing (a11y-health-api#139):** `GET /apps?org_unit_id=X`
+> takes the same `direct_only`, with the same name, default, and
+> ignored-without-a-scope posture, so `direct_only` is the cross-listing
+> spelling for "exact placement" rather than one endpoint's. The reasoning
+> below applies unchanged: the listing is keyset-paged, so a client wanting one
+> unit's rows otherwise walks the subtree serially before first paint.
+
 `GET /scores/latest?under_org_unit_id=X&direct_only=true` narrows [ADR 0034](0034-under-org-unit-scope-resolves-per-owner-type.md)'s
 resolution one step per owner type — `app` serves apps placed exactly on X,
 `org_unit` X's depth-1 children, `brand` stays empty — so a client rendering

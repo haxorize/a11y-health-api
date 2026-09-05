@@ -361,6 +361,9 @@ serves apps placed exactly on the named unit, `org_unit` its depth-1 children,
 fetch a response that matches them instead of the whole subtree. Without
 `under_org_unit_id` there is no scope to refine, so `direct_only` is ignored
 ([ADR 0035](adr/0035-direct-only-opt-in-refines-the-under-org-unit-scope.md)).
+The apps listing's `org_unit_id` filter takes the same `direct_only`, with the
+same name, default, and ignored-without-a-scope posture, so the rows a client
+lists for one unit and the scores it fetches for them answer one question.
 The `brand_id` scope names a *brand*, not owners, and resolves the same way:
 `app` serves the brand's apps wherever they sit in the org tree (flat, like the
 Brand Rollup), while `org_unit` and `brand` serve the empty set — org units

@@ -205,8 +205,8 @@ async def make_score_snapshot(
 # invokes after arrange completes (the orchestration handler, a rollup call)
 # stays visible at the test's own call site. A new scoring or rollup tail
 # means a new helper name, never a mode flag on an existing one.
-async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScanRun:
-    for raw in payloads:
+async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, axe_payloads: list[dict]) -> ScanRun:
+    for raw in axe_payloads:
         await create_page_result(db, scan_run_id, raw)
     sr = await get_scan_run(db, scan_run_id)
     sr.status = ScanRunStatus.COMPLETED
@@ -216,8 +216,8 @@ async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads
 
 # The final call is the act only for a test whose subject is the score compute
 # itself; a rollup test uses this to arrange an already-scored app.
-async def ingest_and_score(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScoreSnapshot:
-    sr = await ingest_pages_and_complete(db, scan_run_id, payloads)
+async def ingest_and_score(db: AsyncSession, scan_run_id: int, axe_payloads: list[dict]) -> ScoreSnapshot:
+    sr = await ingest_pages_and_complete(db, scan_run_id, axe_payloads)
     return await compute_app_score(db, sr)
 
 

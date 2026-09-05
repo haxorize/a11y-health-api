@@ -91,7 +91,7 @@ class TestComputeAppScoreResult:
 class TestScoreSnapshotMetrics:
     async def test_snapshot_stores_counts_and_score(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        payloads = [
+        axe_payloads = [
             make_axe_payload(
                 url="https://example.com/a",
                 violations=[make_violation("r1", "critical"), make_violation("r2", "serious")],
@@ -100,7 +100,7 @@ class TestScoreSnapshotMetrics:
             make_axe_payload(url="https://example.com/c", violations=[make_violation("r3", "serious")]),
         ]
 
-        snapshot = await ingest_and_score(db_session, scan_run.id, payloads)
+        snapshot = await ingest_and_score(db_session, scan_run.id, axe_payloads)
 
         assert snapshot.score == approx(1.4 / 3)
         assert snapshot.total_violations == 3

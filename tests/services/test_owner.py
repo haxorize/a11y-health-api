@@ -618,11 +618,11 @@ def test_score_snapshot_column_set_is_pinned() -> None:
 async def _score_new_scan_run(
     db_session: AsyncSession,
     app_id: int,
-    payloads: list[dict],
+    axe_payloads: list[dict],
     scanned_at: datetime | None = None,
 ) -> ScoreSnapshot:
     sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    return await ingest_and_score(db_session, sr.id, payloads)
+    return await ingest_and_score(db_session, sr.id, axe_payloads)
 
 
 class TestOrgUnitRollup:

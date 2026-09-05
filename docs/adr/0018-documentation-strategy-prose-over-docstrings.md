@@ -19,7 +19,7 @@ by three artifacts with non-overlapping jobs:
   `services/score_snapshot.py`, `services/scoring_orchestration.py`,
   `services/owner.py`, `schemas/axe_payload.py`, `schemas/_tag_parsing.py`),
   orient a reader who lands in the file and point to the relevant narrative-doc
-  section rather than re-explaining it.
+  section rather than re-explaining it. — amended: see Amendments 2026-09-05
 
 Docstrings, when written, are plain prose. Type hints are comprehensive, so an
 `Args:`/`Returns:` block would only restate the signature; the one carve-out is a
@@ -49,3 +49,7 @@ Considered and rejected:
   universal noise rejected above. The strategy is judgment-based ("is this
   docstring earned?"), which a linter cannot encode — so the convention is
   recorded (here and in the `code-documentation` skill) rather than linted.
+
+## Amendments
+
+- **2026-09-05** — Three refinements from the whole-repo audit grill. (1) The list of modules that earn a header is retired; the criterion stands (a module whose purpose is not evident from its path and a glance), and the `code-documentation` skill carries 2 or 3 examples. The list rotted: `services/owner.py`, `core/error_contract.py`, `core/integrity.py`, and the CLI modules all earn a header and all postdate it. (2) A `DOMAIN.md` definition is at most 3 sentences: the first defines the term, and each further sentence discriminates it from a neighbor, records a scope the name does not carry, or names the authority that settles it. Query parameters, error codes outside the Error Contract entry, and ADR citations move to `docs/architecture.md` or the ADR that owns them. (3) Test modules follow the same header criterion; test functions never carry a docstring, which narrows the `testing` skill's "no docstrings on tests" to functions. Where the audit finds the modules written from July 2026 on over the criterion, the fix prunes them; it never documents the April 2026 modules up to them.

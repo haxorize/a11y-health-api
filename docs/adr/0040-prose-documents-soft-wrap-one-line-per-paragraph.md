@@ -1,0 +1,7 @@
+# Prose documents soft-wrap, one line per paragraph
+
+Every markdown document in the repo keeps one line per paragraph, bullet, or blockquote and lets the editor wrap: `docs/`, `DOMAIN.md`, `README.md`, `CLAUDE.md`, and the skills under `.claude/skills/`. Code prose keeps its 80-column wrap under `W505` and `tests/test_prose_shape.py`, and that is the split: a docstring is read in an editor beside 120-column code, while a document is read rendered, where a hard wrap changes nothing. Hard wrap was rejected because it left the repo with two conventions (the skills, glossary, and README soft-wrapped; the ADRs and `docs/architecture.md` hard-wrapped) and because the skill convention already forces soft wrap on the 6 repo skills through its line cap. This reverses commit 6ccacbc, which rewrapped `docs/architecture.md` at 80 columns as a whitespace-only change one day before this record. Accepted cost: unwrapping the 39 earlier ADRs and 3 solution docs resets `git blame` on the docs tree to one commit, paid once.
+
+The check is a markdown paragraph rule in `tests/test_prose_shape.py` that fails a paragraph split across lines under any of the paths above; the whole-repo audit's fix pass adds it, and until then this record is the authority.
+
+Revisit when: a markdown formatter that reflows on save joins the toolchain, or a reviewer needs line-granular diffs on a document often enough to count.

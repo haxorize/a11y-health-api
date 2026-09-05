@@ -11,9 +11,11 @@ and `_scan` peers rather than a chain.
 There is deliberately no port abstraction over the transport. `httpx`'s own
 transport *is* the seam, and it already has two real adapters rather than one
 plus a stub: production runs over `AsyncHTTPTransport` against a deployed
-server, and the suite runs over `ASGITransport` against the real app and a real
-database. A hand-rolled protocol in front of that would add an interface with
-one implementation and buy no test that the ASGI adapter doesn't already give.
+server, and the suite runs over both, `ASGITransport` against the real app and
+a real database in the command suites, and `AsyncHTTPTransport` against the app
+on a real port in `tests/cli/test_live_server.py`. A hand-rolled protocol in
+front of that would add an interface with one implementation and buy no test
+that the two adapters don't already give.
 """
 
 from datetime import datetime

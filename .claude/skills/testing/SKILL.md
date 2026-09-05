@@ -7,11 +7,15 @@ description: Test conventions for this project. Use when writing tests, adding f
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism**, which lives
-at the root beside its implementation rather than under the package it happens
-to guard. A mechanism enforces an invariant across the whole suite (Declaration
-Honesty, import honesty) and has no single mirrored home; filing it under a
-mirrored directory is what produced the mixed contract suite #133 had to split.
+Mirror the app structure — except for a **suite-wide mechanism** or a
+**topology guard**, which live at the root beside their implementation rather
+than under the package they happen to guard. A mechanism enforces an invariant
+across the whole suite (Declaration Honesty, import honesty) and has no single
+mirrored home. A topology guard reads the source tree — which module imports
+which, what reaches what — rather than exercising a module's behavior, so it
+sits at the root even when the rule it holds is scoped to one package. Filing
+either under a mirrored directory is what produced the mixed contract suite
+#133 had to split.
 
 ```
 tests/
@@ -22,7 +26,10 @@ tests/
   import_graph.py          # shared import-reading helpers for the topology guards
   test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
+  test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
+  test_reachability.py     # every source module is reached from an entry point (ADR 0039)
   test_prose_shape.py      # comments and docstrings wrap whole; the half W505 can't see
+  factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
@@ -31,8 +38,10 @@ tests/
     test_<resource>.py      # direct service-layer tests
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
+  models/
+    test_<model>.py         # model-level tests (defaults, constraints as declared)
   core/
-    test_database.py        # tests for core/database.py helpers (Base, get_db, etc.)
+    test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
     conftest.py             # `no_server`: a client that fails the test if anything reaches the transport
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)

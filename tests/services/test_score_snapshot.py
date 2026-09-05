@@ -1,8 +1,3 @@
-import importlib
-import inspect
-from types import ModuleType
-
-import pytest
 from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +18,6 @@ from tests.factories import (
     make_scan_run_with_parents,
     make_violation,
 )
-from tests.import_graph import imported_modules
 
 
 async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[list[PageResult], ScoreSnapshot]:
@@ -164,47 +158,3 @@ class TestScoreIndependentOfPageHealth:
         assert snapshot.score == approx(0.0)
         assert snapshot.pages_with_critical_violations == 1
         assert page.page_health == PageHealth.CRITICAL
-
-
-def _sibling_service_imports(module: ModuleType) -> set[str]:
-    # The shared walk sees every import spelling, including relative ones; this
-    # rule is only the prefix filter over it.
-    prefix = "a11y_health.services"
-    imported = imported_modules(inspect.getsource(module), module.__name__)
-    return {name.removeprefix(f"{prefix}.").split(".")[0] for name in imported if name.startswith(f"{prefix}.")}
-
-
-class TestScoringModuleImports:
-    # Entity fetches go through the Existence Guard, not a sibling service (see
-    # architecture.md, "The Existence Guard and the two-tier call rule"): a
-    # scoring module may cross the services namespace only for the shared
-    # modules and the Owner Dispatcher named here — never a sibling resource
-    # service. The rule is which shared modules a scoring module may reach, not
-    # whether their names are private. Privacy is no help inside `services/`:
-    # it is one flat package, so every module in it is a permitted importer of
-    # `_latest_snapshot` and `_org_subtree` as far as test_import_honesty.py is
-    # concerned. This allowlist is the only thing holding that line, and only
-    # for the modules named below.
-    @pytest.mark.parametrize(
-        ("module_name", "shared_helpers"),
-        [
-            ("score_snapshot", {"scoring_vocabulary", "owner"}),
-            ("owner", {"_latest_snapshot", "_org_subtree"}),
-        ],
-    )
-    def test_module_imports_only_shared_helpers(self, module_name: str, shared_helpers: set[str]) -> None:
-        module = importlib.import_module(f"a11y_health.services.{module_name}")
-
-        assert _sibling_service_imports(module) <= shared_helpers
-
-
-class TestDecoupledImports:
-    def test_org_unit_module_does_not_import_score(self) -> None:
-        import a11y_health.services.org_unit as org_unit_module
-
-        assert not {"owner", "score_snapshot"} & _sibling_service_imports(org_unit_module)
-
-    def test_scan_run_module_does_not_import_score(self) -> None:
-        import a11y_health.services.scan_run as scan_run_module
-
-        assert not {"owner", "score_snapshot"} & _sibling_service_imports(scan_run_module)

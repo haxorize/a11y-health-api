@@ -10,7 +10,9 @@ loophole.
 
 The walk covers the installed package, so tests, migrations, and scripts sit
 outside the rule — which is what lets a private module's own suite import it
-directly.
+directly. Inside one flat package the rule permits every sibling, so which
+modules *should* reach a private sibling is `test_sibling_imports.py`'s
+question, and only for the modules it names.
 
 `_crossings` is the detector and carries its own tests, so the repo-wide
 assertion below can't pass by quietly finding nothing.

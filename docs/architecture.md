@@ -99,8 +99,12 @@ everything beneath it, so a public module inside one is not a way in.
 in either import spelling, so the underscore is a checked claim rather than a
 hint. The rule covers the package and nothing else — tests, migrations, and
 scripts sit outside it, which is what lets a private module's own suite import
-it directly. [ADR 0038](adr/0038-package-private-underscore-enforced-repo-wide.md)
-records why this is enforced rather than conventional.
+it directly. It also does not say which modules inside one flat package
+*should* reach a private sibling: for the scoring modules, the sibling-import
+allowlist (below) holds that line; for the rest, the consumer list above is
+the record.
+[ADR 0038](adr/0038-package-private-underscore-enforced-repo-wide.md) records
+why this is enforced rather than conventional.
 
 ### The Existence Guard and the two-tier call rule
 
@@ -123,6 +127,15 @@ Callers follow a **two-tier call rule**:
   with the model class. No service ever imports a sibling service just to ask
   "does it exist?" (or to fetch an entity it only reads); that import topology
   is what previously forced function-local imports to dodge cycles.
+
+`tests/test_sibling_imports.py` holds the sibling-import rules that make
+this checkable: an allowlist of the siblings `score_snapshot`, `owner`, and
+`scoring_orchestration` may reach across `services/`, and a pin on every
+resource service — `org_unit`, `scan_run`, `app`, `brand`, `page_result`, and
+`rule_finding` — that it imports nothing from scoring directly (the ones that
+reach it do so through `scoring_orchestration`, which is the Rollup trigger by
+design). Only the modules named there are held; the next sibling-import rule
+lands in that module too.
 
 **Listing parameters split on whether the guard applies at all.** A *scope* —
 `/scores/latest`'s `brand_id` and `under_org_unit_id` — names one entity the

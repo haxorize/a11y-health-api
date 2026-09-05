@@ -254,8 +254,11 @@ This is the heart of the system and the part worth reading slowly. The code
 splits as computation vs. dispatch: `services/score_snapshot.py` computes the
 app score (findings → Page Health → Score), and `services/owner.py` — the
 **Owner Dispatcher** — owns everything per-owner: snapshot construction, the
-latest/history score reads, and the rollups. Terms: **Page Health**, **Score**,
-**Score Snapshot**, **Rollup**, **Owner Dispatcher** — all in `DOMAIN.md`.
+latest/history score reads, and the rollups, plus the owner-agnostic **Score
+Aggregates** value those consume (the one piece of snapshot vocabulary the
+computation side imports from the dispatcher). Terms: **Page Health**,
+**Score**, **Score Aggregates**, **Score Snapshot**, **Rollup**, **Owner
+Dispatcher** — all in `DOMAIN.md`.
 
 The *meaning* behind the scoring value sets — the health ordering (worst → best,
 each health's rank derived from its position), the health weights, and the total
@@ -299,8 +302,9 @@ score = (0·critical_pages + 0.4·serious_pages + 0.8·fair_pages + 1.0·good_pa
 ```
 
 A perfect app scores 1.0; an all-critical app scores 0.0. The result is saved as
-a **Score Snapshot** — a denormalized row holding the score plus summary metrics
-(total violations, % pages with violations, etc.). An app snapshot's
+a **Score Snapshot** — a denormalized row holding the **Score Aggregates**: the
+score plus the raw counts (total pages, total violations, pages with
+violations, pages with critical violations). An app snapshot's
 `snapshot_at` is the **Scan Run's `scanned_at`** (when the scan happened), not
 when it was uploaded.
 
@@ -362,7 +366,13 @@ A parent's `score` is the **unweighted arithmetic mean of its children's
 scores** — every child counts equally, a 2-page app and a 2000-page app alike.
 The count columns, by contrast, are *summed totals* — so a share or average a
 consumer derives from a rollup's counts is page-weighted and can legitimately
-diverge from the headline score.
+diverge from the headline score. That arithmetic lives on **Score Aggregates**
+(`ScoreAggregates.rolled_up` in the Owner Dispatcher): the one value for the
+Score and counts a snapshot summarizes, which snapshot construction takes,
+app-score computation produces, and the rollup builds from its children's.
+The sum under the mean is exactly rounded (`math.fsum`), so the mean is the
+same in any child order: a recompute is bitwise-reproducible and the no-change
+skip below can compare for equality (#136).
 
 > **Why snapshots get pruned during a rollup.** Snapshots are append-only
 > ([ADR 0015](adr/0015-score-snapshot-append-only.md)), so a rollup writes a new
@@ -374,14 +384,15 @@ diverge from the headline score.
 >
 > **One snapshot per distinct observation.** A rollup trigger is not itself an
 > observation (#95): when the recomputed aggregate lands on the observation time
-> the owner's latest snapshot already holds, identical values record nothing,
-> and changed values replace the rows sharing that time (delete + insert, never
-> update). Only a newer observation time appends — even when the values didn't
-> move, so the latest snapshot never claims an observation whose source data has
-> since been deleted. Since #98 the database enforces this for rollup owners:
-> partial unique indexes on (owner, `snapshot_at`) decide same-observation write
-> races, the losing rollup failing as `ConcurrentRollupError` (409, retryable). App snapshots stay
-> unconstrained — two Scan Runs may share an observation time (ADR 0015).
+> the owner's latest snapshot already holds, identical **Score Aggregates**
+> record nothing, and changed ones replace the rows sharing that time (delete +
+> insert, never update). Only a newer observation time appends — even when the
+> values didn't move, so the latest snapshot never claims an observation whose
+> source data has since been deleted. Since #98 the database enforces this for
+> rollup owners: partial unique indexes on (owner, `snapshot_at`) decide
+> same-observation write races, the losing rollup failing as
+> `ConcurrentRollupError` (409, retryable). App snapshots stay unconstrained —
+> two Scan Runs may share an observation time (ADR 0015).
 >
 > **Concurrency model.** Recomputes for one owner are serialized by a
 > transaction-scoped advisory lock acquired as the rollup's first statement —

@@ -44,7 +44,7 @@ class TestComputeAppScoreResult:
             page_ids=[1, 2, 3],
             violations_by_page={},
         )
-        assert result.score == approx(1.0)
+        assert result.aggregates.score == approx(1.0)
         assert result.page_healths == {1: PageHealth.GOOD, 2: PageHealth.GOOD, 3: PageHealth.GOOD}
 
     def test_all_critical_pages_score_0(self) -> None:
@@ -52,7 +52,7 @@ class TestComputeAppScoreResult:
             page_ids=[1, 2],
             violations_by_page={1: [Impact.CRITICAL], 2: [Impact.CRITICAL]},
         )
-        assert result.score == approx(0.0)
+        assert result.aggregates.score == approx(0.0)
 
     def test_mixed_pages_weighted_average(self) -> None:
         result = compute_app_score_result(
@@ -63,13 +63,13 @@ class TestComputeAppScoreResult:
                 3: [Impact.MODERATE],
             },
         )
-        assert result.score == approx(0.55)
+        assert result.aggregates.score == approx(0.55)
         assert result.page_healths[4] == PageHealth.GOOD
 
     def test_zero_pages_returns_zero_score(self) -> None:
         result = compute_app_score_result(page_ids=[], violations_by_page={})
-        assert result.score == approx(0.0)
-        assert result.total_pages == 0
+        assert result.aggregates.score == approx(0.0)
+        assert result.aggregates.total_pages == 0
 
     def test_metric_accumulation(self) -> None:
         result = compute_app_score_result(
@@ -79,10 +79,10 @@ class TestComputeAppScoreResult:
                 3: [Impact.SERIOUS],
             },
         )
-        assert result.total_violations == 3
-        assert result.total_pages == 3
-        assert result.pages_with_violations == 2
-        assert result.pages_with_critical_violations == 1
+        assert result.aggregates.total_violations == 3
+        assert result.aggregates.total_pages == 3
+        assert result.aggregates.pages_with_violations == 2
+        assert result.aggregates.pages_with_critical_violations == 1
         assert result.page_healths[1] == PageHealth.CRITICAL
         assert result.page_healths[2] == PageHealth.GOOD
         assert result.page_healths[3] == PageHealth.SERIOUS

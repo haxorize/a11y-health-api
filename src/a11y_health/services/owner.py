@@ -6,12 +6,15 @@ table is also the sanctioned test seam (ADR 0037): the rollup-race harness
 swaps the whole table for a test's duration, and consumers resolve it at call
 time.
 
-App-score computation stays outside the charter, in `score_snapshot.py`.
-See `docs/architecture.md` ("The scoring & rollup model").
+App-score computation stays outside the charter, in `score_snapshot.py`; it
+produces the `ScoreAggregates` value defined here, which is snapshot
+vocabulary the dispatcher owns, not per-owner variation (ADR 0037, #136
+amendment). See `docs/architecture.md` ("The scoring & rollup model").
 """
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
+from math import fsum
 from types import MappingProxyType
 from typing import NamedTuple, assert_never
 
@@ -226,16 +229,56 @@ async def list_scores(
     )
 
 
+# Score Aggregates (DOMAIN.md): the Score and raw counts a Score Snapshot
+# summarizes, and the equality basis for the same-observation dedupe — every
+# aggregate the snapshot carries and nothing else (observation time is time,
+# not an aggregate). The field list here is the one definition: `owned` writes
+# it and `from_snapshot` reads it, both by name. A column-set canary test pins
+# the model so adding a column forces a decision on whether it joins this
+# value. Deriving the set from the mapper was tried and reverted (6b721f1): the
+# deny-list it needs drifts silently, and the canary carries the drift-proofing
+# instead.
+#
+# The wire echoes these fields as `schemas.score_snapshot.ScoreAggregatesRead`,
+# and a test pins the two together; the field order here follows the model
+# column order and the wire, so a positional construction carrying either
+# order is right.
+class ScoreAggregates(NamedTuple):
+    score: float
+    total_violations: int
+    pages_with_violations: int
+    pages_with_critical_violations: int
+    total_pages: int
+
+    @classmethod
+    def from_snapshot(cls, snapshot: ScoreSnapshot) -> ScoreAggregates:
+        return cls._make(getattr(snapshot, field) for field in cls._fields)
+
+    # Mean of the children's Scores, sums of their counts (DOMAIN.md, Rollup).
+    # `fsum` is exactly rounded, so the mean is the same in whatever order the
+    # latest-child query returned the children — a recompute is
+    # bitwise-reproducible, which the no-change skip in `_apply_rollup` relies
+    # on when it compares the result for equality.
+    @classmethod
+    def rolled_up(cls, children: Iterable[ScoreAggregates]) -> ScoreAggregates:
+        items = list(children)
+        if not items:
+            raise ValueError("a rollup needs at least one child")
+        return cls(
+            score=fsum(c.score for c in items) / len(items),
+            total_violations=sum(c.total_violations for c in items),
+            total_pages=sum(c.total_pages for c in items),
+            pages_with_violations=sum(c.pages_with_violations for c in items),
+            pages_with_critical_violations=sum(c.pages_with_critical_violations for c in items),
+        )
+
+
 def owned(
     owner_type: ScoreSnapshotOwnerType,
     owner_id: int,
+    aggregates: ScoreAggregates,
     *,
     scan_run_id: int | None = None,
-    score: float,
-    total_violations: int,
-    total_pages: int,
-    pages_with_violations: int,
-    pages_with_critical_violations: int,
     snapshot_at: datetime,
 ) -> ScoreSnapshot:
     """Exactly-one-owner is structural — the spec picks the column, and the
@@ -246,12 +289,8 @@ def owned(
         raise ValueError("scan_run_id requires an APP owner")
     return ScoreSnapshot(
         scan_run_id=scan_run_id,
-        score=score,
-        total_violations=total_violations,
-        total_pages=total_pages,
-        pages_with_violations=pages_with_violations,
-        pages_with_critical_violations=pages_with_critical_violations,
         snapshot_at=snapshot_at,
+        **aggregates._asdict(),
         **{OWNERS[owner_type].id_column.key: owner_id},
     )
 
@@ -268,21 +307,6 @@ def _require_rollup_spec(owner_type: ScoreSnapshotOwnerType) -> tuple[OwnerSpec,
 
 def _concurrent_rollup_error(owner_type: ScoreSnapshotOwnerType, owner_id: int) -> ConcurrentRollupError:
     return ConcurrentRollupError(existence.ENTITY_LABELS[OWNERS[owner_type].entity], owner_id)
-
-
-# Equality basis for the same-observation dedupe: every aggregate the snapshot
-# carries. A column-set canary test pins the model so adding a column forces a
-# decision on whether it joins this tuple. Deriving this from the mapper was
-# tried and reverted (6b721f1): the deny-list it needs drifts silently, and the
-# canary carries the drift-proofing instead.
-def _aggregate_values(snapshot: ScoreSnapshot) -> tuple[float, int, int, int, int]:
-    return (
-        snapshot.score,
-        snapshot.total_violations,
-        snapshot.total_pages,
-        snapshot.pages_with_violations,
-        snapshot.pages_with_critical_violations,
-    )
 
 
 # The #98 indexes allow at most one match; the id-desc pick mirrors the Latest
@@ -313,33 +337,19 @@ async def _apply_rollup(
     if not children:
         await session.execute(delete(ScoreSnapshot).where(criterion))
         return
-    # score is the unweighted arithmetic mean of children's scores per
-    # DOMAIN.md. Snapshots forward of the new max are orphaned — the data
-    # behind them is gone — so prune.
+    # Snapshots forward of the new max are orphaned — the data behind them is
+    # gone — so prune.
     snapshot_at = max(c.snapshot_at for c in children)
     await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at > snapshot_at))
-    # Float summation is order-sensitive and the latest-child query has no
-    # ORDER BY; sort so recomputes are bitwise-reproducible and the no-change
-    # skip below holds.
-    children = sorted(children, key=lambda c: c.id)
-    count = len(children)
-    snapshot = owned(
-        spec.owner_type,
-        owner_id,
-        score=sum(c.score for c in children) / count,
-        total_violations=sum(c.total_violations for c in children),
-        total_pages=sum(c.total_pages for c in children),
-        pages_with_violations=sum(c.pages_with_violations for c in children),
-        pages_with_critical_violations=sum(c.pages_with_critical_violations for c in children),
-        snapshot_at=snapshot_at,
-    )
+    aggregates = ScoreAggregates.rolled_up(ScoreAggregates.from_snapshot(c) for c in children)
+    snapshot = owned(spec.owner_type, owner_id, aggregates, snapshot_at=snapshot_at)
     # One snapshot per distinct observation, not one per trigger (#95, ADR
     # 0015). A newer observation time always appends — even with unchanged
     # values — so the latest snapshot never claims an observation whose source
     # data is gone.
     existing = await _snapshot_recorded_at_observation(session, criterion, snapshot_at)
     if existing is not None:
-        if _aggregate_values(existing) == _aggregate_values(snapshot):
+        if ScoreAggregates.from_snapshot(existing) == aggregates:
             return
         await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at == snapshot_at))
     # The unique indexes (#98) only decide races: a concurrent rollup landing

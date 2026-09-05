@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict
 __all__ = ["ScoreAggregatesRead", "ScoreSnapshotRead"]
 
 
+# The wire form of Score Aggregates (DOMAIN.md): the same fields as
+# `services.owner.ScoreAggregates`, which a test pins — a field joining one
+# and not the other ships a snapshot the client cannot read back.
 class ScoreAggregatesRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

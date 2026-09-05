@@ -144,7 +144,7 @@ async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
     ...
 ```
 
-Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored app. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one. `SCORE_SNAPSHOT_DEFAULTS` is the one home of the snapshot metric defaults: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off it, and a test that has to build a raw `ScoreSnapshot` row `owned()` cannot express spreads its `_asdict()` in rather than restating the values.
+Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored app. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one. `DEFAULT_SCORE_AGGREGATES` and `DEFAULT_SNAPSHOT_AT` are the one home of the snapshot defaults — the Score Aggregates and the observation time: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off them, and a test that has to build a raw `ScoreSnapshot` row `owned()` cannot express spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in beside `snapshot_at=DEFAULT_SNAPSHOT_AT` rather than restating the values.
 
 For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`:
 ```python
@@ -182,6 +182,8 @@ Use `pytest.approx` for float assertions (scores, percentages):
 from pytest import approx
 assert score == approx(0.85)
 ```
+
+The one exception is a test whose property *is* bitwise reproducibility — the rollup recompute landing on the stored value so the no-change skip holds. There, exact `==` is the assertion, and `approx` would make it vacuous.
 
 ## Markers
 

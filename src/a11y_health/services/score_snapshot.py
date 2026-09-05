@@ -21,6 +21,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import owner, scoring_vocabulary
+from a11y_health.services.owner import ScoreAggregates
 
 
 def safe_ratio(numerator: float, denominator: int) -> float:
@@ -30,11 +31,7 @@ def safe_ratio(numerator: float, denominator: int) -> float:
 @dataclass(frozen=True)
 class AppScoreResult:
     page_healths: dict[int, PageHealth]
-    score: float
-    total_violations: int
-    total_pages: int
-    pages_with_violations: int
-    pages_with_critical_violations: int
+    aggregates: ScoreAggregates
 
 
 def compute_page_health(impacts: list[Impact]) -> PageHealth:
@@ -69,11 +66,13 @@ def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, 
 
     return AppScoreResult(
         page_healths=page_healths,
-        score=safe_ratio(weighted_sum, total_pages),
-        total_violations=total_violations,
-        total_pages=total_pages,
-        pages_with_violations=pages_with_violations,
-        pages_with_critical_violations=pages_with_critical_violations,
+        aggregates=ScoreAggregates(
+            score=safe_ratio(weighted_sum, total_pages),
+            total_violations=total_violations,
+            total_pages=total_pages,
+            pages_with_violations=pages_with_violations,
+            pages_with_critical_violations=pages_with_critical_violations,
+        ),
     )
 
 
@@ -101,12 +100,8 @@ async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSn
     snapshot = owner.owned(
         ScoreSnapshotOwnerType.APP,
         scan_run.app_id,
+        score_result.aggregates,
         scan_run_id=scan_run.id,
-        score=score_result.score,
-        total_violations=score_result.total_violations,
-        total_pages=score_result.total_pages,
-        pages_with_violations=score_result.pages_with_violations,
-        pages_with_critical_violations=score_result.pages_with_critical_violations,
         snapshot_at=scan_run.scanned_at,
     )
     session.add(snapshot)

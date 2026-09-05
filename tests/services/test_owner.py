@@ -14,10 +14,11 @@ from a11y_health.models.score_snapshot import (
     UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
     ScoreSnapshot,
 )
+from a11y_health.schemas.score_snapshot import ScoreAggregatesRead
 from a11y_health.services import owner as owner_service
 from tests.factories import (
+    DEFAULT_SCORE_AGGREGATES,
     DEFAULT_SNAPSHOT_AT,
-    SCORE_SNAPSHOT_DEFAULTS,
     brand_snapshots,
     build_score_snapshot,
     ingest_and_score,
@@ -35,25 +36,90 @@ from tests.factories import (
 )
 
 
+def _aggregates(score: float, violations: int = 0, with_violations: int = 0, critical: int = 0, pages: int = 1):
+    return owner_service.ScoreAggregates(
+        score=score,
+        total_violations=violations,
+        pages_with_violations=with_violations,
+        pages_with_critical_violations=critical,
+        total_pages=pages,
+    )
+
+
+class TestScoreAggregates:
+    def test_rolled_up_averages_scores_and_sums_counts(self) -> None:
+        children = [
+            _aggregates(0.5, violations=3, with_violations=2, critical=1, pages=4),
+            _aggregates(1.0, pages=6),
+        ]
+
+        assert owner_service.ScoreAggregates.rolled_up(children) == _aggregates(
+            0.75, violations=3, with_violations=2, critical=1, pages=10
+        )
+
+    def test_rolled_up_is_bitwise_identical_for_any_child_order(self) -> None:
+        # 0.1 + 0.2 + 0.3 accumulated left to right lands one ulp off the
+        # reverse order; the rollup must not depend on the order the children
+        # query happened to return. This catches a naive running total only:
+        # CPython's builtin `sum` has been compensated since 3.12 and agrees
+        # with `fsum` on every score set tried, so swapping one for the other
+        # stays green here. `fsum` is the choice because it is exactly rounded
+        # — order-independent by construction, not by observation.
+        children = [_aggregates(s) for s in (0.1, 0.2, 0.3)]
+
+        forward = owner_service.ScoreAggregates.rolled_up(children)
+        reverse = owner_service.ScoreAggregates.rolled_up(reversed(children))
+
+        # Float equality is bitwise for finite values, so this is the same
+        # check the no-change skip makes.
+        assert forward == reverse
+
+    def test_rolled_up_refuses_no_children(self) -> None:
+        # The rollup writer deletes an owner's snapshots when it has no
+        # children and never reaches the arithmetic; a second caller must not
+        # meet a bare ZeroDivisionError from the mean.
+        with pytest.raises(ValueError, match="at least one child"):
+            owner_service.ScoreAggregates.rolled_up([])
+
+    def test_from_snapshot_carries_exactly_the_snapshot_aggregates(self) -> None:
+        snapshot = ScoreSnapshot(
+            org_unit_id=1,
+            score=0.25,
+            total_violations=7,
+            total_pages=8,
+            pages_with_violations=3,
+            pages_with_critical_violations=2,
+            snapshot_at=DEFAULT_SNAPSHOT_AT,
+        )
+
+        assert owner_service.ScoreAggregates.from_snapshot(snapshot) == _aggregates(
+            0.25, violations=7, with_violations=3, critical=2, pages=8
+        )
+
+
 class TestOwnedConstruction:
     def test_app_snapshot_links_its_scan_run(self) -> None:
         snapshot = owner_service.owned(
-            ScoreSnapshotOwnerType.APP, 7, scan_run_id=9, **SCORE_SNAPSHOT_DEFAULTS._asdict()
+            ScoreSnapshotOwnerType.APP,
+            7,
+            DEFAULT_SCORE_AGGREGATES,
+            scan_run_id=9,
+            snapshot_at=DEFAULT_SNAPSHOT_AT,
         )
 
         assert snapshot.app_id == 7
         assert snapshot.scan_run_id == 9
         assert snapshot.org_unit_id is None
         assert snapshot.brand_id is None
-        assert snapshot.score == approx(SCORE_SNAPSHOT_DEFAULTS.score)
-        assert snapshot.snapshot_at == SCORE_SNAPSHOT_DEFAULTS.snapshot_at
+        assert snapshot.score == approx(DEFAULT_SCORE_AGGREGATES.score)
+        assert snapshot.snapshot_at == DEFAULT_SNAPSHOT_AT
 
     @pytest.mark.parametrize(
         ("owner_type", "column"),
         [(ScoreSnapshotOwnerType.ORG_UNIT, "org_unit_id"), (ScoreSnapshotOwnerType.BRAND, "brand_id")],
     )
     def test_rollup_owner_snapshot_sets_only_its_column(self, owner_type: ScoreSnapshotOwnerType, column: str) -> None:
-        snapshot = owner_service.owned(owner_type, 7, **SCORE_SNAPSHOT_DEFAULTS._asdict())
+        snapshot = owner_service.owned(owner_type, 7, DEFAULT_SCORE_AGGREGATES, snapshot_at=DEFAULT_SNAPSHOT_AT)
 
         assert getattr(snapshot, column) == 7
         others = {"app_id", "org_unit_id", "brand_id"} - {column}
@@ -62,7 +128,13 @@ class TestOwnedConstruction:
 
     def test_scan_run_link_stays_guarded_to_app_owners(self) -> None:
         with pytest.raises(ValueError, match="scan_run_id"):
-            owner_service.owned(ScoreSnapshotOwnerType.ORG_UNIT, 7, scan_run_id=9, **SCORE_SNAPSHOT_DEFAULTS._asdict())
+            owner_service.owned(
+                ScoreSnapshotOwnerType.ORG_UNIT,
+                7,
+                DEFAULT_SCORE_AGGREGATES,
+                scan_run_id=9,
+                snapshot_at=DEFAULT_SNAPSHOT_AT,
+            )
 
 
 async def test_rollup_refuses_an_app_owner(db_session: AsyncSession) -> None:
@@ -593,10 +665,24 @@ async def test_brand_scope_requires_the_brand_to_exist(db_session: AsyncSession)
         await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)
 
 
+def test_score_aggregates_are_the_wire_aggregates() -> None:
+    # Every field the wire serves is backed by the value, with the same type,
+    # or a client cannot read back what a snapshot stores. One direction only:
+    # an aggregate the wire does not serve is allowed, and adding it is not a
+    # contract change.
+    wire = {name: field.annotation for name, field in ScoreAggregatesRead.model_fields.items()}
+    value = owner_service.ScoreAggregates.__annotations__
+    assert wire.items() <= value.items()
+
+
 def test_score_snapshot_column_set_is_pinned() -> None:
-    # Canary: a new column must decide whether it joins the same-observation
-    # equality basis in _aggregate_values — update the tuple there, then here.
-    assert {attr.key for attr in ScoreSnapshot.__mapper__.column_attrs} == {
+    # Canary: a new column must decide whether it joins ScoreAggregates, the
+    # same-observation equality basis — update the value there, then here.
+    # The value reads and writes its fields by name, so every field must be a
+    # column or `owned()` and `from_snapshot` fail at runtime.
+    columns = {attr.key for attr in ScoreSnapshot.__mapper__.column_attrs}
+    assert set(owner_service.ScoreAggregates._fields) <= columns
+    assert columns == {
         "id",
         "app_id",
         "scan_run_id",
@@ -800,6 +886,38 @@ class TestRollupNoChangeRecompute:
         snapshots = await ou_snapshots(db_session, org_unit.id)
         assert len(snapshots) == 1
         assert snapshots[0].score == approx(0.4)
+
+    async def test_unchanged_multi_child_recompute_keeps_the_same_row(self, db_session: AsyncSession) -> None:
+        # The single-child cases above never exercise a mean over several
+        # children landing bitwise on the stored value; a recompute that
+        # missed would fall to delete + insert and hand the owner a new
+        # snapshot id every trigger. Child order itself cannot be varied from
+        # here (the children query returns a stable order), so the
+        # order-independence half is `TestScoreAggregates`' at the value.
+        scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        org_unit = await make_org_unit(db_session, name="Org")
+        app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
+        app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
+        await _score_new_scan_run(
+            db_session,
+            app_a.id,
+            [make_axe_payload(violations=[make_violation("r1", "serious")])],
+            scanned_at=scanned_at,
+        )
+        await _score_new_scan_run(
+            db_session,
+            app_b.id,
+            [make_axe_payload(url="https://example.com/b", violations=[make_violation("r2", "moderate")])],
+            scanned_at=scanned_at,
+        )
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+        first = await latest_ou_snapshot(db_session, org_unit.id)
+
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+        snapshots = await ou_snapshots(db_session, org_unit.id)
+        assert len(snapshots) == 1
+        assert snapshots[0].id == first.id
 
     async def test_changed_aggregate_at_same_observation_time_replaces(self, db_session: AsyncSession) -> None:
         scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
@@ -1018,14 +1136,21 @@ class TestRollupSnapshotUniqueness:
         # the backstop; owned() can't even express this row, so build it raw.
         org_unit = await make_org_unit(db_session)
         brand = await make_brand(db_session)
-        db_session.add(ScoreSnapshot(org_unit_id=org_unit.id, brand_id=brand.id, **SCORE_SNAPSHOT_DEFAULTS._asdict()))
+        db_session.add(
+            ScoreSnapshot(
+                org_unit_id=org_unit.id,
+                brand_id=brand.id,
+                snapshot_at=DEFAULT_SNAPSHOT_AT,
+                **DEFAULT_SCORE_AGGREGATES._asdict(),
+            )
+        )
         with pytest.raises(IntegrityError, match=CK_SCORE_SNAPSHOT_OWNER):
             await db_session.flush()
 
     async def test_schema_rejects_snapshot_with_no_owner(self, db_session: AsyncSession) -> None:
         # owned() can't express an ownerless row either — build it raw so the
         # constraint's zero-owner arm stays pinned alongside the two-owner arm.
-        db_session.add(ScoreSnapshot(**SCORE_SNAPSHOT_DEFAULTS._asdict()))
+        db_session.add(ScoreSnapshot(snapshot_at=DEFAULT_SNAPSHOT_AT, **DEFAULT_SCORE_AGGREGATES._asdict()))
         with pytest.raises(IntegrityError, match=CK_SCORE_SNAPSHOT_OWNER):
             await db_session.flush()
 

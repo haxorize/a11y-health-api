@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, NamedTuple
+from typing import Any
 
 from httpx import Response
 from sqlalchemy import select, text
@@ -22,7 +22,7 @@ from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import owner as owner_service
-from a11y_health.services.owner import ChildrenRead, owned
+from a11y_health.services.owner import ChildrenRead, ScoreAggregates, owned
 from a11y_health.services.page_result import create_page_result
 from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.score_snapshot import compute_app_score
@@ -117,19 +117,18 @@ async def make_scan_run_with_parents(
     return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)
 
 
-class _ScoreSnapshotDefaults(NamedTuple):
-    score: float = 0.8
-    total_violations: int = 5
-    total_pages: int = 10
-    pages_with_violations: int = 2
-    pages_with_critical_violations: int = 1
-    snapshot_at: datetime = DEFAULT_SNAPSHOT_AT
-
-
-# The one home of the snapshot metric defaults: both snapshot factories read
-# their keyword defaults off it, and a test that has to build a raw
-# `ScoreSnapshot` row (one `owned()` cannot express) spreads `_asdict()` in.
-SCORE_SNAPSHOT_DEFAULTS = _ScoreSnapshotDefaults()
+# The one home of the snapshot aggregate defaults, beside DEFAULT_SNAPSHOT_AT
+# for observation time: both snapshot factories read their keyword defaults
+# off it, and a test that has to build a raw `ScoreSnapshot` row (one
+# `owned()` cannot express) spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in
+# beside `snapshot_at=DEFAULT_SNAPSHOT_AT`.
+DEFAULT_SCORE_AGGREGATES = ScoreAggregates(
+    score=0.8,
+    total_violations=5,
+    pages_with_violations=2,
+    pages_with_critical_violations=1,
+    total_pages=10,
+)
 
 
 def build_score_snapshot(
@@ -137,26 +136,23 @@ def build_score_snapshot(
     owner_type: ScoreSnapshotOwnerType,
     owner_id: int,
     scan_run_id: int | None = None,
-    score: float = SCORE_SNAPSHOT_DEFAULTS.score,
-    total_violations: int = SCORE_SNAPSHOT_DEFAULTS.total_violations,
-    total_pages: int = SCORE_SNAPSHOT_DEFAULTS.total_pages,
-    pages_with_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_violations,
-    pages_with_critical_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_critical_violations,
-    snapshot_at: datetime = SCORE_SNAPSHOT_DEFAULTS.snapshot_at,
+    score: float = DEFAULT_SCORE_AGGREGATES.score,
+    total_violations: int = DEFAULT_SCORE_AGGREGATES.total_violations,
+    total_pages: int = DEFAULT_SCORE_AGGREGATES.total_pages,
+    pages_with_violations: int = DEFAULT_SCORE_AGGREGATES.pages_with_violations,
+    pages_with_critical_violations: int = DEFAULT_SCORE_AGGREGATES.pages_with_critical_violations,
+    snapshot_at: datetime = DEFAULT_SNAPSHOT_AT,
 ) -> ScoreSnapshot:
     # Nothing is persisted: a test that needs a snapshot the database never
     # sees calls this, and make_score_snapshot delegates through it.
-    return owned(
-        owner_type,
-        owner_id,
-        scan_run_id=scan_run_id,
+    aggregates = ScoreAggregates(
         score=score,
         total_violations=total_violations,
         total_pages=total_pages,
         pages_with_violations=pages_with_violations,
         pages_with_critical_violations=pages_with_critical_violations,
-        snapshot_at=snapshot_at,
     )
+    return owned(owner_type, owner_id, aggregates, scan_run_id=scan_run_id, snapshot_at=snapshot_at)
 
 
 async def make_score_snapshot(
@@ -166,12 +162,12 @@ async def make_score_snapshot(
     org_unit_id: int | None = None,
     brand_id: int | None = None,
     scan_run_id: int | None = None,
-    score: float = SCORE_SNAPSHOT_DEFAULTS.score,
-    total_violations: int = SCORE_SNAPSHOT_DEFAULTS.total_violations,
-    total_pages: int = SCORE_SNAPSHOT_DEFAULTS.total_pages,
-    pages_with_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_violations,
-    pages_with_critical_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_critical_violations,
-    snapshot_at: datetime = SCORE_SNAPSHOT_DEFAULTS.snapshot_at,
+    score: float = DEFAULT_SCORE_AGGREGATES.score,
+    total_violations: int = DEFAULT_SCORE_AGGREGATES.total_violations,
+    total_pages: int = DEFAULT_SCORE_AGGREGATES.total_pages,
+    pages_with_violations: int = DEFAULT_SCORE_AGGREGATES.pages_with_violations,
+    pages_with_critical_violations: int = DEFAULT_SCORE_AGGREGATES.pages_with_critical_violations,
+    snapshot_at: datetime = DEFAULT_SNAPSHOT_AT,
 ) -> ScoreSnapshot:
     owners = [
         (t, v)

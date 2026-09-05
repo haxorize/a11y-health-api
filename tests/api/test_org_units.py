@@ -40,8 +40,6 @@ async def test_list_org_units(db_client: AsyncClient, db_session: AsyncSession) 
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
-    names = {ou["name"] for ou in data}
-    assert names == {"Humana", "CenterWell"}
 
 
 async def test_list_org_units_filtered_by_parent(db_client: AsyncClient, db_session: AsyncSession) -> None:

@@ -61,6 +61,7 @@ async def test_list_org_units(db_session: AsyncSession) -> None:
     await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     result = await org_unit_service.list_org_units(db_session)
     assert len(result) == 2
+    assert {ou.name for ou in result} == {"Humana", "CenterWell"}
 
 
 async def test_get_org_unit(db_session: AsyncSession) -> None:

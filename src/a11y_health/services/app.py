@@ -10,7 +10,7 @@ from a11y_health.models.brand import Brand
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import scoring_orchestration
-from a11y_health.services._org_subtree import get_descendant_ids
+from a11y_health.services._org_subtree import select_descendant_ids
 
 
 async def list_apps(
@@ -27,7 +27,7 @@ async def list_apps(
         stmt = stmt.where(App.brand_id.in_(brand_id))
     if org_unit_id:
         # The /scores/latest opt-in (ADR 0035); no filter, nothing to refine.
-        unit_ids = org_unit_id if direct_only else await get_descendant_ids(session, org_unit_id)
+        unit_ids = org_unit_id if direct_only else select_descendant_ids(org_unit_id)
         stmt = stmt.where(App.org_unit_id.in_(unit_ids))
     return await paginate(session, stmt, keyset=[App.id], cursor=cursor, limit=limit)
 

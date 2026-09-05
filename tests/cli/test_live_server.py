@@ -28,7 +28,7 @@ pytestmark = pytest.mark.integration
 
 async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
     committed_session_factory: SessionFactory,
-    http_client: AsyncClient,
+    socket_client: AsyncClient,
     forwarded: list[Forwarded],
     tmp_path: Path,
 ) -> None:
@@ -39,7 +39,7 @@ async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
     for i in range(3):
         write_scan_file(tmp_path, f"page{i}.json", name="foo.com", url=f"https://example.com/page{i}")
 
-    result = await ingest(http_client, directory=tmp_path)
+    result = await ingest(socket_client, directory=tmp_path)
     on_the_wire = list(forwarded)
 
     assert result.app_id == test_app.id
@@ -49,18 +49,18 @@ async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
     # would arrive from a fresh ephemeral port each time.
     uploads = [f for f in on_the_wire if f.method == "POST" and f.path.endswith("/pages")]
     assert len(uploads) == 3
-    assert len({f.client for f in on_the_wire}) == 1
+    assert len({f.peer for f in on_the_wire}) == 1
 
     # What the CLI relies on crossing the socket unaltered (#137): the server
     # parses a page only when the body is declared JSON, and the CLI decodes
-    # every body it reads as JSON, so nothing between them may narrow Accept
-    # past JSON or hand back another type.
+    # every body it reads as JSON, so the shipped client (`make_client`) may
+    # not narrow Accept past JSON, and nothing may hand back another type.
     for upload in uploads:
-        assert upload.request_headers[b"content-type"] == b"application/json"
-        assert upload.request_headers[b"accept"] in (b"*/*", b"application/json")
-    assert {f.response_headers[b"content-type"] for f in on_the_wire} == {b"application/json"}
+        assert upload.request_headers["content-type"] == "application/json"
+        assert upload.request_headers["accept"] in ("*/*", "application/json")
+    assert {f.response_headers["content-type"] for f in on_the_wire} == {"application/json"}
 
-    resp = await http_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
+    resp = await socket_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
     assert resp.status_code == 200
     assert resp.json()["status"] == ScanRunStatus.COMPLETED.value
     # Only the socket server sets this; ASGITransport never does, so a client
@@ -69,7 +69,10 @@ async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
 
 
 async def test_import_over_a_real_socket_creates_the_app_and_one_scan_run_per_date(
-    committed_session_factory: SessionFactory, http_client: AsyncClient, tmp_path: Path
+    committed_session_factory: SessionFactory,
+    socket_client: AsyncClient,
+    forwarded: list[Forwarded],
+    tmp_path: Path,
 ) -> None:
     async with committed_session_factory() as db:
         org_unit = await make_org_unit(db)
@@ -79,21 +82,28 @@ async def test_import_over_a_real_socket_creates_the_app_and_one_scan_run_per_da
     for date in ["2026-03-30", "2026-04-01"]:
         write_scan_dir(tmp_path, date, name="foo.com")
 
-    result = await import_app(http_client, directory=tmp_path, org_unit_id=org_unit.id, brand_id=brand.id)
+    result = await import_app(socket_client, directory=tmp_path, org_unit_id=org_unit.id, brand_id=brand.id)
+    on_the_wire = list(forwarded)
 
     assert result.app_created is True
     assert len(result.ingest_results) == 2
-    resp = await http_client.get(f"/api/v1/apps/{result.app_id}")
+    # An import is several ingests on one connection (#137): the socket-only
+    # claim here is reuse *across* them, not within one.
+    uploads = [f for f in on_the_wire if f.method == "POST" and f.path.endswith("/pages")]
+    assert len(uploads) == 2
+    assert len({f.peer for f in on_the_wire}) == 1
+    resp = await socket_client.get(f"/api/v1/apps/{result.app_id}")
     assert resp.status_code == 200
     assert resp.json()["slug"] == "foo-com"
+    assert resp.headers["server"] == "uvicorn"
     for ingest_result in result.ingest_results:
-        resp = await http_client.get(f"/api/v1/scan-runs/{ingest_result.scan_run_id}")
+        resp = await socket_client.get(f"/api/v1/scan-runs/{ingest_result.scan_run_id}")
         assert resp.json()["status"] == ScanRunStatus.COMPLETED.value
 
 
 async def test_read_timeout_on_a_real_socket_is_the_cli_timeout_error(socket_client: AsyncClient) -> None:
     # Connect succeeds; the proxy holds the response past the read timeout.
-    socket_client.headers[PROXY_HEADER.decode()] = PROXY_STALL
+    socket_client.headers[PROXY_HEADER] = PROXY_STALL
     socket_client.timeout = httpx.Timeout(5.0, read=0.05)
 
     with pytest.raises(ApiTimeoutError) as exc_info:
@@ -106,7 +116,7 @@ async def test_read_timeout_on_a_real_socket_is_the_cli_timeout_error(socket_cli
 async def test_redirect_on_a_real_socket_is_the_cli_coded_error_not_a_followed_request(
     socket_client: AsyncClient,
 ) -> None:
-    socket_client.headers[PROXY_HEADER.decode()] = PROXY_REDIRECT
+    socket_client.headers[PROXY_HEADER] = PROXY_REDIRECT
 
     with pytest.raises(ApiError) as exc_info:
         await list_brands(socket_client)

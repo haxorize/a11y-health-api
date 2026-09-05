@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -8,9 +9,9 @@ import pytest
 import uvicorn
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from a11y_health.cli._client import make_client
 from a11y_health.core import database
-from tests.conftest import honest_app
-from tests.factories import SessionFactory
+from tests.conftest import declaration_honest_app
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ async def no_server() -> AsyncIterator[httpx.AsyncClient]:
 # it is handed. `stall` holds the response until the client gives up, so the
 # stall lasts exactly as long as the client's patience and never delays
 # shutdown; `redirect` bounces to a real route.
-PROXY_HEADER = b"x-test-proxy"
+PROXY_HEADER = "x-test-proxy"
 PROXY_STALL = "stall"
 PROXY_REDIRECT = "redirect"
 
@@ -44,15 +45,16 @@ PROXY_REDIRECT = "redirect"
 class Forwarded:
     """One request the proxy handed to the app, as the wire saw it: the TCP
     peer it arrived on, the headers the client put on the socket, and the
-    headers the app's response left with. Two peers with the same address are
-    the same connection — a client that reconnects per request shows a fresh
-    ephemeral port each time."""
+    headers the app's response left with. A reuse assertion over `peer` rests
+    on an assumption, not a guarantee: the kernel hands each new connection a
+    fresh ephemeral port and holds a closed one in TIME_WAIT, so within one
+    test a repeated peer is the same connection."""
 
-    client: tuple[str, int]
+    peer: tuple[str, int]
     method: str
     path: str
-    request_headers: dict[bytes, bytes]
-    response_headers: dict[bytes, bytes] = field(default_factory=dict)
+    request_headers: httpx.Headers
+    response_headers: httpx.Headers = field(default_factory=httpx.Headers)
 
 
 class _FakeProxy:
@@ -61,86 +63,87 @@ class _FakeProxy:
         self.forwarded: list[Forwarded] = []
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        behavior = dict(scope["headers"]).get(PROXY_HEADER) if scope["type"] == "http" else None
-        if behavior == PROXY_STALL.encode():
+        if scope["type"] != "http":
+            await self.inner(scope, receive, send)
+            return
+        request_headers = httpx.Headers(scope["headers"])
+        behavior = request_headers.get(PROXY_HEADER)
+        if behavior == PROXY_STALL:
             while (await receive())["type"] != "http.disconnect":
                 pass
-        elif behavior == PROXY_REDIRECT.encode():
+        elif behavior == PROXY_REDIRECT:
             await send({"type": "http.response.start", "status": 307, "headers": [(b"location", b"/api/v1/brands")]})
             await send({"type": "http.response.body", "body": b""})
         else:
-            record = Forwarded(tuple(scope["client"]), scope["method"], scope["path"], dict(scope["headers"]))
+            record = Forwarded(tuple(scope["client"]), scope["method"], scope["path"], request_headers)
             self.forwarded.append(record)
 
             async def send_recording(message: Any) -> None:
                 if message["type"] == "http.response.start":
-                    record.response_headers = dict(message["headers"])
+                    record.response_headers = httpx.Headers(message["headers"])
                 await send(message)
 
             await self.inner(scope, receive, send_recording)
 
 
 @pytest.fixture(scope="session")
-def fake_proxy() -> _FakeProxy:
-    return _FakeProxy(honest_app)
+def _fake_proxy() -> _FakeProxy:
+    return _FakeProxy(declaration_honest_app)
 
 
 @pytest.fixture(scope="session")
-async def live_server(fake_proxy: _FakeProxy) -> AsyncIterator[str]:
+async def live_server(_fake_proxy: _FakeProxy, engine: AsyncEngine) -> AsyncIterator[str]:
     """The real app on a real port, as the base URL a client with no transport
-    override reaches it at.
+    override reaches it at, with its requests on real-commit sessions from
+    the test engine.
 
     uvicorn runs as a task on the suite's session loop rather than in a thread
-    or a subprocess, so the served app shares the test process's patched
-    sessionmaker and the Declaration Honesty request scope (ADR 0033). Over a
-    socket an undeclared mode surfaces as the server's 500 rather than as the
-    shim's assertion text. Lifespan is off, as it is under `ASGITransport`: the
-    app's lifespan pings the dev `DATABASE_URL`, and the suite requires only
-    the test database.
+    or a subprocess, so the served app shares the Declaration Honesty request
+    scope (ADR 0033). The production `get_db` is bound to the test engine for
+    the server's lifetime — the binding `test_rollup_deadlock.py` makes per
+    test — because a server's requests cannot join a test's rolled-back
+    transaction, and unbound they would reach the dev `DATABASE_URL`; a test
+    that writes through the server takes `committed_session_factory` for the
+    truncate at teardown (ADR 0011). Over a socket an undeclared mode does not
+    surface as the shim's assertion text: the status line is on the wire
+    before the shim asserts on the body, so the client sees a torn connection
+    instead. Lifespan is off, as it is under `ASGITransport`: the app's
+    lifespan pings the dev `DATABASE_URL`, and the suite requires only the
+    test database.
     """
-    config = uvicorn.Config(fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
+    config = uvicorn.Config(_fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
     server = uvicorn.Server(config)
-    serving = asyncio.create_task(server.serve())
-    async with asyncio.timeout(5):
-        while not server.started:
-            if serving.done():
-                serving.result()
-            await asyncio.sleep(0.01)
-    port = server.servers[0].sockets[0].getsockname()[1]
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        await serving
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(database, "async_session", async_sessionmaker(engine, expire_on_commit=False))
+        serving = asyncio.create_task(server.serve())
+        try:
+            async with asyncio.timeout(5):
+                while not server.started:
+                    if serving.done():
+                        serving.result()
+                    await asyncio.sleep(0.01)
+            port = server.servers[0].sockets[0].getsockname()[1]
+            yield f"http://127.0.0.1:{port}"
+        finally:
+            server.should_exit = True
+            if not server.started:
+                serving.cancel()
+            with suppress(asyncio.CancelledError):
+                await serving
 
 
 @pytest.fixture
-def forwarded(fake_proxy: _FakeProxy) -> list[Forwarded]:
-    """What the proxy forwarded during this test, in order. The server outlives
-    the test, so the list is emptied here rather than at the server's start."""
-    fake_proxy.forwarded.clear()
-    return fake_proxy.forwarded
-
-
-@pytest.fixture
-async def socket_client(live_server: str) -> AsyncIterator[httpx.AsyncClient]:
-    """A client on the CLI's own `AsyncHTTPTransport` against `live_server`,
-    for the requests the fake proxy answers before any database is reached."""
-    async with httpx.AsyncClient(base_url=live_server) as client:
+async def socket_client(live_server: str, _fake_proxy: _FakeProxy) -> AsyncIterator[httpx.AsyncClient]:
+    """The client `a11y` ships (`make_client`: its transport, timeout, and
+    headers) against `live_server`. The proxy's record window opens here,
+    since the server outlives the test."""
+    _fake_proxy.forwarded.clear()
+    async with make_client(live_server) as client:
         yield client
 
 
 @pytest.fixture
-async def http_client(
-    socket_client: httpx.AsyncClient,
-    engine: AsyncEngine,
-    committed_session_factory: SessionFactory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> httpx.AsyncClient:
-    """`socket_client` with the served app's requests on real-commit sessions
-    from the test engine: the production `get_db`, bound to the test engine
-    the way `test_rollup_deadlock.py` binds it, since a server's requests
-    cannot join a test's rolled-back transaction. `committed_session_factory`
-    is here for its truncate at teardown (ADR 0011)."""
-    monkeypatch.setattr(database, "async_session", async_sessionmaker(engine, expire_on_commit=False))
-    return socket_client
+def forwarded(_fake_proxy: _FakeProxy) -> list[Forwarded]:
+    """What the proxy forwarded to the app since this test's `socket_client`
+    opened, in order."""
+    return _fake_proxy.forwarded

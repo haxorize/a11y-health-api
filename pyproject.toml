@@ -74,9 +74,10 @@ indent-style = "space"
 known_first_party = ["a11y_health"]
 
 [tool.deptry.per_rule_ignores]
-# Loaded by name, never imported: asyncpg is SQLAlchemy's driver (the
-# `postgresql+asyncpg://` URL), uvicorn is run as a command (only the test
-# suite, outside this scan, imports it). alembic is imported by
+# Not imported by anything deptry scans (`src migrations scripts`, in the
+# pre-commit hook and CI): asyncpg is SQLAlchemy's driver (the
+# `postgresql+asyncpg://` URL); uvicorn is run as a command, and its one
+# import is `tests/cli/conftest.py`, outside the scan. alembic is imported by
 # `migrations/env.py`, which the scan reads.
 DEP002 = ["asyncpg", "uvicorn"]
 

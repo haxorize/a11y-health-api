@@ -43,7 +43,7 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`, `socket_client`, `http_client`: the app under uvicorn on an ephemeral port, behind a fake proxy that can stall or redirect; `forwarded`: what that proxy handed the app this test, headers and TCP peer included
+    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`: the base URL of the app under uvicorn on an ephemeral port, its requests on real-commit sessions from the test engine (write through it with `committed_session_factory`), behind a fake proxy that stalls or redirects on the `x-test-proxy` header; `socket_client`: the client `a11y` ships (`make_client`) against it; `forwarded`: each request that proxy handed the app since `socket_client` opened — TCP peer, request headers, response headers
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
     test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect
@@ -203,6 +203,8 @@ async def test_full_scan_ingestion(...) -> None: ...
 ## Mocking
 
 Use the `mocker` fixture from `pytest-mock` rather than raw `unittest.mock` — it auto-cleans patches per test.
+
+`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (a sessionmaker rebinding, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — so it swaps inside `pytest.MonkeyPatch.context()` around its yield, the way `tests/cli/conftest.py`'s `live_server` binds the sessionmaker for the server's lifetime.
 
 ```python
 async def test_cli_uploads_scan(mocker) -> None:

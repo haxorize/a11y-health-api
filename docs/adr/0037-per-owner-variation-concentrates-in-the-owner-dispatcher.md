@@ -34,7 +34,8 @@ OWNERS: Mapping[ScoreSnapshotOwnerType, OwnerSpec]   # MappingProxyType over
 async def list_scores(session, owner_type, owner_id, *,
                       cursor=None, limit=DEFAULT_PAGE_SIZE, descending=False)
 async def rollup(session, owner_type, owner_id)      # ValueError on APP; cascades
-def owned(owner_type, owner_id, *, scan_run_id=None, **aggregates) -> ScoreSnapshot
+def owned(owner_type, owner_id, aggregates: ScoreAggregates, *,
+          scan_run_id=None, snapshot_at) -> ScoreSnapshot   # #136; see amendment
 def brand_apps(brand_id) -> Select                   # the one membership predicate
 ```
 
@@ -86,3 +87,22 @@ exists to provide. NamedTuple fields keep their declared type; the harness swaps
 specs with `._replace(...)` instead of `dataclasses.replace`. Everything else —
 the `OWNERS` module-attribute seam, resolve-at-call-time, the merged
 `MappingProxyType` — is as decided.
+
+**Amendment (2026-09-04, #136).** `owned()` takes the **Score Aggregates**
+(DOMAIN.md) as one positional `ScoreAggregates` value, not five keywords, and
+`snapshot_at` is an explicit required keyword; the sketch above is updated.
+The rollup mean moved onto that value as `ScoreAggregates.rolled_up`, and its
+reproducibility mechanism changed: the design record for #136 asked the rollup
+to sort children by id before summing, but `rolled_up` sums with `math.fsum`,
+which is exactly rounded and so order-independent by construction, and the
+sort is gone. The no-change skip's bitwise-equality semantics are unchanged;
+the value-level test pins order independence.
+
+The value lives in this module, and the charter widens by that one clause:
+the dispatcher owns the **Score Aggregates** value along with the
+construction, rollup, and dedupe machinery that consume it. `ScoreAggregates`
+is owner-agnostic, so the #136 design record offered a private shared sibling
+as the alternative home; it was not taken because `score_snapshot.py` already
+imported this module for `owned()`, so no new dependency direction was
+created, and a module for one NamedTuple is not worth the seam. "App-score
+computation stays out" still holds: it produces the value and does not own it.

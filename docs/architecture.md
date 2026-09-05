@@ -570,9 +570,11 @@ those two into the commands below, and `_terminal` parses argv and prints.
 `_scan` and `_client` never import each other, which is what lets a failure that
 happens before the first request be tested with no server at all
 (`tests/cli/conftest.py`'s `no_server`). The transport is httpx's own, and the
-suite runs both of its adapters: the command suites in-process over
-`ASGITransport`, and `tests/cli/test_live_server.py` over a real socket against
-the app under uvicorn, for the failures only a socket produces. Two commands,
+suite runs both of its real adapters plus its stub: the command suites
+in-process over `ASGITransport`, `tests/cli/test_live_server.py` over a real
+socket against the app under uvicorn, for the failures only a socket produces,
+and `test_client.py` (with `no_server`) over `MockTransport`, for the decode
+and transport-failure cases no server would produce on cue. Two commands,
 chosen by app state:
 
 - **`a11y ingest <dir>`** — upload one scan to an **existing** app. It loads

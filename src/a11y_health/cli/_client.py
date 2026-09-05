@@ -9,13 +9,14 @@ directory read first — belongs to `_operations`, which is what keeps this modu
 and `_scan` peers rather than a chain.
 
 There is deliberately no port abstraction over the transport. `httpx`'s own
-transport *is* the seam, and it already has two real adapters rather than one
-plus a stub: production runs over `AsyncHTTPTransport` against a deployed
-server, and the suite runs over both, `ASGITransport` against the real app and
-a real database in the command suites, and `AsyncHTTPTransport` against the app
-on a real port in `tests/cli/test_live_server.py`. A hand-rolled protocol in
-front of that would add an interface with one implementation and buy no test
-that the two adapters don't already give.
+transport *is* the seam, and it already has two real adapters, not one:
+production runs over `AsyncHTTPTransport` against a deployed server, and the
+suite runs over both, `ASGITransport` against the real app and a real database
+in the command suites, and `AsyncHTTPTransport` against the app on a real port
+in `tests/cli/test_live_server.py`. Its stub, `MockTransport`, carries this
+module's own suite — the decode and transport-failure cases no server produces
+on cue. A hand-rolled protocol in front of that would add an interface with one
+implementation and buy no test that the adapters don't already give.
 """
 
 from datetime import datetime
@@ -31,6 +32,14 @@ from a11y_health.models.enums import ScanRunStatus
 # a reason to address a different one — the host varies (--base-url), the
 # contract does not.
 _API_PREFIX = "/api/v1"
+
+
+def make_client(base_url: str) -> httpx.AsyncClient:
+    """The one client this tool speaks through, so what the socket suite
+    drives is what `a11y` ships: httpx's defaults, no redirect following, no
+    transport override. Any header, timeout, or limit the tool adopts is set
+    here and nowhere else."""
+    return httpx.AsyncClient(base_url=base_url)
 
 
 class ApiUnreachableError(CliError):

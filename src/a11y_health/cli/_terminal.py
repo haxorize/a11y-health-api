@@ -18,7 +18,7 @@ from pathlib import Path
 
 import httpx
 
-from a11y_health.cli._client import create_org_unit, list_brands, list_org_units
+from a11y_health.cli._client import create_org_unit, list_brands, list_org_units, make_client
 from a11y_health.cli._errors import CliError
 from a11y_health.cli._operations import import_app, ingest
 
@@ -35,7 +35,7 @@ def _add_base_url(parser: argparse.ArgumentParser) -> None:
 
 def _run[T](base_url: str, call: Callable[[httpx.AsyncClient], Awaitable[T]]) -> T:
     async def _main() -> T:
-        async with httpx.AsyncClient(base_url=base_url) as client:
+        async with make_client(base_url) as client:
             return await call(client)
 
     return asyncio.run(_main())

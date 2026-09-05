@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from a11y_health.cli import _terminal
-from a11y_health.cli._client import ApiError
+from a11y_health.cli._client import ApiError, make_client
 from a11y_health.cli._operations import AppNotFoundError, ImportResult, IngestResult
 from tests.factories import write_scan_file
 
@@ -25,6 +25,25 @@ def test_main_no_command_exits_with_argparse_error(monkeypatch: pytest.MonkeyPat
     with pytest.raises(SystemExit) as exc_info:
         _terminal.main()
     assert exc_info.value.code == 2
+
+
+# Reds if `_run` builds its own client again: the socket suite drives
+# `make_client`, so the client `a11y` ships is only under test while `_run`
+# goes through it.
+def test_run_builds_the_shipped_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[str] = []
+
+    def spy(base_url: str):
+        built.append(base_url)
+        return make_client(base_url)
+
+    async def call(_client) -> str:
+        return "ok"
+
+    monkeypatch.setattr(_terminal, "make_client", spy)
+
+    assert _terminal._run("http://spy", call) == "ok"
+    assert built == ["http://spy"]
 
 
 def test_main_ingest_dispatches_to_ingest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

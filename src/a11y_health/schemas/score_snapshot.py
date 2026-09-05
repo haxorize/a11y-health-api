@@ -2,10 +2,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-__all__ = ["ScoreMetrics", "ScoreSnapshotRead"]
+__all__ = ["ScoreAggregatesRead", "ScoreSnapshotRead"]
 
 
-class ScoreMetrics(BaseModel):
+class ScoreAggregatesRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     score: float
@@ -15,7 +15,7 @@ class ScoreMetrics(BaseModel):
     total_pages: int
 
 
-class ScoreSnapshotRead(ScoreMetrics):
+class ScoreSnapshotRead(ScoreAggregatesRead):
     id: int
     app_id: int | None
     scan_run_id: int | None

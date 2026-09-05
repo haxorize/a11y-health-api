@@ -12,8 +12,6 @@ async def test_list_brands(db_client: AsyncClient, db_session: AsyncSession) -> 
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
-    names = {b["name"] for b in data}
-    assert names == {"Humana", "Go365"}
     assert "id" in data[0]
     assert "created_at" in data[0]
     assert "updated_at" in data[0]

@@ -22,7 +22,8 @@ from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
-_honest_transport = ASGITransport(app=DeclarationHonestyShim(app))
+honest_app = DeclarationHonestyShim(app)
+_honest_transport = ASGITransport(app=honest_app)
 instrument_rollup_raisers()
 
 

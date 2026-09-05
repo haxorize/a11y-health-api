@@ -8,16 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.cli._operations import NameOverrideMismatchError, import_app
 from a11y_health.cli._scan import InvalidScanFilesError, NameResolutionError, NoDateDirsError, UnderivableAppNameError
 from a11y_health.models.enums import ScanRunStatus
-from tests.factories import make_app_with_org_unit, make_axe_payload, make_brand, make_org_unit, write_scan_file
-
-
-def _write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
-    date_dir = app_dir / date
-    date_dir.mkdir()
-    # `is not None`, not `or`: an explicit "" is a real case — the axe
-    # boundary reads it as absent and the scan falls back to the directory
-    # mtime.
-    write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
+from tests.factories import (
+    make_app_with_org_unit,
+    make_axe_payload,
+    make_brand,
+    make_org_unit,
+    write_scan_dir,
+)
 
 
 async def test_import_creates_new_app_with_scan_run_per_date_subdir(
@@ -29,7 +26,7 @@ async def test_import_creates_new_app_with_scan_run_per_date_subdir(
     app_dir = tmp_path / "any-directory-name"
     app_dir.mkdir()
     for date in ["2026-03-30", "2026-04-01"]:
-        _write_scan_dir(app_dir, date, name="foo.com")
+        write_scan_dir(app_dir, date, name="foo.com")
 
     result = await import_app(
         db_client,
@@ -63,7 +60,7 @@ async def test_import_same_directory_twice_resolves_one_app(
 
     app_dir = tmp_path / "repeat"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     first = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
     second = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
@@ -92,7 +89,7 @@ async def test_import_matches_app_created_via_api_with_derivation_equivalent_nam
 
     app_dir = tmp_path / "equivalent"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -111,7 +108,7 @@ async def test_import_name_override_sets_app_name_at_creation(
 
     app_dir = tmp_path / "pretty"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     result = await import_app(
         db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Humana.com"
@@ -136,7 +133,7 @@ async def test_import_name_override_not_derivation_equivalent_hard_fails(
 
     app_dir = tmp_path / "mismatched-override"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     with pytest.raises(NameOverrideMismatchError) as exc_info:
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Other Site")
@@ -156,7 +153,7 @@ async def test_import_name_override_on_existing_app_warns_and_continues(
 
     app_dir = tmp_path / "already-onboarded"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     messages: list[str] = []
     result = await import_app(
@@ -210,9 +207,9 @@ async def test_import_reports_invalid_files_across_every_date_subdir_at_once(
     # and no request made — `no_server` is the proof.
     app_dir = tmp_path / "history"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
-    _write_scan_dir(app_dir, "2026-04-01", name="foo.com", end_time="last Tuesday")
-    _write_scan_dir(app_dir, "2026-04-02", name="foo.com", end_time="yesterday")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-04-01", name="foo.com", end_time="last Tuesday")
+    write_scan_dir(app_dir, "2026-04-02", name="foo.com", end_time="yesterday")
 
     with pytest.raises(InvalidScanFilesError) as exc_info:
         await import_app(no_server, directory=app_dir, org_unit_id=1, brand_id=1)
@@ -229,8 +226,8 @@ async def test_import_name_mismatch_across_date_subdirs_hard_fails(
 
     app_dir = tmp_path / "mismatch"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
-    _write_scan_dir(app_dir, "2026-04-01", name="bar.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-04-01", name="bar.com")
 
     with pytest.raises(NameResolutionError) as exc_info:
         await import_app(
@@ -263,7 +260,7 @@ async def test_import_warns_on_non_date_entries_and_continues(
 
     app_dir = tmp_path / "mixed"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     (app_dir / "README.md").write_text("readme")
     (app_dir / "notes").mkdir()
@@ -295,7 +292,7 @@ async def test_import_reports_matched_app_and_scan_run_per_date(
     app_dir = tmp_path / "anything"
     app_dir.mkdir()
     for date in ["2026-03-30", "2026-04-01"]:
-        _write_scan_dir(app_dir, date, name="foo.com")
+        write_scan_dir(app_dir, date, name="foo.com")
 
     messages: list[str] = []
     result = await import_app(
@@ -326,7 +323,7 @@ async def test_import_name_override_non_equivalent_on_existing_app_warns_and_con
 
     app_dir = tmp_path / "stale-override"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
 
     messages: list[str] = []
     result = await import_app(
@@ -363,7 +360,7 @@ async def test_import_non_equivalent_name_creates_visible_sibling_app(
 
     app_dir = tmp_path / "sibling"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -384,8 +381,8 @@ async def test_import_same_slug_variants_across_dates_create_one_app_with_newest
     app_dir.mkdir()
 
     # The scan tool changed casing between runs; both names derive to foo-com.
-    _write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
-    _write_scan_dir(app_dir, "2026-04-01", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
+    write_scan_dir(app_dir, "2026-04-01", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -411,8 +408,8 @@ async def test_import_name_override_wins_over_newest_same_slug_variant(
     app_dir = tmp_path / "override-vs-variants"
     app_dir.mkdir()
 
-    _write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
-    _write_scan_dir(app_dir, "2026-04-01", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-01", name="FOO.COM")
+    write_scan_dir(app_dir, "2026-04-01", name="foo.com")
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="Foo.com")
 
@@ -431,7 +428,7 @@ async def test_import_name_deriving_to_empty_slug_fails_loudly(
 
     app_dir = tmp_path / "symbols-only"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="!!!")
+    write_scan_dir(app_dir, "2026-03-30", name="!!!")
 
     with pytest.raises(UnderivableAppNameError, match="empty slug"):
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
@@ -452,8 +449,8 @@ async def test_import_mixed_tz_scanned_at_resolves_and_picks_newest(
     # The older scan carries a tz-aware endTime; the newer scan's has no
     # offset. Comparing them to pick the newest must not raise on the awareness
     # mismatch.
-    _write_scan_dir(app_dir, "2026-04-01", name="FOO.COM", end_time="2026-04-01T12:00:00Z")
-    _write_scan_dir(app_dir, "2026-05-01", name="foo.com", end_time="2026-05-01T12:00:00")  # offset-less — assumed UTC
+    write_scan_dir(app_dir, "2026-04-01", name="FOO.COM", end_time="2026-04-01T12:00:00Z")
+    write_scan_dir(app_dir, "2026-05-01", name="foo.com", end_time="2026-05-01T12:00:00")  # offset-less — assumed UTC
 
     result = await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id)
 
@@ -501,7 +498,7 @@ async def test_import_underivable_name_override_fails_as_operator_error(
 
     app_dir = tmp_path / "bad-override"
     app_dir.mkdir()
-    _write_scan_dir(app_dir, "2026-03-30", name="foo.com")
+    write_scan_dir(app_dir, "2026-03-30", name="foo.com")
 
     with pytest.raises(UnderivableAppNameError, match="empty slug"):
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="!!!")

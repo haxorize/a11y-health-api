@@ -43,9 +43,10 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport
+    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`, `socket_client`, `http_client`: the app under uvicorn on an ephemeral port, behind a fake proxy that can stall or redirect
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
+    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
     test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)

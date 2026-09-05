@@ -403,6 +403,17 @@ def write_scan_file(
     (directory / filename).write_text(json.dumps(payload))
 
 
+def write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
+    """One Import date subdirectory holding one scan file, for the CLI suites
+    that load an App directory."""
+    date_dir = app_dir / date
+    date_dir.mkdir()
+    # `is not None`, not `or`: an explicit "" is a real case — the axe
+    # boundary reads it as absent and the scan falls back to the directory
+    # mtime.
+    write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
+
+
 async def advisory_lock_waiters(session: AsyncSession) -> int:
     # pg_locks is instance-wide; without the database filter an unrelated
     # backend's waiter (shared dev/CI instance) would satisfy the poll early.

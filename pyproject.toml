@@ -75,8 +75,9 @@ known_first_party = ["a11y_health"]
 
 [tool.deptry.per_rule_ignores]
 # Loaded by name, never imported: asyncpg is SQLAlchemy's driver (the
-# `postgresql+asyncpg://` URL), uvicorn is run as a command. alembic is
-# imported by `migrations/env.py`, which the scan reads.
+# `postgresql+asyncpg://` URL), uvicorn is run as a command (only the test
+# suite, outside this scan, imports it). alembic is imported by
+# `migrations/env.py`, which the scan reads.
 DEP002 = ["asyncpg", "uvicorn"]
 
 [tool.pytest.ini_options]

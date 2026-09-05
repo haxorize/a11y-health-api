@@ -27,8 +27,16 @@ class ClassificationFilterOption(BaseModel):
 
 
 class FindingFilterOptionsRead(BaseModel):
-    wcag_criteria: list[str]
-    classifications: list[ClassificationFilterOption]
+    wcag_criteria: list[str] = Field(
+        description=(
+            "Distinct across the run, in numeric segment order (1.4.3 before 1.4.13 "
+            "before 1.10.1). A value whose segments are not all digits sorts last, "
+            "by string."
+        )
+    )
+    classifications: list[ClassificationFilterOption] = Field(
+        description="Distinct across the run, in vocabulary order (the order of the Classification Token literal)."
+    )
 
 
 class _RuleFindingBase(BaseModel):

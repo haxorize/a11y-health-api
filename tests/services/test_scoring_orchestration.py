@@ -25,11 +25,6 @@ from tests.factories import (
 )
 
 
-async def _complete_scan_run(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> None:
-    sr = await ingest_pages_and_complete(db, scan_run_id, payloads)
-    await on_scan_run_completed(db, sr)
-
-
 class TestOnScanRunCompleted:
     async def test_creates_app_and_rollup_snapshots(self, db_session: AsyncSession) -> None:
         root = await make_org_unit(db_session, name="Root")
@@ -39,7 +34,8 @@ class TestOnScanRunCompleted:
         scan_run = await make_scan_run(db_session, app_id=app.id)
 
         payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, scan_run.id, [payload])
+        scan_run = await ingest_pages_and_complete(db_session, scan_run.id, [payload])
+        await on_scan_run_completed(db_session, scan_run)
 
         app_snap = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
         app_snapshot = app_snap.scalar_one()
@@ -57,7 +53,8 @@ class TestOnScanRunCompleted:
         scan_run = await make_scan_run(db_session, app_id=app.id)
 
         payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, scan_run.id, [payload])
+        scan_run = await ingest_pages_and_complete(db_session, scan_run.id, [payload])
+        await on_scan_run_completed(db_session, scan_run)
 
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
         assert brand_snap.score == approx(0.4)
@@ -69,10 +66,16 @@ class TestOnScanRunCompleted:
         app = await make_app(db_session, name="App", slug="app-backfill", org_unit_id=org_unit.id, brand_id=brand.id)
 
         sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+        sr_new = await ingest_pages_and_complete(
+            db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")]
+        )
+        await on_scan_run_completed(db_session, sr_new)
 
         sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+        sr_old = await ingest_pages_and_complete(
+            db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")]
+        )
+        await on_scan_run_completed(db_session, sr_old)
 
         ou_snap = await latest_ou_snapshot(db_session, org_unit.id)
         assert ou_snap.snapshot_at == datetime(2026, 4, 1, tzinfo=UTC)
@@ -87,11 +90,13 @@ class TestOnScanRunCompleted:
 
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
         sr_a = await make_scan_run(db_session, app_id=app_a.id)
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         payload_b = make_axe_payload(url="https://example.com/b")
         sr_b = await make_scan_run(db_session, app_id=app_b.id)
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
         assert brand_snap.score == approx(0.7)
@@ -105,11 +110,13 @@ class TestOnScanRunDeleted:
 
         sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         await db_session.delete(sr_b)
         await db_session.flush()
@@ -128,11 +135,13 @@ class TestOnScanRunDeleted:
 
         sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         leaf_before = await latest_ou_snapshot(db_session, leaf.id)
         assert leaf_before.score == approx(1.0)
@@ -155,11 +164,13 @@ class TestOnScanRunDeleted:
 
         sr_a = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         sr_b = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         brand_before = await latest_brand_snapshot(db_session, brand.id)
         assert brand_before.score == approx(1.0)
@@ -177,9 +188,15 @@ class TestOnScanRunDeleted:
         app = await make_app(db_session, name="App", slug="app-del-older", org_unit_id=org_unit.id, brand_id=brand.id)
 
         sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+        sr_old = await ingest_pages_and_complete(
+            db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")]
+        )
+        await on_scan_run_completed(db_session, sr_old)
         sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 6, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+        sr_new = await ingest_pages_and_complete(
+            db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")]
+        )
+        await on_scan_run_completed(db_session, sr_new)
 
         await db_session.delete(sr_old)
         await db_session.flush()
@@ -196,9 +213,15 @@ class TestOnScanRunDeleted:
         app = await make_app(db_session, name="App", slug="app-prune", org_unit_id=org_unit.id, brand_id=brand.id)
 
         sr_old = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 5, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")])
+        sr_old = await ingest_pages_and_complete(
+            db_session, sr_old.id, [make_axe_payload(url="https://example.com/old")]
+        )
+        await on_scan_run_completed(db_session, sr_old)
         sr_new = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2023, 6, 1, tzinfo=UTC))
-        await _complete_scan_run(db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")])
+        sr_new = await ingest_pages_and_complete(
+            db_session, sr_new.id, [make_axe_payload(url="https://example.com/new")]
+        )
+        await on_scan_run_completed(db_session, sr_new)
 
         await db_session.delete(sr_new)
         await db_session.flush()
@@ -223,7 +246,8 @@ class TestOnScanRunDeleted:
 
         sr = await make_scan_run(db_session, app_id=app.id)
         payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr.id, [payload])
+        sr = await ingest_pages_and_complete(db_session, sr.id, [payload])
+        await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(sr)
         await db_session.flush()
@@ -361,12 +385,14 @@ class TestOnAppDeleted:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=leaf.id, brand_id=brand.id)
         sr_a = await make_scan_run(db_session, app_id=app_a.id)
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=leaf.id, brand_id=brand.id)
         sr_b = await make_scan_run(db_session, app_id=app_b.id)
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         leaf_before = await latest_ou_snapshot(db_session, leaf.id)
         assert leaf_before.score == approx(0.7)
@@ -387,12 +413,14 @@ class TestOnAppDeleted:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
         sr_a = await make_scan_run(db_session, app_id=app_a.id)
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
         sr_b = await make_scan_run(db_session, app_id=app_b.id)
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         brand_before = await latest_brand_snapshot(db_session, brand.id)
         assert brand_before.score == approx(0.7)
@@ -410,7 +438,8 @@ class TestOnAppDeleted:
         app = await make_app(db_session, name="App", slug="app-solo", org_unit_id=org_unit.id, brand_id=brand.id)
         sr = await make_scan_run(db_session, app_id=app.id)
         payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr.id, [payload])
+        sr = await ingest_pages_and_complete(db_session, sr.id, [payload])
+        await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(app)
         await db_session.flush()
@@ -425,7 +454,8 @@ class TestOnAppDeleted:
         app = await make_app(db_session, name="App", slug="app-solo-brand", org_unit_id=org_unit.id, brand_id=brand.id)
         sr = await make_scan_run(db_session, app_id=app.id)
         payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr.id, [payload])
+        sr = await ingest_pages_and_complete(db_session, sr.id, [payload])
+        await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(app)
         await db_session.flush()
@@ -445,14 +475,16 @@ class TestOnAppDeleted:
         )
         sr_a = await make_scan_run(db_session, app_id=app_a.id)
         payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        await _complete_scan_run(db_session, sr_a.id, [payload_a])
+        sr_a = await ingest_pages_and_complete(db_session, sr_a.id, [payload_a])
+        await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(
             db_session, name="App B", slug="app-b-cascade", org_unit_id=branch_b.id, brand_id=brand.id
         )
         sr_b = await make_scan_run(db_session, app_id=app_b.id)
         payload_b = make_axe_payload(url="https://example.com/b")
-        await _complete_scan_run(db_session, sr_b.id, [payload_b])
+        sr_b = await ingest_pages_and_complete(db_session, sr_b.id, [payload_b])
+        await on_scan_run_completed(db_session, sr_b)
 
         branch_a_before = await latest_ou_snapshot(db_session, branch_a.id)
         assert branch_a_before.score == approx(0.4)

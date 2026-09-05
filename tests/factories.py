@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, NamedTuple
 
 from httpx import Response
 from sqlalchemy import select, text
@@ -117,19 +117,61 @@ async def make_scan_run_with_parents(
     return await make_scan_run(db, app_id=app.id, status=status, scanned_at=scanned_at)
 
 
+class _ScoreSnapshotDefaults(NamedTuple):
+    score: float = 0.8
+    total_violations: int = 5
+    total_pages: int = 10
+    pages_with_violations: int = 2
+    pages_with_critical_violations: int = 1
+    snapshot_at: datetime = DEFAULT_SNAPSHOT_AT
+
+
+# The one home of the snapshot metric defaults: both snapshot factories read
+# their keyword defaults off it, and a test that has to build a raw
+# `ScoreSnapshot` row (one `owned()` cannot express) spreads `_asdict()` in.
+SCORE_SNAPSHOT_DEFAULTS = _ScoreSnapshotDefaults()
+
+
+def build_score_snapshot(
+    *,
+    owner_type: ScoreSnapshotOwnerType,
+    owner_id: int,
+    scan_run_id: int | None = None,
+    score: float = SCORE_SNAPSHOT_DEFAULTS.score,
+    total_violations: int = SCORE_SNAPSHOT_DEFAULTS.total_violations,
+    total_pages: int = SCORE_SNAPSHOT_DEFAULTS.total_pages,
+    pages_with_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_violations,
+    pages_with_critical_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_critical_violations,
+    snapshot_at: datetime = SCORE_SNAPSHOT_DEFAULTS.snapshot_at,
+) -> ScoreSnapshot:
+    # Nothing is persisted: a test that needs a snapshot the database never
+    # sees calls this, and make_score_snapshot delegates through it.
+    return owned(
+        owner_type,
+        owner_id,
+        scan_run_id=scan_run_id,
+        score=score,
+        total_violations=total_violations,
+        total_pages=total_pages,
+        pages_with_violations=pages_with_violations,
+        pages_with_critical_violations=pages_with_critical_violations,
+        snapshot_at=snapshot_at,
+    )
+
+
 async def make_score_snapshot(
     db: AsyncSession,
     *,
     app_id: int | None = None,
-    scan_run_id: int | None = None,
     org_unit_id: int | None = None,
     brand_id: int | None = None,
-    score: float = 0.8,
-    total_violations: int = 5,
-    pages_with_violations: int = 2,
-    pages_with_critical_violations: int = 1,
-    total_pages: int = 10,
-    snapshot_at: datetime | None = None,
+    scan_run_id: int | None = None,
+    score: float = SCORE_SNAPSHOT_DEFAULTS.score,
+    total_violations: int = SCORE_SNAPSHOT_DEFAULTS.total_violations,
+    total_pages: int = SCORE_SNAPSHOT_DEFAULTS.total_pages,
+    pages_with_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_violations,
+    pages_with_critical_violations: int = SCORE_SNAPSHOT_DEFAULTS.pages_with_critical_violations,
+    snapshot_at: datetime = SCORE_SNAPSHOT_DEFAULTS.snapshot_at,
 ) -> ScoreSnapshot:
     owners = [
         (t, v)
@@ -143,22 +185,26 @@ async def make_score_snapshot(
     if len(owners) != 1:
         raise ValueError("Exactly one of app_id, org_unit_id, brand_id must be set")
     [(owner_type, owner_id)] = owners
-    snapshot = owned(
-        owner_type,
-        owner_id,
+    snapshot = build_score_snapshot(
+        owner_type=owner_type,
+        owner_id=owner_id,
         scan_run_id=scan_run_id,
         score=score,
         total_violations=total_violations,
         total_pages=total_pages,
         pages_with_violations=pages_with_violations,
         pages_with_critical_violations=pages_with_critical_violations,
-        snapshot_at=snapshot_at or DEFAULT_SNAPSHOT_AT,
+        snapshot_at=snapshot_at,
     )
     db.add(snapshot)
     await db.flush()
     return snapshot
 
 
+# Arrange only, and the shared factory never owns a subject: what a test
+# invokes after arrange completes (the orchestration handler, a rollup call)
+# stays visible at the test's own call site. A new scoring or rollup tail
+# means a new helper name, never a mode flag on an existing one.
 async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScanRun:
     for raw in payloads:
         await create_page_result(db, scan_run_id, raw)
@@ -168,6 +214,8 @@ async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, payloads
     return sr
 
 
+# The final call is the act only for a test whose subject is the score compute
+# itself; a rollup test uses this to arrange an already-scored app.
 async def ingest_and_score(db: AsyncSession, scan_run_id: int, payloads: list[dict]) -> ScoreSnapshot:
     sr = await ingest_pages_and_complete(db, scan_run_id, payloads)
     return await compute_app_score(db, sr)

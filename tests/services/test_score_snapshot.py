@@ -2,11 +2,8 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.enums import Impact, PageHealth, ScanRunStatus
+from a11y_health.models.enums import Impact, PageHealth
 from a11y_health.models.page_result import PageResult
-from a11y_health.models.score_snapshot import ScoreSnapshot
-from a11y_health.services.page_result import create_page_result
-from a11y_health.services.scan_run import get_scan_run
 from a11y_health.services.score_snapshot import (
     compute_app_score,
     compute_app_score_result,
@@ -14,18 +11,11 @@ from a11y_health.services.score_snapshot import (
 )
 from tests.factories import (
     ingest_and_score,
+    ingest_pages_and_complete,
     make_axe_payload,
     make_scan_run_with_parents,
     make_violation,
 )
-
-
-async def _setup_and_score(db_session: AsyncSession, *payloads: dict) -> tuple[list[PageResult], ScoreSnapshot]:
-    scan_run = await make_scan_run_with_parents(db_session)
-    snapshot = await ingest_and_score(db_session, scan_run.id, list(payloads))
-
-    result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
-    return list(result.scalars().all()), snapshot
 
 
 class TestComputePageHealth:
@@ -100,18 +90,18 @@ class TestComputeAppScoreResult:
 
 class TestScoreSnapshotMetrics:
     async def test_snapshot_stores_counts_and_score(self, db_session: AsyncSession) -> None:
-        _, snapshot = await _setup_and_score(
-            db_session,
+        scan_run = await make_scan_run_with_parents(db_session)
+        payloads = [
             make_axe_payload(
                 url="https://example.com/a",
                 violations=[make_violation("r1", "critical"), make_violation("r2", "serious")],
             ),
             make_axe_payload(url="https://example.com/b"),
-            make_axe_payload(
-                url="https://example.com/c",
-                violations=[make_violation("r3", "serious")],
-            ),
-        )
+            make_axe_payload(url="https://example.com/c", violations=[make_violation("r3", "serious")]),
+        ]
+
+        snapshot = await ingest_and_score(db_session, scan_run.id, payloads)
+
         assert snapshot.score == approx(1.4 / 3)
         assert snapshot.total_violations == 3
         assert snapshot.pages_with_violations == 2
@@ -122,38 +112,30 @@ class TestScoreSnapshotMetrics:
 class TestComputeAppScoreCreatesSnapshot:
     async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        await create_page_result(
-            db_session, scan_run.id, make_axe_payload(violations=[make_violation("r1", "serious")])
+        await ingest_pages_and_complete(
+            db_session, scan_run.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
-        scan_run.status = ScanRunStatus.COMPLETED
-        await db_session.flush()
 
         snapshot = await compute_app_score(db_session, scan_run)
 
         assert snapshot.score == approx(0.4)
         assert snapshot.total_pages == 1
-
-        page_result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
-        page = page_result.scalar_one()
-        assert page.page_health == PageHealth.SERIOUS
+        result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
+        assert result.scalar_one().page_health == PageHealth.SERIOUS
 
 
 class TestScoreIndependentOfPageHealth:
     async def test_score_correct_when_page_health_preset_to_wrong_value(self, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session)
-        await create_page_result(
-            db_session, scan_run.id, make_axe_payload(violations=[make_violation("r1", "critical")])
+        await ingest_pages_and_complete(
+            db_session, scan_run.id, [make_axe_payload(violations=[make_violation("r1", "critical")])]
         )
-
         result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
         page = result.scalar_one()
         page.page_health = PageHealth.GOOD
         await db_session.flush()
 
-        sr = await get_scan_run(db_session, scan_run.id)
-        sr.status = ScanRunStatus.COMPLETED
-        await db_session.flush()
-        snapshot = await compute_app_score(db_session, sr)
+        snapshot = await compute_app_score(db_session, scan_run)
 
         assert snapshot.score == approx(0.0)
         assert snapshot.pages_with_critical_violations == 1

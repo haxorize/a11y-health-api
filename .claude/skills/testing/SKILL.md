@@ -43,10 +43,10 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`: the base URL of the app under uvicorn on an ephemeral port, its requests on real-commit sessions from the test engine (write through it with `committed_session_factory`), behind a fake proxy that stalls or redirects on the `x-test-proxy` header; `socket_client`: the client `a11y` ships (`make_client`) against it; `forwarded`: each request that proxy handed the app since `socket_client` opened — TCP peer, request headers, response headers
+    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`: the base URL of the app under uvicorn on an ephemeral port, its requests on real-commit sessions from the test engine (write through it with `committed_session_factory`), behind a fake proxy that stalls, redirects, or 413s a large POST on the `x-test-proxy` header; `socket_client`: the client `a11y` ships (`make_client`) against it; `forwarded`: each request that proxy handed the app since `socket_client` opened — TCP peer, request headers, response headers
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
-    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect
+    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect, a proxy's 413 on a large POST
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
     test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)

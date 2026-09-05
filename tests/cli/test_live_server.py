@@ -13,7 +13,14 @@ from httpx import AsyncClient
 from a11y_health.cli._client import ApiError, ApiTimeoutError, list_brands
 from a11y_health.cli._operations import import_app, ingest
 from a11y_health.models.enums import ScanRunStatus
-from tests.cli.conftest import PROXY_HEADER, PROXY_REDIRECT, PROXY_STALL, Forwarded
+from tests.cli.conftest import (
+    PROXY_BODY_LIMIT,
+    PROXY_BODY_LIMIT_BYTES,
+    PROXY_HEADER,
+    PROXY_REDIRECT,
+    PROXY_STALL,
+    Forwarded,
+)
 from tests.factories import (
     SessionFactory,
     make_app_with_org_unit,
@@ -122,3 +129,38 @@ async def test_redirect_on_a_real_socket_is_the_cli_coded_error_not_a_followed_r
         await list_brands(socket_client)
 
     assert exc_info.value.code == "307"
+
+
+async def test_large_post_rejected_by_a_proxy_is_one_failed_page_and_the_run_continues(
+    committed_session_factory: SessionFactory,
+    socket_client: AsyncClient,
+    forwarded: list[Forwarded],
+    tmp_path: Path,
+) -> None:
+    # A size-capped ingress answers 413 before the body is read and closes the
+    # connection (#140). The CLI must report that page as its own coded error
+    # with the proxy's text, reconnect, and carry the pages behind it.
+    async with committed_session_factory() as db:
+        await make_app_with_org_unit(db, slug="foo-com")
+        await db.commit()
+
+    write_scan_file(tmp_path, "small.json", name="foo.com", url="https://example.com/small")
+    write_scan_file(
+        tmp_path, "large.json", name="foo.com", url="https://example.com/" + "p" * (2 * PROXY_BODY_LIMIT_BYTES)
+    )
+    socket_client.headers[PROXY_HEADER] = PROXY_BODY_LIMIT
+
+    result = await ingest(socket_client, directory=tmp_path)
+    on_the_wire = list(forwarded)
+
+    assert result.pages_uploaded == 1
+    assert result.errors == ["large.json: 413: <html><body>Request Entity Too Large</body></html>"]
+    resp = await socket_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
+    assert resp.json()["status"] == ScanRunStatus.PENDING.value
+
+    # The rejected upload never reached the app, and the proxy's close cost
+    # the CLI one reconnect, not the run: the requests after it arrive on a
+    # fresh peer.
+    uploads = [f for f in on_the_wire if f.method == "POST" and f.path.endswith("/pages")]
+    assert len(uploads) == 1
+    assert len({f.peer for f in on_the_wire}) == 2

@@ -43,7 +43,7 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`, `socket_client`, `http_client`: the app under uvicorn on an ephemeral port, behind a fake proxy that can stall or redirect
+    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`, `socket_client`, `http_client`: the app under uvicorn on an ephemeral port, behind a fake proxy that can stall or redirect; `forwarded`: what that proxy handed the app this test, headers and TCP peer included
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
     test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect

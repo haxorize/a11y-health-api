@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -39,9 +40,25 @@ PROXY_STALL = "stall"
 PROXY_REDIRECT = "redirect"
 
 
+@dataclass
+class Forwarded:
+    """One request the proxy handed to the app, as the wire saw it: the TCP
+    peer it arrived on, the headers the client put on the socket, and the
+    headers the app's response left with. Two peers with the same address are
+    the same connection — a client that reconnects per request shows a fresh
+    ephemeral port each time."""
+
+    client: tuple[str, int]
+    method: str
+    path: str
+    request_headers: dict[bytes, bytes]
+    response_headers: dict[bytes, bytes] = field(default_factory=dict)
+
+
 class _FakeProxy:
     def __init__(self, inner: Any) -> None:
         self.inner = inner
+        self.forwarded: list[Forwarded] = []
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         behavior = dict(scope["headers"]).get(PROXY_HEADER) if scope["type"] == "http" else None
@@ -52,11 +69,24 @@ class _FakeProxy:
             await send({"type": "http.response.start", "status": 307, "headers": [(b"location", b"/api/v1/brands")]})
             await send({"type": "http.response.body", "body": b""})
         else:
-            await self.inner(scope, receive, send)
+            record = Forwarded(tuple(scope["client"]), scope["method"], scope["path"], dict(scope["headers"]))
+            self.forwarded.append(record)
+
+            async def send_recording(message: Any) -> None:
+                if message["type"] == "http.response.start":
+                    record.response_headers = dict(message["headers"])
+                await send(message)
+
+            await self.inner(scope, receive, send_recording)
 
 
 @pytest.fixture(scope="session")
-async def live_server() -> AsyncIterator[str]:
+def fake_proxy() -> _FakeProxy:
+    return _FakeProxy(honest_app)
+
+
+@pytest.fixture(scope="session")
+async def live_server(fake_proxy: _FakeProxy) -> AsyncIterator[str]:
     """The real app on a real port, as the base URL a client with no transport
     override reaches it at.
 
@@ -68,7 +98,7 @@ async def live_server() -> AsyncIterator[str]:
     app's lifespan pings the dev `DATABASE_URL`, and the suite requires only
     the test database.
     """
-    config = uvicorn.Config(_FakeProxy(honest_app), host="127.0.0.1", port=0, lifespan="off", log_level="warning")
+    config = uvicorn.Config(fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
     server = uvicorn.Server(config)
     serving = asyncio.create_task(server.serve())
     async with asyncio.timeout(5):
@@ -82,6 +112,14 @@ async def live_server() -> AsyncIterator[str]:
     finally:
         server.should_exit = True
         await serving
+
+
+@pytest.fixture
+def forwarded(fake_proxy: _FakeProxy) -> list[Forwarded]:
+    """What the proxy forwarded during this test, in order. The server outlives
+    the test, so the list is emptied here rather than at the server's start."""
+    fake_proxy.forwarded.clear()
+    return fake_proxy.forwarded
 
 
 @pytest.fixture

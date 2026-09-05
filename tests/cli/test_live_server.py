@@ -13,7 +13,7 @@ from httpx import AsyncClient
 from a11y_health.cli._client import ApiError, ApiTimeoutError, list_brands
 from a11y_health.cli._operations import import_app, ingest
 from a11y_health.models.enums import ScanRunStatus
-from tests.cli.conftest import PROXY_HEADER, PROXY_REDIRECT, PROXY_STALL
+from tests.cli.conftest import PROXY_HEADER, PROXY_REDIRECT, PROXY_STALL, Forwarded
 from tests.factories import (
     SessionFactory,
     make_app_with_org_unit,
@@ -27,7 +27,10 @@ pytestmark = pytest.mark.integration
 
 
 async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
-    committed_session_factory: SessionFactory, http_client: AsyncClient, tmp_path: Path
+    committed_session_factory: SessionFactory,
+    http_client: AsyncClient,
+    forwarded: list[Forwarded],
+    tmp_path: Path,
 ) -> None:
     async with committed_session_factory() as db:
         test_app = await make_app_with_org_unit(db, slug="foo-com")
@@ -37,9 +40,25 @@ async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(
         write_scan_file(tmp_path, f"page{i}.json", name="foo.com", url=f"https://example.com/page{i}")
 
     result = await ingest(http_client, directory=tmp_path)
+    on_the_wire = list(forwarded)
 
     assert result.app_id == test_app.id
     assert result.pages_uploaded == 3
+
+    # One ingest is one connection (#137): a client that reconnected per page
+    # would arrive from a fresh ephemeral port each time.
+    uploads = [f for f in on_the_wire if f.method == "POST" and f.path.endswith("/pages")]
+    assert len(uploads) == 3
+    assert len({f.client for f in on_the_wire}) == 1
+
+    # What the CLI relies on crossing the socket unaltered (#137): the server
+    # parses a page only when the body is declared JSON, and the CLI decodes
+    # every body it reads as JSON, so nothing between them may narrow Accept
+    # past JSON or hand back another type.
+    for upload in uploads:
+        assert upload.request_headers[b"content-type"] == b"application/json"
+        assert upload.request_headers[b"accept"] in (b"*/*", b"application/json")
+    assert {f.response_headers[b"content-type"] for f in on_the_wire} == {b"application/json"}
 
     resp = await http_client.get(f"/api/v1/scan-runs/{result.scan_run_id}")
     assert resp.status_code == 200

@@ -71,7 +71,7 @@ Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and t
 
 ## Registry
 
-- Unattested publishers: accept — read by `upgrade-deps`. A package whose target release carries no PyPI attestation is taken when its tarball diff matches its changelog and every other audit check is clean. Set 2026-09-06, when the framework (fastapi), ORM (sqlalchemy), and toolchain (ruff, ty) all published without attestations; a package whose previous release *was* attested and whose target is not stays a question under this key.
+- Unattested publishers: accept
 
 ## Issue tracker
 

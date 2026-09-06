@@ -120,7 +120,7 @@ if data.status == ScanRunStatus.COMPLETED:
 
 Cursor-based (keyset) pagination via `core/pagination.py` — one deep module owns both halves (see [ADR 0017](../../../docs/adr/0017-keyset-pagination-deep-module.md) and `docs/architecture.md` "Pagination"):
 
-- **Request surface** — endpoints take one `pagination: PageParams` argument; never declare `cursor`/`limit` locally. Page-size bounds and `DEFAULT_PAGE_SIZE` live on `PaginationParams` only. `PageParams` is a `Depends()` model dependency, not a `Query()` parameter model — a `Query()` model silently stops flattening into its fields when the endpoint has any other query parameter (all FastAPI versions through 0.139).
+- **Request surface** — endpoints take one `pagination: PageParams` argument; never declare `cursor`/`limit` locally. Page-size bounds and `DEFAULT_PAGE_SIZE` live on `PaginationParams` only. `PageParams` is a `Depends()` model dependency, not a `Query()` parameter model — a `Query()` model silently stops flattening into its fields when the endpoint has any other query parameter (all FastAPI versions through 0.141).
 - **Query mechanics** — services call `paginate(session, stmt, keyset=[...], cursor=..., limit=...)`; no service hand-rolls the cursor decode/encode, ordering, or `limit + 1` probe.
 
 **Endpoint:**

@@ -49,6 +49,7 @@ src/a11y_health/
   ```python
   DbSession = Annotated[AsyncSession, Depends(get_db)]
 
+
   async def list_apps(
       db: DbSession,
       pagination: PageParams,
@@ -100,6 +101,7 @@ async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> Non
     app = await existence.get_by_pk(session, App, scan_run.app_id)
     await on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)  # → owner.rollup(...) per owner
 
+
 # services/scan_run.py — calls orchestration after status change
 scan_run = await _do_status_update(session, scan_run, data)
 if data.status == ScanRunStatus.COMPLETED:
@@ -134,7 +136,9 @@ async def list_apps(
 
 **Service:**
 ```python
-async def list_apps(session: AsyncSession, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE) -> CursorPage[App]:
+async def list_apps(
+    session: AsyncSession, *, cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+) -> CursorPage[App]:
     return await paginate(session, select(App), keyset=[App.id], cursor=cursor, limit=limit)
 ```
 

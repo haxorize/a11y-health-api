@@ -83,6 +83,7 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 - **Partial indexes** when queries consistently filter on the same predicate (status, soft-delete, non-null):
   ```python
   from sqlalchemy import text
+
   Index("ix_scan_run_pending_scanned_at", "scanned_at", postgresql_where=text("status = 'pending'"))
   ```
 - **Covering indexes (`INCLUDE`)** for hot read paths to enable index-only scans:
@@ -115,6 +116,7 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
 - **UPSERT** for idempotent ingest, not check-then-insert:
   ```python
   from sqlalchemy.dialects.postgresql import insert
+
   stmt = insert(App).values(rows)
   stmt = stmt.on_conflict_do_update(
       index_elements=["slug"],
@@ -134,6 +136,7 @@ Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py`
 ```python
 from a11y_health.core.database import Base
 from a11y_health.models import *  # noqa: F403
+
 target_metadata = Base.metadata
 ```
 

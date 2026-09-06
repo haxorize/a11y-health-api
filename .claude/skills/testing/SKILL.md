@@ -139,6 +139,7 @@ For factories that create many instances of the same resource, use a module-leve
 ```python
 _brand_seq = itertools.count(1)
 
+
 async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
     if name is None:
         name = f"Test Brand {next(_brand_seq)}"
@@ -167,11 +168,9 @@ Group related tests into a class when testing facets of a single concept (e.g., 
 
 ```python
 class TestPageHealthCategorization:
-    async def test_critical_impact_lowers_health(self, db_session: AsyncSession) -> None:
-        ...
+    async def test_critical_impact_lowers_health(self, db_session: AsyncSession) -> None: ...
 
-    async def test_minor_impact_stays_healthy(self, db_session: AsyncSession) -> None:
-        ...
+    async def test_minor_impact_stays_healthy(self, db_session: AsyncSession) -> None: ...
 ```
 
 Use flat `async def test_*` functions for standalone cases that don't benefit from grouping.
@@ -181,6 +180,7 @@ Use flat `async def test_*` functions for standalone cases that don't benefit fr
 Use `pytest.approx` for float assertions (scores, percentages):
 ```python
 from pytest import approx
+
 assert score == approx(0.85)
 ```
 

@@ -28,6 +28,12 @@ uv run a11y --help               # onboarding CLI: import/ingest + org-unit/bran
 gh run view --log-failed         # a red CI run's failing step output, without opening the browser
 ```
 
+Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns
+`{"status":"healthy"}`; needs only Postgres at `localhost:5432/a11y_health`
+(`pg_isready`) up first. `make migrate` seeds the state — root org unit 1 `Humana Inc.`
+and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`), all
+API-read-only. For a scratch database instead, the recipe is the `verify` skill.
+
 `.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks —
 read the file rather than a summary of it. It ends with the full suite, and two consequences
 are worth planning around: a commit takes as long as the suite does, and **every commit in a
@@ -76,7 +82,12 @@ Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and t
 ## Issue tracker
 
 - Tracker: GitHub
+- Visibility: private
 - Hierarchy: optional
+
+Work items are created only through the `to-*` publishers (`/to-feature`, `/to-story`,
+`/to-tasks`, `/to-bug`) — never drafted and pushed with raw `gh`/`az` calls. On a casual
+ask ('file a story'), name the right publisher and stop.
 
 ## Bug severity labels
 
@@ -84,3 +95,16 @@ Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and t
 - high → `sev:high` — broken core flow, no workaround
 - medium → `sev:medium` — non-core flow, or core flow with workaround
 - low → `sev:low` — cosmetic, edge-case
+
+## Landing
+
+- Branch policy: trunk
+- PR required: no
+- Push pre-authorized: no
+- Ticket close pre-authorized: no
+- Review required: yes
+- Defect policy: fix, don't file
+
+## Sibling repos
+
+- `../a11y-health-ui`: consumes this repo's REST contract through the generated client; a contract change lands in both repos together (`contract-change`).

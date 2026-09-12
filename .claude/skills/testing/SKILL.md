@@ -20,7 +20,8 @@ tests/
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
-  test_prose_shape.py      # comments and docstrings wrap whole; the half W505 can't see
+  test_prose_shape.py      # the prose guards: code-prose wrap (the half W505 can't see),
+                           # one-line markdown blocks (ADR 0040), American spelling (ADR 0041)
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # sample axe JSON payloads and other static test data
   api/

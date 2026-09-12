@@ -118,13 +118,8 @@ src/a11y_health/
 │   └── v1/
 │       ├── endpoints/      # Route handlers
 │       └── router.py       # API router
-├── core/
-│   ├── database.py         # Engine, session, ORM base classes
-│   ├── error_contract.py   # Error Contract: domain error → status + code table
-│   ├── exceptions.py       # Domain exceptions
-│   ├── existence.py        # Existence Guard (the only NotFoundError raise site)
-│   ├── pagination.py       # Keyset (cursor) pagination deep module
-│   └── slug.py             # The single App Slug derivation
+├── core/                   # Deep modules: database, error contract and body,
+│                           # existence and integrity guards, pagination, slug
 ├── models/                 # SQLAlchemy models
 ├── schemas/                # Pydantic schemas (incl. the axe payload boundary)
 ├── services/               # Business logic (scoring, rollups, orchestration)

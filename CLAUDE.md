@@ -13,6 +13,8 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the full env config.
 
+Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives.
+
 `gitleaks` on PATH (`brew install gitleaks`) — the pre-commit hook's first stage; a commit cannot be made without it.
 
 ## Commands
@@ -28,7 +30,9 @@ uv run a11y --help               # onboarding CLI: import/ingest + org-unit/bran
 gh run view --log-failed         # a red CI run's failing step output, without opening the browser
 ```
 
-Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns `{"status":"healthy"}`; needs only Postgres at `localhost:5432/a11y_health` (`pg_isready`) up first. `make migrate` seeds the state — root org unit 1 `Humana Inc.` and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`), all API-read-only. For a scratch database instead, the recipe is the `verify` skill.
+Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns `{"status":"healthy"}` (Postgres from § Prerequisites has to answer `pg_isready` first). `make migrate` seeds the state — root org unit 1 `Humana Inc.` and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`). The brands are API-read-only: there is no `POST`, `PATCH` or `DELETE /brands`. The root org unit is **not** — `POST`, `PATCH` and `DELETE /org-units` are all live, nothing special-cases id 1, and a freshly seeded root has no dependents, so `DELETE /api/v1/org-units/1` deletes it and returns 204. For a scratch database instead, the recipe is the `verify` skill.
+
+Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, 324 lines under `docs/` blame to that commit instead of to whatever last changed their words.
 
 `.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit takes as long as the suite does, and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made.
 
@@ -47,8 +51,9 @@ Project-local skills that carry this repo's conventions — one per layer, plus 
 - **`database`** — data layer: PostgreSQL schema design, SQLAlchemy models/columns/types, migrations, indexes/constraints, and query patterns. Owns migration finalization after a model change.
 - **`fastapi`** — backend layer: endpoints, schemas, services, and app configuration.
 - **`testing`** — test layer: fixtures, factories, test layout, markers, and mocking.
-- **`code-documentation`** — prose layer: where an explanation lives, when a docstring is written, the 80-column wrap `W505` checks and the short-line shape `test_prose_shape.py` checks, and the rewrap rule a failure from either asks for.
+- **`code-documentation`** — prose layer: where an explanation lives, when a docstring is written, the 80-column wrap `W505` checks over code prose, the short-line shape `test_prose_shape.py` checks, the one-line-per-paragraph rule it checks over markdown (ADR 0040), the American spelling it checks over both (ADR 0041), and the fix a failure from each asks for.
 - **`contract-change`** — the two-repo OpenAPI procedure; a copy of the workspace root's skill, hash-locked in `skills-sync.lock` — edit it at the root and run `scripts/sync-skills.sh` there, never here.
+- **`verify`** — the build/launch/drive recipe for checking a change against a live dev server, including the scratch-database setup § Commands points at.
 
 ## Domain language
 
@@ -64,7 +69,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the two guards that check them are the `code-documentation` skill.
+Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds three of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), and the American spelling over both (ADR 0041) — each with a coverage guard over its own walk.
 
 ## Registry
 
@@ -93,6 +98,15 @@ Work items are created only through the `to-*` publishers (`/to-feature`, `/to-s
 - Ticket close pre-authorized: no
 - Review required: yes
 - Defect policy: fix, don't file
+
+## Hooks wired from outside this repo
+
+Two tracked artifacts here are read by global agent hooks, not by anything in this checkout. Both are wired by absolute path from `~/.claude/settings.json` into `~/code/src/humana/skills/global/hooks/`, so **a second clone, another machine, or CI has the artifact and no hook** — neither is enforced by `.githooks/pre-commit` or `ci.yml`, and `main` is unprotected.
+
+- `.claude/rename-safety` — an empty opt-in **marker**, not a config file. It turns on `rename-safety.sh`, which blocks `sed -i`, `perl -i`, `ruby -i` and `xargs` feeding them in any directory under it. The file must stay empty: the hook tests `-f` and never reads the contents. Deleting it to unblock an edit disarms the guard repo-wide.
+- `Review required: yes` under § Landing — read by `review-receipt.sh`, which refuses a `git push` unless a report in the temp-dir landing zone carries a `Reviewed-tree:` stamp matching the tree being pushed. A push the user runs in their own terminal is its one skip path.
+
+The other Landing keys are read by skills only. `Push pre-authorized:` and `Ticket close pre-authorized:` have no hook behind them and gate nothing mechanically.
 
 ## Sibling repos
 

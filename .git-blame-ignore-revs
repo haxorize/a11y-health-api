@@ -1,0 +1,13 @@
+# Commits whose changes a blame should look straight through: whitespace-only
+# reflows, never anything that changed a word. Wire it up once per clone with
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# and `git blame` skips to the commit that last touched the content. A SHA here
+# that no longer exists is silently ignored rather than reported, so an entry
+# only earns its place after the commit it names is settled.
+
+# Unwrap prose to one line per paragraph across the docs tree (#142).
+# All 44 files token-identical to their parent; the rule that keeps them that
+# way is the commit after it.
+d153985efb4616547b06ee03caad6219170d574f

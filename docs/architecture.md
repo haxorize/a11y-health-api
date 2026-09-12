@@ -46,7 +46,7 @@ async def create_app(db: DbSession, data: AppCreate) -> AppRead:
 
 `models/` also holds the layer-neutral leaves that every other layer needs and none of them owns. `models/classification.py` is the one to know: the **Classification** value object *and* the closed **Classification Token** vocabulary that names it — the query tokens the findings endpoint declares, the canonical mint for the stored shape, the **Filter Options** enumeration, and the screen that names a rule's raw axe tags at ingest — kept together so the import-time drift guard that pins them to each other has both halves in front of it. Every read runs the same closed table, so a token cannot mean one thing to a query and another to an ingest. It lives here because its consumers span layers (findings endpoint, filter service, read schema, column type, axe boundary); putting it in `schemas/` would send three of those five across a seam, and `services/` four ([ADR 0031](adr/0031-typed-classification-compact-wire-shape.md)).
 
-**`core/`** holds the cross-cutting machinery every layer leans on: `database.py` (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)), `exceptions.py` (the domain error types), `error_contract.py` (the **Error Contract** — how domain errors become HTTP responses and contract declarations), and `existence.py` (the **Existence Guard** — see below).
+**`core/`** holds the cross-cutting machinery every layer leans on: `database.py` (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)), `exceptions.py` (the domain error types), `error_contract.py` (the **Error Contract** — how domain errors become HTTP responses and contract declarations), `error_body.py` (the contract's `ErrorBody` and `ErrorCode` beside their lenient client-side twin, kept in their own module because it carries no web-framework import, and re-exported through `error_contract.py`), `integrity.py` (the **Integrity Guard** — a constraint violation turned into the domain error that names it, see [ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)), and `existence.py` (the **Existence Guard** — see below).
 
 ### Underscore means package-private, and a test says so
 
@@ -82,7 +82,7 @@ Services raise **semantic** exceptions — subclasses of `DomainError` from `cor
 | Mode (exception → code) | Status |
 | --- | --- |
 | `NotFoundError` → `not_found` | 404 |
-| `CircularReferenceError` → `circular_reference`, `ConcurrentRollupError` → `concurrent_rollup`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
+| `CircularReferenceError` → `circular_reference`, `ConcurrentRollupError` → `concurrent_rollup`, `DuplicateRootError` → `duplicate_root`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
 | `InvalidCursorError` → `invalid_cursor`, `InvalidAxePayloadError` → `invalid_axe_payload` | 400 |
 | Pydantic `ValidationError` (request failed FastAPI's own shape validation) | 422 |
 
@@ -138,42 +138,11 @@ Once an app snapshot exists, the totals roll up to the owners. A **Score Snapsho
 
 A parent's `score` is the **unweighted arithmetic mean of its children's scores** — every child counts equally, a 2-page app and a 2000-page app alike. The count columns, by contrast, are *summed totals* — so a share or average a consumer derives from a rollup's counts is page-weighted and can legitimately diverge from the headline score. That arithmetic lives on **Score Aggregates** (`ScoreAggregates.rolled_up` in the Owner Dispatcher): the one value for the Score and counts a snapshot summarizes, which snapshot construction takes, app-score computation produces, and the rollup builds from its children's. The sum under the mean is exactly rounded (`math.fsum`), so the mean is the same in any child order: a recompute is bitwise-reproducible and the no-change skip below can compare for equality (#136).
 
-> **Why snapshots get pruned during a rollup.** Snapshots are append-only
-> ([ADR 0015](adr/0015-score-snapshot-append-only.md)), so a rollup writes a new
-> row rather than mutating one. The new row's `snapshot_at` is the newest among
-> its children. Any existing owner snapshot dated *after* that — left behind
-> by data that has since been deleted — is now orphaned (the numbers behind it
-> are gone), so the rollup deletes those forward rows before inserting. If a
-> node ends up with no children at all, its snapshots are deleted outright.
+> **Why snapshots get pruned during a rollup.** Snapshots are append-only ([ADR 0015](adr/0015-score-snapshot-append-only.md)), so a rollup writes a new row rather than mutating one. The new row's `snapshot_at` is the newest among its children. Any existing owner snapshot dated *after* that — left behind by data that has since been deleted — is now orphaned (the numbers behind it are gone), so the rollup deletes those forward rows before inserting. If a node ends up with no children at all, its snapshots are deleted outright.
 >
-> **One snapshot per distinct observation.** A rollup trigger is not itself an
-> observation (#95): when the recomputed aggregate lands on the observation time
-> the owner's latest snapshot already holds, identical **Score Aggregates**
-> record nothing, and changed ones replace the rows sharing that time (delete +
-> insert, never update). Only a newer observation time appends — even when the
-> values didn't move, so the latest snapshot never claims an observation whose
-> source data has since been deleted. Since #98 the database enforces this for
-> rollup owners: partial unique indexes on (owner, `snapshot_at`) decide
-> same-observation write races, the losing rollup failing as
-> `ConcurrentRollupError` (409, retryable). App snapshots stay unconstrained —
-> two Scan Runs may share an observation time (ADR 0015).
+> **One snapshot per distinct observation.** A rollup trigger is not itself an observation (#95): when the recomputed aggregate lands on the observation time the owner's latest snapshot already holds, identical **Score Aggregates** record nothing, and changed ones replace the rows sharing that time (delete + insert, never update). Only a newer observation time appends — even when the values didn't move, so the latest snapshot never claims an observation whose source data has since been deleted. Since #98 the database enforces this for rollup owners: partial unique indexes on (owner, `snapshot_at`) decide same-observation write races, the losing rollup failing as `ConcurrentRollupError` (409, retryable). App snapshots stay unconstrained — two Scan Runs may share an observation time (ADR 0015).
 >
-> **Concurrency model.** Recomputes for one owner are serialized by a
-> transaction-scoped advisory lock acquired as the rollup's first statement —
-> before the children read — so a rollup deriving an older observation can
-> never prune or displace a newer one committed concurrently: the two
-> different-observation rows never collide, which puts that interleaving beyond
-> what the #98 indexes can decide
-> ([ADR 0029](adr/0029-per-owner-advisory-lock-rollup-serialization.md), #101).
-> Locks are per owner (org unit or brand), acquired leaf-to-root along the
-> cascade. The two-subtree triggers — app reassignment and org-unit
-> reparenting — break that single order (the second subtree's locks are taken
-> after the root is already held) and can deadlock with any concurrent rollup;
-> Postgres detects the cycle and fails one transaction (ADR 0029). The loser's
-> `40P01` is translated at the lock acquisition into the retryable
-> `concurrent_rollup` 409 (#104), declared on every rollup-triggering
-> operation. The indexes stay the backstop for same-observation races,
-> unchanged.
+> **Concurrency model.** Recomputes for one owner are serialized by a transaction-scoped advisory lock acquired as the rollup's first statement — before the children read — so a rollup deriving an older observation can never prune or displace a newer one committed concurrently: the two different-observation rows never collide, which puts that interleaving beyond what the #98 indexes can decide ([ADR 0029](adr/0029-per-owner-advisory-lock-rollup-serialization.md), #101). Locks are per owner (org unit or brand), acquired leaf-to-root along the cascade. The two-subtree triggers — app reassignment and org-unit reparenting — break that single order (the second subtree's locks are taken after the root is already held) and can deadlock with any concurrent rollup; Postgres detects the cycle and fails one transaction (ADR 0029). The loser's `40P01` is translated at the lock acquisition into the retryable `concurrent_rollup` 409 (#104), declared on every rollup-triggering operation. The indexes stay the backstop for same-observation races, unchanged.
 
 ### What triggers a rollup
 
@@ -219,7 +188,7 @@ What a caller does: pass a filtered query plus the **keyset** (the columns that 
 
 An operation whose consumers need the **exact filtered count** opts into the **totalled** envelope: the service passes `with_total=True` and `paginate` also serves `total`, counted from the same statement the page runs over so the two can never disagree on which rows are in scope (the count is skipped when the first page is also the last). The equivalence is of scope, not snapshot: the count is a second query, so a write committed between the two can shift `total` relative to the page until the next fetch — acceptable for a result-count announcement. The pair `TotalledCursorPage`/`TotalledPage` extends the plain envelope per-operation — every other listing keeps its two-field shape and pays no count query. Today the findings listing (its UI announces "N results" after a filter change) and an app's scan-run listing (its UI's history count line) are totalled; the conformance sweep requires any totalled operation to publish `total` as a required response property.
 
-The module also owns the **request-facing half**: a paginated endpoint declares one `pagination: PageParams` argument (a `PaginationParams` dependency from `core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the page-size bounds and default live only on that model and flow into every operation and the OpenAPI document together. Contract tests in `tests/core/test_pagination.py` enforce the arrangement suite-wide, discovering operations by their `Page` response envelope — so one that loses its cursor fails the sweep by name instead of dropping out of it. Every operation serving the envelope must accept a cursor, obtain it via `PageParams` (no re-declaration anywhere in its dependency tree), and declare the `invalid_cursor` error mode; an inverse check makes a cursor imply the envelope — so neither a forgetful new route nor a hand-rolled cursor slips past the module. `PageParams` is a `Depends()` dependency rather than a `Query()` parameter model because a `Query()` model silently stops flattening into its fields when the endpoint declares any other query parameter (all FastAPI versions through 0.139). Endpoints that expose paging direction consume the shared `OrderParam` declaration the same way, so the `order` vocabulary and its `asc` default also live only in `core/pagination.py`.
+The module also owns the **request-facing half**: a paginated endpoint declares one `pagination: PageParams` argument (a `PaginationParams` dependency from `core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the page-size bounds and default live only on that model and flow into every operation and the OpenAPI document together. Contract tests in `tests/core/test_pagination.py` enforce the arrangement suite-wide, discovering operations by their `Page` response envelope — so one that loses its cursor fails the sweep by name instead of dropping out of it. Every operation serving the envelope must accept a cursor, obtain it via `PageParams` (no re-declaration anywhere in its dependency tree), and declare the `invalid_cursor` error mode; an inverse check makes a cursor imply the envelope — so neither a forgetful new route nor a hand-rolled cursor slips past the module. `PageParams` is a `Depends()` dependency rather than a `Query()` parameter model because a `Query()` model silently stops flattening into its fields when the endpoint declares any other query parameter (swept red on every FastAPI from 0.115.13 through 0.139.0; not re-swept at the pinned 0.141.1). Endpoints that expose paging direction consume the shared `OrderParam` declaration the same way, so the `order` vocabulary and its `asc` default also live only in `core/pagination.py`.
 
 Two things to know if you touch it:
 
@@ -241,10 +210,15 @@ The API is the **source of truth** for the contract the UI consumes. The full cr
 
 ### Getting scan data in: the CLI
 
-`cli/` (`uv run a11y …`) is a thin client that drives the *public API over HTTP* — it has no direct database access, so anything it does, you could do with `curl`. It splits by concern over the shared error base in `_errors`: `_scan` reads directories off disk and crosses the axe boundary once per file, `_client` makes the requests (one function per call), `_operations` sequences those two into the commands below, and `_terminal` parses argv and prints. `_scan` and `_client` never import each other, which is what lets a failure that happens before the first request be tested with no server at all (`tests/cli/conftest.py`'s `no_server`). The transport is httpx's own, and the suite runs both of its real adapters plus its stub: the command suites in-process over `ASGITransport`, `tests/cli/test_live_server.py` over a real socket against the app under uvicorn, for the failures only a socket produces, and `test_client.py` (with `no_server`) over `MockTransport`, for the decode and transport-failure cases no server would produce on cue. Two commands, chosen by app state:
+`cli/` (`uv run a11y …`) is a thin client that drives the *public API over HTTP* — it has no direct database access, so anything it does, you could do with `curl`. It splits by concern over the shared error base in `_errors`: `_scan` reads directories off disk and crosses the axe boundary once per file, `_client` makes the requests (one function per call), `_operations` sequences those two into the commands below, and `_terminal` parses argv and prints. `_scan` and `_client` never import each other, which is what lets a failure that happens before the first request be tested with no server at all (`tests/cli/conftest.py`'s `no_server`). The transport is httpx's own, and the suite runs both of its real adapters plus its stub: the command suites in-process over `ASGITransport`, `tests/cli/test_live_server.py` over a real socket against the app under uvicorn, for the failures only a socket produces, and `test_client.py` (with `no_server`) over `MockTransport`, for the decode and transport-failure cases no server would produce on cue. Four commands. Two of them are chosen by app state:
 
 - **`a11y ingest <dir>`** — upload one scan to an **existing** app. It loads every JSON file in the directory through the axe boundary (a file the server would reject fails here, before any upload), derives the **Slug** from the document's `name` and resolves the app by it, then runs the lifecycle: create Scan Run → POST each page → PATCH to Completed. If the app isn't registered it raises `AppNotFoundError` pointing you to `import`.
 - **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** — onboard an app from a directory of `YYYY-MM-DD/` subdirectories, creating the app if missing and uploading each date subdirectory as its own Scan Run.
+
+The other two are lookups, and they are how an operator gets the two ids `import` needs:
+
+- **`a11y org-units list`** and **`a11y org-units create`** — read the org tree, or add a unit under an existing parent.
+- **`a11y brands list`** — read the seeded brands. There is no `create`: brands come from migrations and the API exposes no write (see § Prerequisites in `CLAUDE.md`).
 
 The **Slug** is derived from the axe JSON `name` by the single derivation function in `core/slug.py` — lowercase ASCII, non-alphanumeric runs collapsed to hyphens, accents folded — and both name and Slug are immutable after creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md), [ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)). Every failure an operator can cause is a named subclass of `CliError`, which is the only *error* `main()` catches: it prints one `ERROR:` line and exits 1. Anything else keeps its traceback, because anything else is a bug. Ctrl-C is neither — it prints `Interrupted.` and exits 130, leaving any Scan Run created before the interrupt Pending and unscored.
 
@@ -262,6 +236,7 @@ The **Slug** is derived from the axe JSON `name` by the single derivation functi
 | `MalformedScanFileError` | a scan file isn't valid JSON or isn't valid UTF-8 |
 | `InvalidScanFilesError` | one or more scan files that parse as JSON but are not valid axe documents — not a JSON object, a missing `findings`, a non-string `name`, an unreadable `endTime` — every offender in one message, across all of an `import`'s date directories. The server applies the same rules on upload (a non-object body is FastAPI's 422 there, not this mode); the message says to fix the files first and names the reinstall for a CLI whose version differs from the server's |
 | `UnderivableAppNameError` | a `name` (or `import --name`) that derives to an empty or over-long slug |
+| `ApiError` | the API answered with a coded error body; its `code` and `message` are what the operator sees |
 
 ### Tracing a request
 

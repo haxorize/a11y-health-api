@@ -1,26 +1,10 @@
 # Axe payload validation lives in Pydantic at the API boundary
 
-> **Amended by [ADR 0022](0022-error-contract-single-table-400-vs-422.md):** the
-> boundary decision stands, but validation failures no longer surface as 422s —
-> `parse_axe_payload()` wraps them into `InvalidAxePayloadError` (400,
-> `invalid_axe_payload`) under the Error Contract.
+> **Amended by [ADR 0022](0022-error-contract-single-table-400-vs-422.md):** the boundary decision stands, but validation failures no longer surface as 422s — `parse_axe_payload()` wraps them into `InvalidAxePayloadError` (400, `invalid_axe_payload`) under the Error Contract.
 
-> **Amended by #77:** "eliminated entirely" below overstated the outcome. The
-> raw document kept crossing the service seam as a second argument
-> (`raw_payload`, stored as the Page Result's Raw JSON) beside the validated
-> Axe Payload, matched to it only by caller convention. #77 closed that
-> side-channel: `parse_axe_payload()` is the single sanctioned crossing of the
-> axe boundary, and it retains the exact uploaded document on the Axe Payload
-> (`source_document`, a property backed by a private attribute, excluded from
-> the schema's own serialization), from which the service reads the Raw JSON
-> to store. *Retired by the 2026-09-04 amendment at the foot: once the crossing
-> moved behind the service seam, the service holds the raw document itself.*
+> **Amended by #77:** "eliminated entirely" below overstated the outcome. The raw document kept crossing the service seam as a second argument (`raw_payload`, stored as the Page Result's Raw JSON) beside the validated Axe Payload, matched to it only by caller convention. #77 closed that side-channel: `parse_axe_payload()` is the single sanctioned crossing of the axe boundary, and it retains the exact uploaded document on the Axe Payload (`source_document`, a property backed by a private attribute, excluded from the schema's own serialization), from which the service reads the Raw JSON to store. *Retired by the 2026-09-04 amendment at the foot: once the crossing moved behind the service seam, the service holds the raw document itself.*
 
-> **Amended 2026-08-05 (#134):** the crossing now runs behind the service seam
-> (`create_page_result`'s first statement) and again in the CLI at scan load,
-> and the boundary covers the identity fields `name` and `endTime`. The title
-> and the body below describe the original placement; the dated amendments at
-> the foot are the current record.
+> **Amended 2026-08-05 (#134):** the crossing now runs behind the service seam (`create_page_result`'s first statement) and again in the CLI at scan load, and the boundary covers the identity fields `name` and `endTime`. The title and the body below describe the original placement; the dated amendments at the foot are the current record.
 
 The axe DevTools JSON shape is fully validated by the `AxePayload` Pydantic schema at the API boundary, including semantic checks (impact values, classification tag shape, criteria parsing) — not just structural ones. The service layer receives a validated `AxePayload` and trusts it. A custom `InvalidAxePayloadError` previously raised from the service layer was removed (#55); validation failures surface as 422s through Pydantic's standard error path.
 

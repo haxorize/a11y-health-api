@@ -1,19 +1,6 @@
 # direct_only is an opt-in refinement of the under_org_unit_id scope, not a new default
 
-> **Amended by #139:** `GET /apps?org_unit_id=X` takes the same `direct_only`,
-> with the same name, default, and ignored-without-a-scope posture, so
-> `direct_only` is the cross-listing spelling for "one step narrower than the
-> default" — exact placement for apps, depth-1 children for org units, as the
-> body rules per owner type — rather than one endpoint's. The title and the
-> body below name only `under_org_unit_id`; this amendment is the record for
-> the apps listing. Two things the body has no case for: `org_unit_id` is a
-> list, and `direct_only` over several units serves each listed unit's own
-> apps (`tests/services/test_app.py` pins it); and the two listings share the
-> spelling by convention, not by a shared definition — a third listing taking
-> the parameter is the trigger for one. The consumer half, retiring the UI's
-> client-side narrowing, is a11y-health-ui#71. The reasoning below applies
-> unchanged: the listing is keyset-paged, so a client wanting one unit's rows
-> otherwise walks the subtree serially before first paint.
+> **Amended by #139:** `GET /apps?org_unit_id=X` takes the same `direct_only`, with the same name, default, and ignored-without-a-scope posture, so `direct_only` is the cross-listing spelling for "one step narrower than the default" — exact placement for apps, depth-1 children for org units, as the body rules per owner type — rather than one endpoint's. The title and the body below name only `under_org_unit_id`; this amendment is the record for the apps listing. Two things the body has no case for: `org_unit_id` is a list, and `direct_only` over several units serves each listed unit's own apps (`tests/services/test_app.py` pins it); and the two listings share the spelling by convention, not by a shared definition — a third listing taking the parameter is the trigger for one. The consumer half, retiring the UI's client-side narrowing, is a11y-health-ui#71. The reasoning below applies unchanged: the listing is keyset-paged, so a client wanting one unit's rows otherwise walks the subtree serially before first paint.
 
 `GET /scores/latest?under_org_unit_id=X&direct_only=true` narrows [ADR 0034](0034-under-org-unit-scope-resolves-per-owner-type.md)'s resolution one step per owner type — `app` serves apps placed exactly on X, `org_unit` X's depth-1 children, `brand` stays empty — so a client rendering only a unit's direct rows (the UI's Org Unit detail tables, a11y-health-ui#57) fetches a response that matches them instead of paging through the whole subtree. 0034 rejected depth-1 *as the scope's meaning*; this keeps that default and adds the refinement 0034 anticipated clients would otherwise do by filtering — which is exactly what didn't survive contact with keyset pagination: cursor pages are sequential by construction, so "filter a strict-descendant result" client-side costs one serial round-trip per page of subtree before first paint, and parallel prefetch is impossible without an offset/total contract this listing deliberately doesn't have. Changing 0034's default instead was rejected as a breaking contract rewrite of a deliberate decision; reverting the UI to id-enumerated `owner_id` filters was rejected because it reintroduces the two-stage waterfall the scope exists to remove. The subtree default stays served even while no in-repo client calls it: it is the scope's recorded meaning, the form any deeper-than-one view needs, and dropping it would make `direct_only` the semantics rather than a refinement. `direct_only` without `under_org_unit_id` is ignored, not a 400 — it refines the scope, no scope means nothing to refine, and an error mode would buy a new `ErrorCode` for a well-formed request (the same posture as 0034's brand-scope call).
 

@@ -6,10 +6,12 @@ substituting a word inside a wrapped paragraph pushes the overflow onto its own
 line instead of reflowing the block. The formatter never reflows prose, so the
 result survives format, lint, type check, and the whole suite.
 
-Four guards answer that, and two of them read markdown rather than Python. A
-document soft-wraps instead, one line per paragraph (ADR 0040), so a later diff
-shows the sentence that changed rather than the reflow around it. A word scan
-holds code and documents alike to the American spelling (ADR 0041).
+Three rules answer that, and three coverage guards keep each rule's walk honest.
+A document soft-wraps instead, one line per paragraph (ADR 0040), so a later
+diff shows the sentence that changed rather than the reflow around it. A word
+scan holds code and documents alike to the American spelling (ADR 0041) — that
+rule is the one that reads both formats, while the one-line rule reads only
+markdown.
 
 The stranded rule is exact rather than a guess about raggedness: a line is
 stranded when it stopped short of the wrap width while the next line still held
@@ -17,15 +19,20 @@ a word that would have fit. A paragraph's last line is exempt — that is where
 prose ends, not where it was abandoned. Comments and docstrings differ only in
 how prose is found, so what counts as stranded is asked in one place.
 
-The guards share one strip of what the rules do not govern. Frontmatter, a
-fenced block, a code span, a URL, and a Python literal that is not a docstring
-all hold names another system chose, so they come out before any rule reads the
-line, and both markdown rules read one definition of that region rather than
-each keeping its own.
+The guards share one strip of what the rules do not govern. A fenced block, a
+code span, a URL, and a Python literal that is not a docstring all hold names
+another system chose, so they come out before any rule reads the line, and both
+markdown rules read one definition of that region rather than each keeping its
+own. Frontmatter is the exception the two rules part company on, and the region
+function takes it as an argument for that reason: a `description:` is prose a
+person reads, so the spelling rule scans it, while it is one YAML line no editor
+can reflow, so the one-line rule never sees it.
 
-Neither the width nor the walked roots are written here. Both are read from the
-linter's own settings, so a rule cannot drift out of step with the check it
-pairs with and leave a band of lines that neither one reaches.
+Neither the width nor the walked roots is written into the rules here. Both are
+read from the linter's own settings, so a rule cannot drift out of step with the
+check it pairs with and leave a band of lines that neither one reaches. The
+numbers the coverage guards assert are drift alarms on that derivation, not the
+derivation itself.
 
 See `.claude/skills/code-documentation/SKILL.md` ("Shape the guards check")
 for the rewrap rule a failure here asks for.
@@ -52,7 +59,25 @@ def _repo_name(path: Path) -> str:
 def _ruff_config() -> dict:
     """The linter's own settings. Both the width these rules wrap to and the
     files they skip are its decisions, read here rather than restated."""
-    return tomllib.loads((_REPO / "pyproject.toml").read_text())["tool"]["ruff"]
+    return tomllib.loads((_REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]
+
+
+def _ruff_setting(*keys: str):
+    """One setting out of the linter's config, or a failure that names the key.
+
+    Every reader here indexes a nested path that a config reshuffle can move.
+    Indexing it directly raises a bare `KeyError` naming one fragment, which at
+    module scope aborts collection for the whole file and takes the drift guard
+    written to catch exactly this down with it. Naming the path and the file it
+    was read from turns that into a diagnosis.
+    """
+    found = _ruff_config()
+    for index, key in enumerate(keys):
+        if not isinstance(found, dict) or key not in found:
+            path = ".".join(("tool", "ruff", *keys[: index + 1]))
+            raise AssertionError(f"pyproject.toml has no [{path}]; these prose rules read it")
+        found = found[key]
+    return found
 
 
 def _max_doc_length() -> int:
@@ -62,7 +87,7 @@ def _max_doc_length() -> int:
     A width duplicated in both places drifts the day one of them moves, and the
     drift is invisible — every line in the gap passes both checks.
     """
-    return _ruff_config()["lint"]["pycodestyle"]["max-doc-length"]
+    return _ruff_setting("lint", "pycodestyle", "max-doc-length")
 
 
 # The width prose wraps to. One under `max-doc-length`, so a line filled to the
@@ -85,9 +110,7 @@ _STRUCTURED = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s|>>>|:param|:return|Raises:|
 _UNBREAKABLE = re.compile(r"https?://|noqa|ty:\s*ignore|type:\s*ignore")
 
 
-def _text(line: str) -> str:
-    """The prose on a line, with whatever marks it as prose removed — the `#` of
-    a comment, the quotes opening or closing a docstring."""
+def _prose_on_line(line: str) -> str:
     return line.strip().removeprefix("#").strip('"').strip()
 
 
@@ -100,7 +123,7 @@ def stranded_line(paragraph: list[str]) -> int | None:
     quotes count toward its first line.
     """
     for index, (line, following) in enumerate(zip(paragraph, paragraph[1:], strict=False)):
-        words = _text(following).split()
+        words = _prose_on_line(following).split()
         if not words:
             continue
         if len(line) < STRANDED and len(line) + 1 + len(words[0]) <= WRAP:
@@ -108,40 +131,50 @@ def stranded_line(paragraph: list[str]) -> int | None:
     return None
 
 
-def _paragraphs(lines: list[str]) -> list[list[str]]:
-    """Runs of prose split on the blank line between one thought and the next.
+def _paragraphs(lines: list[str], first_line: int) -> list[tuple[int, list[str]]]:
+    """Runs of prose split on the blank line between one thought and the next,
+    each paired with the file line its first line sits on.
 
     A line holding only quotes reads as blank: it closes a docstring rather than
     continuing its last sentence. Single-line runs drop out — a lone line has no
-    following line to have stranded it.
+    following line to have stranded it. `first_line` is where `lines` starts in
+    the file, so an offender can be reported as somewhere to go rather than as a
+    snippet the reader has to search for.
     """
-    found: list[list[str]] = []
+    found: list[tuple[int, list[str]]] = []
     current: list[str] = []
-    for line in lines:
-        if _text(line):
+    start = first_line
+    for offset, line in enumerate(lines):
+        if _prose_on_line(line):
+            if not current:
+                start = first_line + offset
             current.append(line)
         elif current:
-            found.append(current)
+            found.append((start, current))
             current = []
     if current:
-        found.append(current)
-    return [p for p in found if len(p) > 1]
+        found.append((start, current))
+    return [(at, p) for at, p in found if len(p) > 1]
 
 
 def _is_prose(paragraph: list[str]) -> bool:
     # Structure is judged on the text, not the raw line — a `#` or a `"""` sits
     # where a list marker's own anchor would otherwise match. Unbreakables are
     # judged on the raw line, since a URL can appear anywhere in it.
-    return not any(_STRUCTURED.search(_text(line)) or _UNBREAKABLE.search(line) for line in paragraph)
+    return not any(_STRUCTURED.search(_prose_on_line(line)) or _UNBREAKABLE.search(line) for line in paragraph)
 
 
-def comment_paragraphs(source: str) -> list[list[str]]:
-    """Prose paragraphs of every run of standalone comment lines at one indent.
+def comment_paragraphs(source: str) -> list[tuple[int, list[str]]]:
+    """Prose paragraphs of every run of standalone comment lines at one indent,
+    each paired with the file line it starts on.
 
     Trailing comments are excluded: they sit at whatever column their code
-    leaves them and are not wrapped prose.
+    leaves them and are not wrapped prose. The indent has to match for a run to
+    continue, so a module-level block and an indented one inside a function stay
+    two paragraphs — merging them would judge raggedness across a seam no reader
+    sees, and a structural line on either side of it would drop both.
     """
-    paragraphs: list[list[str]] = []
+    paragraphs: list[tuple[int, list[str]]] = []
     lines = source.splitlines()
     index = 0
     while index < len(lines):
@@ -150,6 +183,7 @@ def comment_paragraphs(source: str) -> list[list[str]]:
             continue
         indent = len(lines[index]) - len(lines[index].lstrip())
         block: list[str] = []
+        started = index
         while (
             index < len(lines)
             and lines[index].lstrip().startswith("#")
@@ -157,12 +191,13 @@ def comment_paragraphs(source: str) -> list[list[str]]:
         ):
             block.append(lines[index])
             index += 1
-        paragraphs.extend(p for p in _paragraphs(block) if _is_prose(p))
+        paragraphs.extend((at, p) for at, p in _paragraphs(block, started + 1) if _is_prose(p))
     return paragraphs
 
 
-def docstring_paragraphs(source: str) -> list[list[str]]:
-    """Prose paragraphs of every module, class, and function docstring.
+def docstring_paragraphs(source: str) -> list[tuple[int, list[str]]]:
+    """Prose paragraphs of every module, class, and function docstring, each
+    paired with the file line it starts on.
 
     Read off the source lines rather than the parsed string value, because the
     indent and the opening quotes are part of the width a reader sees. Only the
@@ -170,19 +205,13 @@ def docstring_paragraphs(source: str) -> list[list[str]]:
     and wrapping it would change it.
     """
     lines = source.splitlines()
-    paragraphs: list[list[str]] = []
-    for node in _docstring_constants(_parsed_module(source)):
+    paragraphs: list[tuple[int, list[str]]] = []
+    for node in _docstring_constants(ast.parse(source)):
         if not isinstance(node.value, str) or node.end_lineno is None:
             continue
-        paragraphs.extend(p for p in _paragraphs(lines[node.lineno - 1 : node.end_lineno]) if _is_prose(p))
+        spanned = lines[node.lineno - 1 : node.end_lineno]
+        paragraphs.extend((at, p) for at, p in _paragraphs(spanned, node.lineno) if _is_prose(p))
     return paragraphs
-
-
-@cache
-def _parsed_module(source: str) -> ast.Module:
-    """One parse per distinct source. Three guards read the same files, and the
-    tree is only ever read, so parsing it again per guard buys nothing."""
-    return ast.parse(source)
 
 
 def _docstring_constants(tree: ast.Module) -> list[ast.Constant]:
@@ -204,8 +233,23 @@ def _docstring_constants(tree: ast.Module) -> list[ast.Constant]:
 
 
 # A fence opens or closes a code block. The lines between are code, and their
-# breaks are the code's own — joining them would change what they run.
-_FENCE = re.compile(r"^\s*(?:```|~~~)")
+# breaks are the code's own — joining them would change what they run. The
+# delimiter is captured because a `~~~` line does not close a ``` block, and a
+# toggle that took it for one would read the code below as prose.
+_FENCE = re.compile(r"^\s*(```+|~~~+)")
+
+# Frontmatter opens with `---` on line 1 — but so does a document whose first
+# element is a thematic break. A mapping key on the line below tells the two
+# apart. Without it the closing search runs to the next `---` anywhere in the
+# document, and everything above it is blanked out of both rules.
+_FRONTMATTER_KEY = re.compile(r"[\w-]+\s*:")
+
+# A quoted line, and the hard break that says the author meant it to end there.
+# Consecutive `>` lines are the one case a block marker cannot settle, because
+# the ask block writes every quoted line with its own `>`; the break is what
+# separates that shape from one quote wrapped across several lines.
+_QUOTE = re.compile(r"^\s*>+\s?")
+_HARD_BREAK = re.compile(r"(?:  |\\)$")
 
 # A heading, a table row, and a thematic break each end at their own line break,
 # so the line under one opens a new block instead of continuing it.
@@ -223,11 +267,12 @@ _BLOCK_START = re.compile(rf"^\s*(?:{_OPEN_BLOCK}|{_CLOSED_BLOCK})")
 _UNCONTINUABLE = re.compile(rf"^\s*(?:{_CLOSED_BLOCK})")
 
 
-def markdown_body(document: str, *, keep_frontmatter: bool) -> str:
-    """`document` with its fenced code blanked out, line numbers kept.
+def _markdown_body(document: str, *, keep_frontmatter: bool) -> str:
+    """`document` reduced to the region the markdown rules govern: fenced code
+    blanked, frontmatter kept or dropped as the caller says, line numbers kept.
 
-    One definition of the region the markdown rules govern. What runs inside a
-    fence belongs to another system, so no rule here reads it.
+    One definition of that region. What runs inside a fence belongs to another
+    system, so no rule here reads it.
 
     The two rules part company on frontmatter, which is why the caller says.
     A `description:` is prose a person reads, so the standard spells it; it is
@@ -237,20 +282,47 @@ def markdown_body(document: str, *, keep_frontmatter: bool) -> str:
     """
     lines = document.splitlines()
     opening = 0
-    if not keep_frontmatter and lines and lines[0].strip() == "---":
+    if not keep_frontmatter and len(lines) > 1 and lines[0].strip() == "---" and _FRONTMATTER_KEY.match(lines[1]):
         closing = next((n for n in range(1, len(lines)) if lines[n].strip() == "---"), None)
         if closing is not None:
             opening = closing + 1
 
     body = ["" for _ in range(opening)]
-    fenced = False
+    opened: str | None = None
     for line in lines[opening:]:
-        if _FENCE.match(line):
-            fenced = not fenced
+        fence = _FENCE.match(line)
+        if fence and opened is None:
+            opened = fence.group(1)
+            body.append("")
+        elif fence and opened is not None and line.strip().startswith(opened):
+            opened = None
             body.append("")
         else:
-            body.append("" if fenced else line)
+            body.append("" if opened else line)
     return "\n".join(body)
+
+
+def unclosed_fence(document: str) -> int | None:
+    """The line a fence opens on and never closes, or None when every fence in
+    `document` is matched.
+
+    Worth its own answer because the blanking cannot give one: an unterminated
+    fence blanks every line below it, and a blanked line is indistinguishable
+    from a blank one, so both markdown rules would go quiet over the rest of the
+    document and report the same clean result as a document that had nothing
+    wrong with it.
+    """
+    opened: str | None = None
+    opened_at: int | None = None
+    for number, line in enumerate(document.splitlines(), start=1):
+        fence = _FENCE.match(line)
+        if not fence:
+            continue
+        if opened is None:
+            opened, opened_at = fence.group(1), number
+        elif line.strip().startswith(opened):
+            opened, opened_at = None, None
+    return opened_at
 
 
 def markdown_continuations(document: str) -> list[int]:
@@ -259,16 +331,30 @@ def markdown_continuations(document: str) -> list[int]:
 
     A block is a paragraph, a bullet, or a blockquote line, and it ends where
     its own line does.
+
+    A quoted line is judged against the quoted line above it rather than against
+    a block marker, because every line of an ask block carries its own `>` and a
+    marker cannot tell that shape from one quote wrapped across several lines. A
+    markdown hard break is what an author writes to mean the line ends here, so
+    a quoted line under one that carries no break is a wrapped quote. A bare `>`
+    separates two quoted paragraphs and continues neither.
     """
     found: list[int] = []
     continuable = False
-    for number, line in enumerate(markdown_body(document, keep_frontmatter=False).splitlines(), start=1):
+    quoted_unbroken = False
+    for number, line in enumerate(_markdown_body(document, keep_frontmatter=False).splitlines(), start=1):
         if not line.strip():
             continuable = False
+            quoted_unbroken = False
             continue
-        if continuable and not _BLOCK_START.match(line):
+        quote = _QUOTE.match(line)
+        inner = line[quote.end() :] if quote else ""
+        wrapped_quote = bool(quote) and quoted_unbroken and bool(inner.strip()) and not _BLOCK_START.match(inner)
+        wrapped_block = not quote and continuable and not _BLOCK_START.match(line)
+        if wrapped_quote or wrapped_block:
             found.append(number)
         continuable = not _UNCONTINUABLE.match(line)
+        quoted_unbroken = bool(quote and inner.strip()) and not _HARD_BREAK.search(line)
     return found
 
 
@@ -318,9 +404,24 @@ DELIBERATE_BRITISH = {
 }
 
 
+# The failure a developer pastes into a search. It is one literal on one line,
+# because implicit concatenation renders as one sentence at failure time and
+# greps to nothing: the line the reader copies has to be the line they find.
+# The line-length suppression below is there for the same reason — a join to
+# get under the limit would put the sentence back beyond reach of a search.
+_SPELLING_FAILURE = "British spellings in prose this repo owns. Write the American form, or add the word to DELIBERATE_BRITISH keyed by the file whose consumer matches it by string (ADR 0041):\n"  # noqa: E501
+
+
 def roster_exemptions(name: str) -> frozenset[str]:
-    """The words the roster excuses in this file, and in no other."""
-    return frozenset(word for glob, word in DELIBERATE_BRITISH if fnmatch(name, glob))
+    """The words the roster excuses in this file, and in no other.
+
+    The key is matched exactly, not as a glob. A pattern key would put `*` back
+    within reach, and a single `("*", "Cancelled")` entry excuses the everyday
+    spelling in every document in the repo — the failure ADR 0041's file key was
+    added to prevent. Exact matching also keeps a real filename holding `[`, `?`
+    or `*` matching its own entry.
+    """
+    return frozenset(word for path, word in DELIBERATE_BRITISH if name == path)
 
 
 # A name another system chose. Neither is this repo's prose to spell, so both
@@ -330,11 +431,17 @@ _URL = re.compile(r"https?://\S*")
 
 # Words as a reader reads them, identifiers included: `CancelledError` is two.
 # A scan stopping at identifier boundaries never reaches the form inside one.
+#
+# An all-caps run is not read as a word, so `BEHAVIOUR` and `COLOUR_MAP` pass:
+# one capital followed by lowercase is the shape, and widening it to admit a
+# second capital would flag every acronym in the repo. The gap is left open
+# deliberately and stated here because nothing else in the tree would say so —
+# a SCREAMING_CASE constant, an enum member, or an env-var name carrying a
+# British form is invisible to this rule.
 _WORD = re.compile(r"[A-Za-z][a-z]*")
 
 
 def british_spellings(text: str, *, exempt: Collection[str] = ()) -> list[str]:
-    """Every British form in `text`, as written, in the order it appears."""
     flagged = BRITISH_WORDS - {word.lower() for word in exempt}
     stripped = _URL.sub(" ", _CODE_SPAN.sub(" ", text))
     return [word for word in _WORD.findall(stripped) if word.lower() in flagged]
@@ -348,10 +455,17 @@ def _without_literals(source: str) -> str:
     and gets the carve-out a code span gets in markdown. An identifier is not
     stripped, which is why `CancelledError` still needs its roster entry.
 
-    Line numbers survive, so an offender still reports where it is.
+    Line numbers survive, so an offender still reports where it is. So does
+    line content, which is why the blanking runs over the encoded line rather
+    than the decoded one: `col_offset` and `end_col_offset` are UTF-8 byte
+    offsets, and this repo's prose is dense with em dashes, so slicing a `str`
+    with them shifts the window by one position per non-ASCII character to the
+    left of the literal. Both directions corrupt the scan — over-blanking eats
+    the trailing comment a rule was meant to read, and under-blanking exposes a
+    fragment whose only escape would be a roster entry.
     """
-    lines = source.splitlines()
-    tree = _parsed_module(source)
+    tree = ast.parse(source)
+    encoded = [line.encode() for line in source.splitlines()]
     documented = {id(node) for node in _docstring_constants(tree)}
     literals = [
         node
@@ -364,9 +478,9 @@ def _without_literals(source: str) -> str:
             continue
         for number in range(node.lineno - 1, end_line):
             start = node.col_offset if number == node.lineno - 1 else 0
-            stop = end_column if number == end_line - 1 else len(lines[number])
-            lines[number] = lines[number][:start] + " " * (stop - start) + lines[number][stop:]
-    return "\n".join(lines)
+            stop = end_column if number == end_line - 1 else len(encoded[number])
+            encoded[number] = encoded[number][:start] + b" " * (stop - start) + encoded[number][stop:]
+    return "\n".join(line.decode() for line in encoded)
 
 
 def spellable_lines(name: str, text: str) -> list[str]:
@@ -374,40 +488,73 @@ def spellable_lines(name: str, text: str) -> list[str]:
 
     A format with no extractor here yields nothing rather than everything. The
     walk covers every tracked file, and a lockfile, a generated contract, and a
-    captured scan fixture are all full of names another system chose; reading
+    captured axe payload fixture all hold names another system chose; reading
     them as prose would leave a roster entry as the only way to quiet one.
     """
     if name.endswith(".py"):
         return _without_literals(text).splitlines()
     if name.endswith(".md"):
-        return markdown_body(text, keep_frontmatter=True).splitlines()
+        return _markdown_body(text, keep_frontmatter=True).splitlines()
     return []
 
 
-def _text_of(path: Path) -> str | None:
-    """The file as text, or None where it holds bytes rather than prose."""
+def _file_text(path: Path) -> str | None:
+    """The file as text, or None where it holds bytes rather than prose.
+
+    The encoding is named rather than taken from the locale, so a machine whose
+    locale is neither UTF-8 nor C decodes this repo's em dashes the same way CI
+    does instead of silently substituting replacement characters. The `except`
+    is narrow for the same reason: a `PermissionError` or a directory handed in
+    by mistake is a real failure, and returning None for it would file that
+    failure under "this file is binary" and leave nothing to notice.
+    """
     try:
-        return path.read_text()
-    except UnicodeDecodeError, OSError:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError, FileNotFoundError:
         return None
 
 
 @cache
 def _tracked(pattern: str) -> tuple[Path, ...]:
     """Paths git tracks, so an ignored working directory — a local review
-    report, a virtualenv, a build tree — never counts as this repo's prose."""
-    listed = subprocess.run(["git", "-C", str(_REPO), "ls-files", pattern], capture_output=True, text=True, check=True)
-    return tuple(_REPO / name for name in listed.stdout.splitlines())
+    report, a virtualenv, a build tree — never counts as this repo's prose.
+
+    `-z` because git C-quotes a path holding non-ASCII bytes otherwise, and the
+    quoted spelling names no file on disk. A missing `git`, or a tree that is
+    not a checkout, fails here with what these rules were trying to read: an
+    `rglob` fallback would answer a different question — every file rather than
+    every tracked file — which is the whole reason the walk asks git at all.
+    """
+    try:
+        listed = subprocess.run(
+            ["git", "-C", str(_REPO), "ls-files", "-z", pattern],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as failure:
+        raise AssertionError(f"the prose rules read `git ls-files` and it failed: {failure}") from failure
+    return tuple(_REPO / name for name in listed.stdout.split("\0") if name)
 
 
 def _w505_exemptions() -> list[str]:
     """The globs the linter excuses from `W505`, so these rules excuse them too.
 
     A rule that failed a file the linter passes would have no edit that
-    satisfies both.
+    satisfies both. Both of ruff's per-file tables are read, and a code counts
+    as a match when it is a prefix of `W505` — `["W"]` and `["ALL"]` disable the
+    rule as surely as naming it does. `# ruff: noqa` and `exclude` are still
+    unread: resolving those means re-implementing ruff, and the gap is stated
+    here rather than half-closed.
     """
-    ignores = _ruff_config()["lint"]["per-file-ignores"]
-    return [glob for glob, codes in ignores.items() if "W505" in codes]
+    tables = ("per-file-ignores", "extend-per-file-ignores")
+    lint = _ruff_setting("lint")
+    return [
+        glob
+        for table in tables
+        for glob, codes in lint.get(table, {}).items()
+        if any(code == "ALL" or "W505".startswith(code) for code in codes)
+    ]
 
 
 def _walked_sources() -> list[Path]:
@@ -417,9 +564,19 @@ def _walked_sources() -> list[Path]:
     tracks rather than from a list kept here — an enumerated pair went stale
     the moment a fourth tree grew, and the export script and the migration
     environment module sat outside it unchecked.
+
+    A separator-free glob is matched against the basename as well as the
+    repo-relative path, because that is what ruff does with one: a
+    `"conftest.py"` entry exempts every conftest in the tree, and matching only
+    the full path would fail files the linter passes.
     """
     exempt = _w505_exemptions()
-    return sorted(path for path in _tracked("*.py") if not any(fnmatch(_repo_name(path), glob) for glob in exempt))
+
+    def excused(path: Path) -> bool:
+        name = _repo_name(path)
+        return any(fnmatch(name, glob) or ("/" not in glob and fnmatch(path.name, glob)) for glob in exempt)
+
+    return sorted(path for path in _tracked("*.py") if not excused(path))
 
 
 def _prose_documents() -> list[Path]:
@@ -432,12 +589,13 @@ def _prose_documents() -> list[Path]:
     return sorted(_tracked("*.md"))
 
 
-def _prose_paragraphs() -> list[tuple[Path, list[str]]]:
+def _prose_paragraphs() -> list[tuple[Path, int, list[str]]]:
     return [
-        (path, paragraph)
+        (path, at, paragraph)
         for path in _walked_sources()
-        for source in [path.read_text()]
-        for paragraph in comment_paragraphs(source) + docstring_paragraphs(source)
+        for source in [_file_text(path)]
+        if source is not None
+        for at, paragraph in comment_paragraphs(source) + docstring_paragraphs(source)
     ]
 
 
@@ -464,6 +622,15 @@ class TestStrandedLine:
         paragraph = ["# semantics live at the service seam", f"# ({'x' * 60})"]
         assert stranded_line(paragraph) is None
 
+    def test_a_next_word_that_lands_exactly_on_the_width_is_stranded(self) -> None:
+        # The boundary the `<= WRAP` comparison turns on. Flipping it to `<`
+        # is the classic greedy-wrap off-by-one, and without this pair nothing
+        # in the repo notices.
+        short = "# " + "x" * 50
+        assert len(short) == 52
+        assert stranded_line([short, "# " + "y" * 26]) == 0
+        assert stranded_line([short, "# " + "y" * 27]) is None
+
     def test_docstring_opening_quotes_count_toward_the_first_line(self) -> None:
         # The reader sees the quotes, so the width does too — otherwise an
         # opening line would get three free columns the rule never checks.
@@ -482,6 +649,25 @@ class TestCommentParagraphs:
     def test_trailing_comments_are_not_prose(self) -> None:
         assert comment_paragraphs("x = 1  # trailing\ny = 2  # also trailing\n") == []
 
+    def test_blocks_at_different_indents_stay_separate_paragraphs(self) -> None:
+        # What the indent-equality condition buys. Merged, the two blocks would
+        # be judged as one paragraph across a seam no reader sees — and a
+        # structural line on either side of it would then drop both.
+        source = (
+            "def f():\n"
+            "    # an indented line that runs on far enough to matter here.\n"
+            "    # and its tail.\n"
+            "# - a list item at column zero\n"
+            "# - another one\n"
+        )
+        assert len(comment_paragraphs(source)) == 1
+
+    def test_a_paragraph_reports_the_file_line_it_starts_on(self) -> None:
+        source = "x = 1\n\n# a comment paragraph opening here\n# and continuing here.\n"
+        at, paragraph = comment_paragraphs(source)[0]
+        assert at == 3
+        assert len(paragraph) == 2
+
 
 class TestDocstringParagraphs:
     def test_module_class_and_function_docstrings_are_all_read(self) -> None:
@@ -496,7 +682,8 @@ class TestDocstringParagraphs:
         # Otherwise the last prose line always looks stranded by a line that
         # holds no word at all.
         source = '"""A summary line filled out far enough that nothing more would fit\nand a short tail.\n"""\n'
-        paragraph = docstring_paragraphs(source)[0]
+        at, paragraph = docstring_paragraphs(source)[0]
+        assert at == 1
         assert len(paragraph) == 2
         assert stranded_line(paragraph) is None
 
@@ -522,13 +709,29 @@ class TestMarkdownContinuations:
     def test_a_wrapped_bullet_reports_its_continuation(self) -> None:
         assert markdown_continuations("- an item that was hard\n  wrapped here.\n") == [2]
 
-    def test_consecutive_blockquote_lines_each_start_their_own_block(self) -> None:
-        # The ask-block shape: every line carries its own `>`, so each is one
-        # quoted line rather than one quote wrapped across several.
-        assert markdown_continuations("> first line\n> second line\n") == []
+    def test_quoted_lines_ending_in_a_hard_break_each_start_their_own_block(self) -> None:
+        # The ask-block shape: every line carries its own `>` and ends in a hard
+        # break, which is the author saying the line ends there rather than
+        # being wrapped. Without the break there is nothing to tell the two
+        # apart, so the break is what the rule reads.
+        assert markdown_continuations("> first line  \n> second line\n") == []
+
+    def test_quoted_lines_without_a_hard_break_are_a_wrapped_quote(self) -> None:
+        assert markdown_continuations("> a quote that was hard\n> wrapped here.\n") == [2]
+
+    def test_a_bare_quote_marker_separates_two_quoted_paragraphs(self) -> None:
+        # A `>` holding no text ends the quoted line above it, so the line below
+        # opens its own block and continues nothing.
+        assert markdown_continuations("> first paragraph\n>\n> second paragraph\n") == []
+
+    def test_a_quoted_bullet_is_its_own_block(self) -> None:
+        assert markdown_continuations("> - first item\n> - second item\n") == []
 
     def test_a_lazily_continued_blockquote_is_reported(self) -> None:
         assert markdown_continuations("> a quote that was hard\nwrapped here.\n") == [2]
+
+    def test_a_blockquote_after_a_paragraph_is_not_a_continuation_of_it(self) -> None:
+        assert markdown_continuations("A paragraph on one line.\n> a quote under it.\n") == []
 
     def test_fenced_code_keeps_its_own_line_breaks(self) -> None:
         assert markdown_continuations("```\nx = 1\ny = 2\n```\n") == []
@@ -579,12 +782,65 @@ class TestBritishSpellings:
         assert spellable_lines("uv.lock", 'name = "colour-parser"') == []
         assert spellable_lines("notes.md", "the colour of it") == ["the colour of it"]
 
+    def test_python_prose_reaches_the_standard_and_python_data_does_not(self) -> None:
+        # The `.py` branch, asserted at the call site rather than through the
+        # bare-string helper: dropping it would leave every Python file in the
+        # repo unscanned with nothing to say so.
+        assert spellable_lines("x.py", "X = 1  # the colour of it") == ["X = 1  # the colour of it"]
+        assert british_spellings(spellable_lines("x.py", 'X = "the colour of it"')[0]) == []
+
+    def test_a_literal_holding_a_wide_character_blanks_only_itself(self) -> None:
+        # `ast` reports byte offsets. Slicing the decoded line with them shifts
+        # the blank window one place per non-ASCII character to the left of the
+        # literal, and both directions corrupt the scan: over-blanking eats the
+        # comment the rule was meant to read, under-blanking leaves a fragment
+        # of the literal whose only escape would be a roster entry.
+        eaten = spellable_lines("x.py", 'X = "an em — dash"  # the colour of it')[0]
+        assert eaten.endswith("# the colour of it")
+        assert "dash" not in eaten
+        assert british_spellings(eaten) == ["colour"]
+
+        exposed = spellable_lines("x.py", 'f("————", "colour")')[0]
+        assert british_spellings(exposed) == []
+        # The shifted window used to leave a quote mark the line never had, and
+        # truncate the punctuation that really was there.
+        assert '"' not in exposed
+        assert exposed.endswith(")")
+
     def test_a_skill_description_is_prose_the_standard_spells(self) -> None:
         # Frontmatter is the one place the two markdown rules part company: a
         # `description:` is read by a person, so it is spelled, but it is one
-        # YAML line, so it is never wrapped.
+        # YAML line, so it is never wrapped. Asserted through `spellable_lines`,
+        # because the decision lives at that call site and a private answer
+        # there is how the wrap rule once came to skip what the spelling rule
+        # read.
         assert british_spellings("description: the colour of it") == ["colour"]
         assert markdown_continuations("---\ndescription: a\nname: b\n---\n") == []
+        assert "description: the colour of it" in spellable_lines(
+            "s.md", "---\nname: x\ndescription: the colour of it\n---\n\nBody.\n"
+        )
+
+
+class TestMarkdownBody:
+    def test_frontmatter_is_dropped_only_when_the_caller_asks(self) -> None:
+        document = "---\nname: x\n---\n\nBody.\n"
+        assert "name: x" not in _markdown_body(document, keep_frontmatter=False)
+        assert "name: x" in _markdown_body(document, keep_frontmatter=True)
+
+    def test_a_leading_thematic_break_is_not_frontmatter(self) -> None:
+        # Only a mapping key on the line below makes the opener frontmatter.
+        # Without that test the closing search runs to the next `---` anywhere
+        # in the document and blanks every paragraph in between.
+        document = "---\n\nA paragraph that was hard\nwrapped here.\n\n---\n\nMore.\n"
+        assert "A paragraph that was hard" in _markdown_body(document, keep_frontmatter=False)
+        assert markdown_continuations(document) == [4]
+
+    def test_a_tilde_line_does_not_close_a_backtick_fence(self) -> None:
+        assert "x = 1" not in _markdown_body("```\nx = 1\n~~~\n", keep_frontmatter=True)
+
+    def test_an_unclosed_fence_is_reported_rather_than_blanking_the_tail(self) -> None:
+        assert unclosed_fence("Prose.\n\n```\nx = 1\n") == 3
+        assert unclosed_fence("Prose.\n\n```\nx = 1\n```\n") is None
 
     def test_the_american_form_is_clean(self) -> None:
         assert british_spellings("the color of the behavior here") == []
@@ -625,12 +881,23 @@ def test_the_prose_path_set_reaches_every_governed_root() -> None:
 
 
 def test_no_markdown_block_spans_more_than_one_line() -> None:
-    documents = _prose_documents()
-    assert len(documents) > 40, f"only {len(documents)} documents found — the walk is broken"
+    documents = [(path, text) for path in _prose_documents() if (text := _file_text(path)) is not None]
+    # Counting documents cannot tell a clean tree from a blanked one: a fence
+    # left open blanks every line below it, and a blanked line reads exactly
+    # like a blank one. The floor goes on the prose the rule actually reads.
+    read = sum(
+        1 for _, text in documents for line in _markdown_body(text, keep_frontmatter=False).splitlines() if line.strip()
+    )
+    assert len(documents) > 40, f"markdown-document walk returned only {len(documents)} documents"
+    assert read > 800, f"markdown-body extraction returned only {read} prose lines across {len(documents)} documents"
 
-    offenders = [
-        f"{_repo_name(path)}:{number}" for path in documents for number in markdown_continuations(path.read_text())
-    ]
+    unterminated = [f"{_repo_name(path)}:{at}" for path, text in documents if (at := unclosed_fence(text)) is not None]
+    assert not unterminated, (
+        "fenced code block opened and never closed; every line below it is exempt from both markdown "
+        "rules while it stays open:\n" + "\n".join(unterminated)
+    )
+
+    offenders = [f"{_repo_name(path)}:{number}" for path, text in documents for number in markdown_continuations(text)]
     assert not offenders, (
         "markdown blocks are hard wrapped; a paragraph, bullet, or blockquote is one line (ADR 0040):\n"
         + "\n".join(offenders)
@@ -638,10 +905,20 @@ def test_no_markdown_block_spans_more_than_one_line() -> None:
 
 
 def test_prose_spells_american() -> None:
-    documents = [(_repo_name(path), text) for path in _tracked("*") if (text := _text_of(path)) is not None]
+    documents = [(_repo_name(path), text) for path in _tracked("*") if (text := _file_text(path)) is not None]
     # A walk that quietly returned nothing would report the same green as a
-    # clean repo, and the difference is the whole value of the check.
-    assert len(documents) > 200, f"only {len(documents)} readable files found — the walk is broken"
+    # clean repo, and the difference is the whole value of the check. The file
+    # count cannot say that, because extraction happens two calls later: the
+    # floor that matters is on the lines the standard was handed.
+    scanned = [(name, line) for name, text in documents for line in spellable_lines(name, text)]
+    assert len(documents) > 200, f"readable-file walk returned only {len(documents)} files"
+    assert len(scanned) > 15000, f"prose extraction returned only {len(scanned)} lines from {len(documents)} files"
+    # Per-format floors, because one extractor going quiet is the realistic
+    # break and a total floor sleeps through it.
+    from_python = sum(1 for name, _ in scanned if name.endswith(".py"))
+    from_markdown = sum(1 for name, _ in scanned if name.endswith(".md"))
+    assert from_python > 10000, f"the Python extractor returned only {from_python} lines"
+    assert from_markdown > 1500, f"the markdown extractor returned only {from_markdown} lines"
 
     offenders = [
         f"{name}:{number}: {word}"
@@ -650,22 +927,37 @@ def test_prose_spells_american() -> None:
         for number, line in enumerate(spellable_lines(name, text), start=1)
         for word in british_spellings(line, exempt=exempt)
     ]
-    assert not offenders, (
-        "British spellings in prose this repo owns; write the American form, or, for a form another "
-        "system matches by string, add it to DELIBERATE_BRITISH with the consumer that requires "
-        "it (ADR 0041):\n" + "\n".join(offenders)
-    )
+    assert not offenders, _SPELLING_FAILURE + "\n".join(offenders)
+
+
+def test_the_roster_names_no_word_its_file_has_stopped_using() -> None:
+    # Pinning the roster's contents does not pin that its consumer still exists.
+    # A dead entry keeps excusing the everyday spelling in that file, which is
+    # the "word someone did not want to change" ADR 0041 exists to catch.
+    for (name, word), consumer in DELIBERATE_BRITISH.items():
+        text = _file_text(_REPO / name)
+        assert text is not None, f"DELIBERATE_BRITISH names {name}, which is unreadable"
+        assert any(word in line for line in spellable_lines(name, text)), (
+            f"DELIBERATE_BRITISH excuses {word!r} in {name} for {consumer}, and the word is no longer there"
+        )
 
 
 def test_no_prose_paragraph_strands_a_line() -> None:
     paragraphs = _prose_paragraphs()
     # Asserting on an empty offender list cannot tell "nothing is stranded" from
-    # "the walk found no prose", and this repo has had that failure twice.
-    assert len(paragraphs) > 150, f"only {len(paragraphs)} prose paragraphs found — the walk is broken"
+    # "the walk found no prose", and this repo has had that failure twice. Each
+    # extractor carries its own floor, since either one going quiet leaves the
+    # other's count high enough on its own to pass a total.
+    sources = [text for path in _walked_sources() if (text := _file_text(path)) is not None]
+    from_comments = sum(len(comment_paragraphs(text)) for text in sources)
+    from_docstrings = sum(len(docstring_paragraphs(text)) for text in sources)
+    assert len(paragraphs) > 400, f"prose-paragraph walk returned only {len(paragraphs)} paragraphs"
+    assert from_comments > 250, f"the comment extractor returned only {from_comments} paragraphs"
+    assert from_docstrings > 120, f"the docstring extractor returned only {from_docstrings} paragraphs"
 
     offenders = [
-        f"{_repo_name(path)}: {paragraph[index].strip()}"
-        for path, paragraph in paragraphs
+        f"{_repo_name(path)}:{at + index}: {paragraph[index].strip()}"
+        for path, at, paragraph in paragraphs
         if (index := stranded_line(paragraph)) is not None
     ]
     assert not offenders, "prose lines stopped short mid-paragraph; rewrap the block, not the line:\n" + "\n".join(

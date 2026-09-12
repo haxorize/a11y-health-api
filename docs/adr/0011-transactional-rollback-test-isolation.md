@@ -1,13 +1,6 @@
 # Test isolation via outer-transaction rollback with savepoint nesting
 
-> **Amended by #137:** a second class joins the sanctioned exception below.
-> `tests/cli/conftest.py`'s `live_server` serves the app over a real socket,
-> and a server's requests run on their own connections, so they cannot join a
-> test's rolled-back transaction any more than a lock-contention test can.
-> It binds the production sessionmaker to the test engine for the server's
-> lifetime, and every test that writes through it takes
-> `committed_session_factory` for the same truncate at teardown. Both classes
-> share one rule: real commits are scoped to the tests that need them.
+> **Amended by #137:** a second class joins the sanctioned exception below. `tests/cli/conftest.py`'s `live_server` serves the app over a real socket, and a server's requests run on their own connections, so they cannot join a test's rolled-back transaction any more than a lock-contention test can. It binds the production sessionmaker to the test engine for the server's lifetime, and every test that writes through it takes `committed_session_factory` for the same truncate at teardown. Both classes share one rule: real commits are scoped to the tests that need them.
 
 The `db_session` fixture opens a connection, begins an outer transaction, and hands tests an `AsyncSession` bound to that connection with `join_transaction_mode="create_savepoint"`. On teardown the outer transaction is rolled back, undoing every write a test made — including writes that the service code "committed," which become savepoint releases inside the outer transaction. The `db_client` fixture overrides FastAPI's `get_db` to yield this single session, so HTTP requests in tests share the same rollback boundary.
 

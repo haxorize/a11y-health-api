@@ -1,106 +1,28 @@
 # Keyset pagination is one deep `paginate()` module
 
-Cursor pagination lives in a single deep `paginate(session, stmt, *, keyset,
-cursor, limit, into=None)` in `core/pagination.py`, not as a keyset dance
-re-hand-rolled in each list service. Callers pass a pre-filtered `Select` plus
-the keyset columns; `paginate` derives cursor arity and per-column type coercion
-from those columns for the keyset types in use (`int`, `datetime` ↔ ISO string,
-`str`) and raises on any other column type rather than silently passing a raw
-JSON scalar through, applies the row-value `WHERE`,
-`ORDER BY`, `limit + 1`, `has_more`, slice, and `next_cursor` encode. It supports
-both single-column (`[App.id]`) and composite (`[snapshot_at, id]`) keysets behind
-one interface, so the implicit `expected=1`/`expected=2` cursor contract disappears.
+Cursor pagination lives in a single deep `paginate(session, stmt, *, keyset, cursor, limit, into=None)` in `core/pagination.py`, not as a keyset dance re-hand-rolled in each list service. Callers pass a pre-filtered `Select` plus the keyset columns; `paginate` derives cursor arity and per-column type coercion from those columns for the keyset types in use (`int`, `datetime` ↔ ISO string, `str`) and raises on any other column type rather than silently passing a raw JSON scalar through, applies the row-value `WHERE`, `ORDER BY`, `limit + 1`, `has_more`, slice, and `next_cursor` encode. It supports both single-column (`[App.id]`) and composite (`[snapshot_at, id]`) keysets behind one interface, so the implicit `expected=1`/`expected=2` cursor contract disappears.
 
 Two shape decisions are deliberate:
 
-- **An optional `into: Callable[[Row], T]` row→item transform.** Four list sites
-  return ORM scalars (default passthrough); `list_page_metrics` and `list_findings`
-  return aggregate `Row` tuples they map into their Read models. Both shapes are
-  real (4 vs 2), so the callback is a genuine seam, not speculative indirection.
-- **Cursor values are recovered from the SQL row, not the returned item.** The
-  keyset drives the cursor; `into` only shapes items. This keeps paging correct
-  regardless of what `into` produces, instead of coupling the cursor to an `id`
-  attribute the transform must remember to preserve. The precondition this trades
-  in: each keyset column's owning entity must appear in the result row as an ORM
-  instance (true for `select(Entity)` and `select(Entity, agg, ...)`); a bare
-  scalar keyset column is unsupported and raises rather than mis-paging.
+- **An optional `into: Callable[[Row], T]` row→item transform.** Four list sites return ORM scalars (default passthrough); `list_page_metrics` and `list_findings` return aggregate `Row` tuples they map into their Read models. Both shapes are real (4 vs 2), so the callback is a genuine seam, not speculative indirection.
+- **Cursor values are recovered from the SQL row, not the returned item.** The keyset drives the cursor; `into` only shapes items. This keeps paging correct regardless of what `into` produces, instead of coupling the cursor to an `id` attribute the transform must remember to preserve. The precondition this trades in: each keyset column's owning entity must appear in the result row as an ORM instance (true for `select(Entity)` and `select(Entity, agg, ...)`); a bare scalar keyset column is unsupported and raises rather than mis-paging.
 
 Considered and rejected:
-- **A `Paginator` class configured per entity**: the statement varies on every call,
-  so a per-entity object holds no useful state — a type per list with no behavior
-  the function lacks.
-- **Homogenizing `list_page_metrics`** (paginate `PageResult` scalars, then a second
-  query for the counts): trades the single grouped query for a worse two-query shape
-  purely to avoid the optional `into` argument.
-- **Leaving `list_page_metrics` out** of the shared module: leaves the most intricate
-  cursor site un-absorbed.
-- **Reading the cursor off the built item** (`items[-1].id`): simpler, but couples the
-  cursor field to an attribute every `into` must preserve, so an exotic transform
-  silently breaks paging.
+- **A `Paginator` class configured per entity**: the statement varies on every call, so a per-entity object holds no useful state — a type per list with no behavior the function lacks.
+- **Homogenizing `list_page_metrics`** (paginate `PageResult` scalars, then a second query for the counts): trades the single grouped query for a worse two-query shape purely to avoid the optional `into` argument.
+- **Leaving `list_page_metrics` out** of the shared module: leaves the most intricate cursor site un-absorbed.
+- **Reading the cursor off the built item** (`items[-1].id`): simpler, but couples the cursor field to an attribute every `into` must preserve, so an exotic transform silently breaks paging.
 
-Forward-only, `id`-tiebroken keysets; ascending by default, with opt-in
-descending (see the 2026-07-07 addendum below). Cursor mechanics are tested once
-in a central `paginate` suite; per-endpoint tests keep only their own assertions. [ADR 0021](0021-domain-rules-test-once-at-the-service-seam.md)
-later extended this test-once precedent to the whole suite: filter semantics now
-live at the service seam, and per-endpoint tests keep only transport slots.
+Forward-only, `id`-tiebroken keysets; ascending by default, with opt-in descending (see the 2026-07-07 addendum below). Cursor mechanics are tested once in a central `paginate` suite; per-endpoint tests keep only their own assertions. [ADR 0021](0021-domain-rules-test-once-at-the-service-seam.md) later extended this test-once precedent to the whole suite: filter semantics now live at the service seam, and per-endpoint tests keep only transport slots.
 
-Story #80 later deepened the module to own the request-facing half as well: the
-shared `PageParams` parameter definition (page-size bounds and default) and the
-suite-wide rule that any cursor-accepting operation declares the `invalid_cursor`
-mode. See `docs/architecture.md` ("Pagination") for that half, including why
-`PageParams` is a `Depends()` dependency rather than a `Query()` parameter model.
+Story #80 later deepened the module to own the request-facing half as well: the shared `PageParams` parameter definition (page-size bounds and default) and the suite-wide rule that any cursor-accepting operation declares the `invalid_cursor` mode. See `docs/architecture.md` ("Pagination") for that half, including why `PageParams` is a `Depends()` dependency rather than a `Query()` parameter model.
 
-**2026-07-07 — descending support added.** `paginate()` gained a
-`descending: bool = False` argument that reverses both the `ORDER BY` and the
-row-value keyset comparison (`< bound` instead of `> bound`); cursor encoding is
-unchanged and direction-agnostic. This revisits the "reverse paging is out of
-scope" line above. Motivation: history views render in server order (the UI does
-not sort client-side), so a Scan Run history table needs newest-first at the
-source — `list_scan_runs` now pages `keyset=[ScanRun.scanned_at, ScanRun.id],
-descending=True`. Direction is baked per-operation, not a request parameter (no
-new query param, no contract change); a client-facing `order` flag stays a future
-additive option. Trend lists (`list_app_scores`) stay ascending — correct for a
-left-to-right chart.
+**2026-07-07 — descending support added.** `paginate()` gained a `descending: bool = False` argument that reverses both the `ORDER BY` and the row-value keyset comparison (`< bound` instead of `> bound`); cursor encoding is unchanged and direction-agnostic. This revisits the "reverse paging is out of scope" line above. Motivation: history views render in server order (the UI does not sort client-side), so a Scan Run history table needs newest-first at the source — `list_scan_runs` now pages `keyset=[ScanRun.scanned_at, ScanRun.id], descending=True`. Direction is baked per-operation, not a request parameter (no new query param, no contract change); a client-facing `order` flag stays a future additive option. Trend lists (`list_app_scores`) stay ascending — correct for a left-to-right chart.
 
-The supporting index for this ordering is **deliberately deferred**, not
-overlooked. `scan_run` carries only `ix_scan_run_app_id (app_id)`, so a history
-page seeks to one app's rows on that index and then sorts them by `scanned_at`;
-no `(app_id, scanned_at, id)` composite backs the keyset walk. This is the same
-reactive-scale call the codebase makes elsewhere — composite read-path indexes
-are added when a path warrants them (cf. migration `c31f27959a81`, which added
-the page-result keyset composite), not pre-emptively. Per-app Scan Run counts
-accrue slowly and stay bounded, so the per-app sort is negligible now. Add
-`(app_id, scanned_at, id)` to `scan_run` if a high-volume app's history-page
-latency ever justifies it.
+The supporting index for this ordering is **deliberately deferred**, not overlooked. `scan_run` carries only `ix_scan_run_app_id (app_id)`, so a history page seeks to one app's rows on that index and then sorts them by `scanned_at`; no `(app_id, scanned_at, id)` composite backs the keyset walk. This is the same reactive-scale call the codebase makes elsewhere — composite read-path indexes are added when a path warrants them (cf. migration `c31f27959a81`, which added the page-result keyset composite), not pre-emptively. Per-app Scan Run counts accrue slowly and stay bounded, so the per-app sort is negligible now. Add `(app_id, scanned_at, id)` to `scan_run` if a high-volume app's history-page latency ever justifies it.
 
-**2026-07-12 — the suite-wide rule re-anchored to the envelope (Story #94).** The
-conformance sweep in `tests/core/test_pagination.py` now derives its swept set from
-the `Page` response envelope rather than from cursor acceptance: serving the envelope
-mandates accepting a cursor, consuming `PageParams`, and declaring `invalid_cursor`,
-and an inverse check makes accepting a cursor imply serving the envelope. The
-Story #80 rule above ("any cursor-accepting operation declares `invalid_cursor`")
-still holds, but as a consequence of the two directions rather than as the discovery
-basis — under the old basis, an operation that lost its cursor dropped out of the
-sweep instead of failing it.
+**2026-07-12 — the suite-wide rule re-anchored to the envelope (Story #94).** The conformance sweep in `tests/core/test_pagination.py` now derives its swept set from the `Page` response envelope rather than from cursor acceptance: serving the envelope mandates accepting a cursor, consuming `PageParams`, and declaring `invalid_cursor`, and an inverse check makes accepting a cursor imply serving the envelope. The Story #80 rule above ("any cursor-accepting operation declares `invalid_cursor`") still holds, but as a consequence of the two directions rather than as the discovery basis — under the old basis, an operation that lost its cursor dropped out of the sweep instead of failing it.
 
-**2026-07-17 — filtered totals (issue #107).** `paginate()` gained
-`with_total: bool = False`; opting in serves the exact filtered count as a
-`TotalledCursorPage`, counted from the caller's statement before the cursor
-predicate (and skipped when the first page is also the last). The envelope side
-is the per-operation `TotalledPage[T](Page[T])` — why per-operation rather than
-a shared field or a count endpoint is recorded in
-[ADR 0032](0032-filtered-total-as-per-operation-totalled-page.md). The Story #94
-sweep above gained a fourth obligation: an operation serving `TotalledPage` must
-publish `total` as a required response property.
+**2026-07-17 — filtered totals (issue #107).** `paginate()` gained `with_total: bool = False`; opting in serves the exact filtered count as a `TotalledCursorPage`, counted from the caller's statement before the cursor predicate (and skipped when the first page is also the last). The envelope side is the per-operation `TotalledPage[T](Page[T])` — why per-operation rather than a shared field or a count endpoint is recorded in [ADR 0032](0032-filtered-total-as-per-operation-totalled-page.md). The Story #94 sweep above gained a fourth obligation: an operation serving `TotalledPage` must publish `total` as a required response property.
 
-**2026-07-11 — the client-facing `order` flag arrived (issue #90).** The three
-score-history listings (`/apps/{id}/scores`, `/org-units/{id}/scores`,
-`/brands/{id}/scores`) now take `order=asc|desc` (default `asc`, so existing
-consumers are untouched): the UI Overview reads the head of a newest-first page
-instead of walking to the tail, while the Score Trend chart keeps consuming
-ascending pages — two real directions on the same operations, which is what a
-parameter (rather than a per-operation bake) is for. The request-facing
-declaration follows the `PageParams` pattern: a shared `OrderParam` in
-`core/pagination.py` owns the vocabulary and default; endpoints translate to
-`paginate()`'s `descending` bool, which stays the service-seam language.
-Everything else keeps its baked direction.
+**2026-07-11 — the client-facing `order` flag arrived (issue #90).** The three score-history listings (`/apps/{id}/scores`, `/org-units/{id}/scores`, `/brands/{id}/scores`) now take `order=asc|desc` (default `asc`, so existing consumers are untouched): the UI Overview reads the head of a newest-first page instead of walking to the tail, while the Score Trend chart keeps consuming ascending pages — two real directions on the same operations, which is what a parameter (rather than a per-operation bake) is for. The request-facing declaration follows the `PageParams` pattern: a shared `OrderParam` in `core/pagination.py` owns the vocabulary and default; endpoints translate to `paginate()`'s `descending` bool, which stays the service-seam language. Everything else keeps its baked direction.

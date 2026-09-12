@@ -7,15 +7,7 @@ description: Test conventions for this project. Use when writing tests, adding f
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism** or a
-**topology guard**, which live at the root beside their implementation rather
-than under the package they happen to guard. A mechanism enforces an invariant
-across the whole suite (Declaration Honesty, import honesty) and has no single
-mirrored home. A topology guard reads the source tree — which module imports
-which, what reaches what — rather than exercising a module's behavior, so it
-sits at the root even when the rule it holds is scoped to one package. Filing
-either under a mirrored directory is what produced the mixed contract suite
-#133 had to split.
+Mirror the app structure — except for a **suite-wide mechanism** or a **topology guard**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty) and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either under a mirrored directory is what produced the mixed contract suite #133 had to split.
 
 ```
 tests/

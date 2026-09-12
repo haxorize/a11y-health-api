@@ -1,139 +1,28 @@
 # Rollup-race declaration honesty is enforced at the raise site, not by a pinned list
 
-[ADR 0022](0022-error-contract-single-table-400-vs-422.md) closes declaration
-gaps "as deep as the suite exercises each operation's error paths" — but
-rollup-race 409s (`concurrent_rollup`) never fire organically in endpoint
-tests, so those declarations were guarded by a hand-pinned operation list in
-the test suite: review-vigilance of exactly the kind 0022 exists to kill
-(#113). Decided: enforcement moves to the raise site. The suite instruments
-every public `rollup_*` function in `score_snapshot` — the module's naming
-convention for the surface through which `ConcurrentRollupError` can escape
-(today `rollup_org_unit_scores` and `rollup_brand_scores`); the
-declaration-honesty shim stashes the request scope in a `ContextVar`, and any
-operation observed reaching a rollup fails immediately — via the mode-agnostic
-`error_contract.assert_raisable_mode_declared` — unless it declares the
-retryable mode. Rollups fire on success paths, so any endpoint test driving a
-rollup-triggering variant enforces its operation's declaration — enforcement
-is exactly as deep as the suite exercises those variants, with no declaration
-list to maintain. Two structural pins close the mechanism's own dependencies:
-each known rollup-triggering operation has an explicit HTTP canary driving its
-triggering variant (so incidental test refactors can't silently drop
-enforcement), and a source scan pins the attribute-access calling convention
-the `setattr` instrumentation relies on (a `from`-import binding taken before
-instrumentation would bypass it). Outside a request context (service tests,
-CLI) the instrumentation passes through untouched.
+[ADR 0022](0022-error-contract-single-table-400-vs-422.md) closes declaration gaps "as deep as the suite exercises each operation's error paths" — but rollup-race 409s (`concurrent_rollup`) never fire organically in endpoint tests, so those declarations were guarded by a hand-pinned operation list in the test suite: review-vigilance of exactly the kind 0022 exists to kill (#113). Decided: enforcement moves to the raise site. The suite instruments every public `rollup_*` function in `score_snapshot` — the module's naming convention for the surface through which `ConcurrentRollupError` can escape (today `rollup_org_unit_scores` and `rollup_brand_scores`); the declaration-honesty shim stashes the request scope in a `ContextVar`, and any operation observed reaching a rollup fails immediately — via the mode-agnostic `error_contract.assert_raisable_mode_declared` — unless it declares the retryable mode. Rollups fire on success paths, so any endpoint test driving a rollup-triggering variant enforces its operation's declaration — enforcement is exactly as deep as the suite exercises those variants, with no declaration list to maintain. Two structural pins close the mechanism's own dependencies: each known rollup-triggering operation has an explicit HTTP canary driving its triggering variant (so incidental test refactors can't silently drop enforcement), and a source scan pins the attribute-access calling convention the `setattr` instrumentation relies on (a `from`-import binding taken before instrumentation would bypass it). Outside a request context (service tests, CLI) the instrumentation passes through untouched.
 
-This amends 0022's residual: for `concurrent_rollup`, the "raisable mode no
-test triggers stays invisible to the shim" gap narrows from error-path depth
-(which nothing exercises organically) to rollup-triggering-success-path depth
-(which the canaries pin for every known operation), and the pattern
-generalizes to any future mode whose error path can't fire organically.
+This amends 0022's residual: for `concurrent_rollup`, the "raisable mode no test triggers stays invisible to the shim" gap narrows from error-path depth (which nothing exercises organically) to rollup-triggering-success-path depth (which the canaries pin for every known operation), and the pattern generalizes to any future mode whose error path can't fire organically.
 
 Considered and rejected:
 
-- **Amending 0022 to record the pinned list as an accepted residual**: honest
-  about the gap, but keeps the drift class alive — a future endpoint whose
-  service triggers rollups fails nothing if the author forgets both the
-  declaration and the list entry.
-- **Static derivation (mapping services importing the rollup machinery to
-  their operations)**: module-level granularity is too coarse — not every
-  operation of a rollup-importing service triggers one — and call-graph
-  analysis is fragile.
-- **Tagging rollup-triggering routes**: moves the vigilance from a list to a
-  tag; forgetting the tag is the same failure mode.
-- **Wrapping the `scoring_orchestration` `on_*` switchboard**: a naming
-  convention one level shallower than the raiser — a service calling
-  `score_snapshot.rollup_*` directly would escape enforcement, and a handler
-  that triggers no rollup would over-assert.
+- **Amending 0022 to record the pinned list as an accepted residual**: honest about the gap, but keeps the drift class alive — a future endpoint whose service triggers rollups fails nothing if the author forgets both the declaration and the list entry.
+- **Static derivation (mapping services importing the rollup machinery to their operations)**: module-level granularity is too coarse — not every operation of a rollup-importing service triggers one — and call-graph analysis is fragile.
+- **Tagging rollup-triggering routes**: moves the vigilance from a list to a tag; forgetting the tag is the same failure mode.
+- **Wrapping the `scoring_orchestration` `on_*` switchboard**: a naming convention one level shallower than the raiser — a service calling `score_snapshot.rollup_*` directly would escape enforcement, and a handler that triggers no rollup would over-assert.
 
 Known residuals:
 
-- **Reverse direction**: an operation still declaring `concurrent_rollup`
-  after its rollup call is removed goes unnoticed, leaving a stale retryable
-  409 in the contract. The pinned list never enforced that direction either,
-  and a full-suite observed-vs-declared diff would fail subset runs. *Closed
-  by #121*: the diff runs at `pytest_sessionfinish`, gated to green full-suite
-  runs (any narrowing — positional paths, `--ignore`, deselection, or a mode
-  that executes no tests — skips it), so subset runs stay unaffected. Its own
-  residuals: the diff runs only on otherwise-green runs, so a stale
-  declaration hides behind an unrelated failure until the next green full run;
-  an explicit `pytest tests` reads as narrowed and skips the check; and
-  narrowing the gate doesn't recognize would diff a starved observed set and
-  fail spuriously — pytest-xdist (workers observe, the controller diffs) or a
-  multi-method route declaring the mode (only the driven method is observed)
-  would do the same, if either is ever introduced.
-- **Mount ambiguity**: `_effective_route` resolves a matched route to the
-  first include context sharing its route object, so a router mounted more
-  than once resolves every request to that first mount's merged declaration —
-  which could bless an undeclared operation on the other mount. The scope
-  cannot say which mount served the request; no router is mounted twice
-  today.
-- **Conditional-trigger depth**: a *future* operation whose rollup fires only
-  on a conditional branch (like reassignment or reparenting) is enforced only
-  when some test drives that branch — until its canary exists, a suite that
-  exercises only non-triggering variants fails nothing.
-- **Naming convention**: a future raiser named outside the `rollup_*`
-  convention escapes instrumentation. The inverse failure is loud, not
-  silent — a non-raising `rollup_*` function would over-assert, failing tests
-  until it is renamed or its callers declare the mode.
-- **Attribute bindings taken at import time**: the structural pin scans for
-  `from ...owner import rollup*` only, but a module-level `rollup =
-  owner.rollup` or a `functools.partial(owner.rollup, ...)` binds the
-  uninstrumented function just as effectively — the app is imported before
-  `instrument_rollup_raisers()` patches the attributes. Every call site in
-  `src/` is `await owner.rollup(...)` today.
-- **Mis-statused declarations** (added 2026-08-06 with the union read): the
-  audit asks only whether an operation declares a code, not which status
-  carries it, so a hand-written `responses` entry filing `concurrent_rollup`
-  under the wrong status reads as declared. `error_responses()` being the sole
-  writer is what keeps this unreachable — it buckets by `_STATUS_BY_CODE`, so
-  the status is never chosen by hand — and nothing enforces that it stays the
-  sole writer. The response-path reader still checks status, but never fires
-  for `concurrent_rollup`, which by this ADR's premise is never observed
-  organically.
-- **Walk scope**: the shared tree walk the structural pin runs on keys its
-  source map by module name, so a file colliding with a package `__init__` is
-  dropped and its imports never checked — see #138. The walk asserts it
-  descended below the top level, which catches the coarser way it could stop
-  looking.
+- **Reverse direction**: an operation still declaring `concurrent_rollup` after its rollup call is removed goes unnoticed, leaving a stale retryable 409 in the contract. The pinned list never enforced that direction either, and a full-suite observed-vs-declared diff would fail subset runs. *Closed by #121*: the diff runs at `pytest_sessionfinish`, gated to green full-suite runs (any narrowing — positional paths, `--ignore`, deselection, or a mode that executes no tests — skips it), so subset runs stay unaffected. Its own residuals: the diff runs only on otherwise-green runs, so a stale declaration hides behind an unrelated failure until the next green full run; an explicit `pytest tests` reads as narrowed and skips the check; and narrowing the gate doesn't recognize would diff a starved observed set and fail spuriously — pytest-xdist (workers observe, the controller diffs) or a multi-method route declaring the mode (only the driven method is observed) would do the same, if either is ever introduced.
+- **Mount ambiguity**: `_effective_route` resolves a matched route to the first include context sharing its route object, so a router mounted more than once resolves every request to that first mount's merged declaration — which could bless an undeclared operation on the other mount. The scope cannot say which mount served the request; no router is mounted twice today.
+- **Conditional-trigger depth**: a *future* operation whose rollup fires only on a conditional branch (like reassignment or reparenting) is enforced only when some test drives that branch — until its canary exists, a suite that exercises only non-triggering variants fails nothing.
+- **Naming convention**: a future raiser named outside the `rollup_*` convention escapes instrumentation. The inverse failure is loud, not silent — a non-raising `rollup_*` function would over-assert, failing tests until it is renamed or its callers declare the mode.
+- **Attribute bindings taken at import time**: the structural pin scans for `from ...owner import rollup*` only, but a module-level `rollup = owner.rollup` or a `functools.partial(owner.rollup, ...)` binds the uninstrumented function just as effectively — the app is imported before `instrument_rollup_raisers()` patches the attributes. Every call site in `src/` is `await owner.rollup(...)` today.
+- **Mis-statused declarations** (added 2026-08-06 with the union read): the audit asks only whether an operation declares a code, not which status carries it, so a hand-written `responses` entry filing `concurrent_rollup` under the wrong status reads as declared. `error_responses()` being the sole writer is what keeps this unreachable — it buckets by `_STATUS_BY_CODE`, so the status is never chosen by hand — and nothing enforces that it stays the sole writer. The response-path reader still checks status, but never fires for `concurrent_rollup`, which by this ADR's premise is never observed organically.
+- **Walk scope**: the shared tree walk the structural pin runs on keys its source map by module name, so a file colliding with a package `__init__` is dropped and its imports never checked — see #138. The walk asserts it descended below the top level, which catches the coarser way it could stop looking.
 
 ---
 
-**Amended 2026-08-05:** the mechanism consolidates into one home. The
-declaration-audit wing — `assert_declared_mode`,
-`assert_raisable_mode_declared`, `operations_declaring`, `operation_key`, the
-effective-route resolution, and `FRAMEWORK_STATUSES` — moves from
-`core/error_contract.py` into `tests/_declaration_honesty.py`, joining the
-ASGI shim and rollup instrumentation that were its only consumers; module
-references in the text above read historically. Each arrives underscored —
-the wing was public only to cross the seam it no longer crosses, so ADR 0038's
-marker now applies, with the module's own suite reaching them directly under
-that ADR's tests-are-outside-the-walk carve-out. `error_contract` keeps the
-served contract and gains one shared name, the `x-error-codes` vendor-key
-constant, written by `error_responses()` and read by the audit — the lockstep
-that colocation used to provide, now carried by a name instead of a file, and
-pinned by the round-trip tests that build declarations via `error_responses()`
-and assert the audit reads them back. It is the only name the seam adds — the
-audit also imports `ErrorCode` and `ErrorBody`, the contract's own vocabulary,
-which crossed before the move as well. Nothing *derived* crosses: the audit
-reads an operation's declared codes as the union across its statuses rather
-than indexing the status a code maps to, so no second copy of the contract's
-table exists test-side to drift. The cost is recorded above as the
-mis-statused-declaration residual. `operation_key`'s both-sides-must-agree
-caveat dissolves structurally: declared and observed sides now key in the same
-module. Rejected: a sibling src module (`core/declaration_audit.py`) — an
-honest split on the wrong side of the src/tests seam, still shipping
-suite-only machinery with zero src consumers. The test module's charter is
-closed — this ADR's mechanism, nothing else — and a future *production*
-consumer of declaration introspection promotes the needed function back into
-`error_contract`, never copies it. The mixed contract suite splits along the
-same line: the mechanism's tests move to `tests/test_declaration_honesty.py`,
-beside the mechanism, and `tests/core/test_error_contract.py` shrinks to the
-served contract. Residuals above are unchanged by the move.
+**Amended 2026-08-05:** the mechanism consolidates into one home. The declaration-audit wing — `assert_declared_mode`, `assert_raisable_mode_declared`, `operations_declaring`, `operation_key`, the effective-route resolution, and `FRAMEWORK_STATUSES` — moves from `core/error_contract.py` into `tests/_declaration_honesty.py`, joining the ASGI shim and rollup instrumentation that were its only consumers; module references in the text above read historically. Each arrives underscored — the wing was public only to cross the seam it no longer crosses, so ADR 0038's marker now applies, with the module's own suite reaching them directly under that ADR's tests-are-outside-the-walk carve-out. `error_contract` keeps the served contract and gains one shared name, the `x-error-codes` vendor-key constant, written by `error_responses()` and read by the audit — the lockstep that colocation used to provide, now carried by a name instead of a file, and pinned by the round-trip tests that build declarations via `error_responses()` and assert the audit reads them back. It is the only name the seam adds — the audit also imports `ErrorCode` and `ErrorBody`, the contract's own vocabulary, which crossed before the move as well. Nothing *derived* crosses: the audit reads an operation's declared codes as the union across its statuses rather than indexing the status a code maps to, so no second copy of the contract's table exists test-side to drift. The cost is recorded above as the mis-statused-declaration residual. `operation_key`'s both-sides-must-agree caveat dissolves structurally: declared and observed sides now key in the same module. Rejected: a sibling src module (`core/declaration_audit.py`) — an honest split on the wrong side of the src/tests seam, still shipping suite-only machinery with zero src consumers. The test module's charter is closed — this ADR's mechanism, nothing else — and a future *production* consumer of declaration introspection promotes the needed function back into `error_contract`, never copies it. The mixed contract suite splits along the same line: the mechanism's tests move to `tests/test_declaration_honesty.py`, beside the mechanism, and `tests/core/test_error_contract.py` shrinks to the served contract. Residuals above are unchanged by the move.
 
-**Amendment (2026-08-05, #130).** The instrumented surface moved with the
-rollup machinery: the raisers are now the Owner Dispatcher's rollup
-entrypoint(s) — every public `rollup*` callable on `services/owner.py`
-(today the single unified `rollup()`), patched as module attributes exactly as
-before. The from-import pin (since relocated to
-`tests/test_declaration_honesty.py`) follows the same module.
+**Amendment (2026-08-05, #130).** The instrumented surface moved with the rollup machinery: the raisers are now the Owner Dispatcher's rollup entrypoint(s) — every public `rollup*` callable on `services/owner.py` (today the single unified `rollup()`), patched as module attributes exactly as before. The from-import pin (since relocated to `tests/test_declaration_honesty.py`) follows the same module.

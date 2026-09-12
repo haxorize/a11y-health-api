@@ -28,22 +28,13 @@ uv run a11y --help               # onboarding CLI: import/ingest + org-unit/bran
 gh run view --log-failed         # a red CI run's failing step output, without opening the browser
 ```
 
-Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns
-`{"status":"healthy"}`; needs only Postgres at `localhost:5432/a11y_health`
-(`pg_isready`) up first. `make migrate` seeds the state — root org unit 1 `Humana Inc.`
-and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`), all
-API-read-only. For a scratch database instead, the recipe is the `verify` skill.
+Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns `{"status":"healthy"}`; needs only Postgres at `localhost:5432/a11y_health` (`pg_isready`) up first. `make migrate` seeds the state — root org unit 1 `Humana Inc.` and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`), all API-read-only. For a scratch database instead, the recipe is the `verify` skill.
 
-`.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks —
-read the file rather than a summary of it. It ends with the full suite, and two consequences
-are worth planning around: a commit takes as long as the suite does, and **every commit in a
-multi-commit split has to pass on its own**, so a split that leaves an intermediate
-commit broken can't be made.
+`.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit takes as long as the suite does, and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made.
 
 ## Structure
 
-Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`.
-Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
+Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`. Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
 
 ## Subagent delegation
 
@@ -85,9 +76,7 @@ Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and t
 - Visibility: private
 - Hierarchy: optional
 
-Work items are created only through the `to-*` publishers (`/to-feature`, `/to-story`,
-`/to-tasks`, `/to-bug`) — never drafted and pushed with raw `gh`/`az` calls. On a casual
-ask ('file a story'), name the right publisher and stop.
+Work items are created only through the `to-*` publishers (`/to-feature`, `/to-story`, `/to-tasks`, `/to-bug`) — never drafted and pushed with raw `gh`/`az` calls. On a casual ask ('file a story'), name the right publisher and stop.
 
 ## Bug severity labels
 

@@ -1,34 +1,10 @@
 # Domain rules test once at the service seam; API tests are transport translation
 
-The API and service test suites grew as mirrors — 37 scenarios duplicated
-name-for-name across the App, Org Unit, Scan Run, and Brand pairs — under the
-testing convention's "Both: use endpoint tests as integration tests; service
-tests for focused unit coverage." Every domain-rule change cost two test
-edits, and every regression fired in two files pointing at two layers.
+The API and service test suites grew as mirrors — 37 scenarios duplicated name-for-name across the App, Org Unit, Scan Run, and Brand pairs — under the testing convention's "Both: use endpoint tests as integration tests; service tests for focused unit coverage." Every domain-rule change cost two test edits, and every regression fired in two files pointing at two layers.
 
-Decided: a domain rule is asserted at exactly one seam — the service
-interface, where all entries converge (HTTP, CLI, scoring orchestration) and
-where error modes are assertable as exception types. Each API test file keeps
-only transport translation, chosen positively: one representative round-trip
-per operation, every distinct status-code path, and anything only transport
-can show (response serialization, query-parameter decoding). Duplicates are
-removed twin-verified, never by name match: an API test dies only after
-confirming a service test asserts the same rule, and any assertion unique to
-the API twin moves down first. This extends the [ADR 0017](0017-keyset-pagination-deep-module.md)
-precedent (cursor mechanics tested once centrally; per-endpoint tests keep
-only their own assertions) from one mechanism to the whole suite, and leaves
-the API suite as the thin contract-enforcement layer the declared-error-modes
-work (#73) builds its declaration-honesty fixture on.
+Decided: a domain rule is asserted at exactly one seam — the service interface, where all entries converge (HTTP, CLI, scoring orchestration) and where error modes are assertable as exception types. Each API test file keeps only transport translation, chosen positively: one representative round-trip per operation, every distinct status-code path, and anything only transport can show (response serialization, query-parameter decoding). Duplicates are removed twin-verified, never by name match: an API test dies only after confirming a service test asserts the same rule, and any assertion unique to the API twin moves down first. This extends the [ADR 0017](0017-keyset-pagination-deep-module.md) precedent (cursor mechanics tested once centrally; per-endpoint tests keep only their own assertions) from one mechanism to the whole suite, and leaves the API suite as the thin contract-enforcement layer the declared-error-modes work (#73) builds its declaration-honesty fixture on.
 
 Considered and rejected:
 
-- **Collapse the other way — API tests keep the domain rules**: each HTTP test
-  exercises more stack per run, but behaviors unreachable through HTTP
-  (rollup internals, orchestration, descendant-expansion variants) must stay
-  at the service seam regardless, so the suite boundary would become
-  "reachability" instead of "concern"; error assertions weaken from exception
-  types to status codes; and API tests could no longer double as a thin
-  contract-enforcement layer.
-- **Keep both suites with scoped roles**: that is the convention that
-  produced the 37 duplicates — a rule that permits both layers to assert the
-  same rule regrows the mirror with every generated test file.
+- **Collapse the other way — API tests keep the domain rules**: each HTTP test exercises more stack per run, but behaviors unreachable through HTTP (rollup internals, orchestration, descendant-expansion variants) must stay at the service seam regardless, so the suite boundary would become "reachability" instead of "concern"; error assertions weaken from exception types to status codes; and API tests could no longer double as a thin contract-enforcement layer.
+- **Keep both suites with scoped roles**: that is the convention that produced the 37 duplicates — a rule that permits both layers to assert the same rule regrows the mirror with every generated test file.

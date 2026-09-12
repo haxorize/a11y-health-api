@@ -1,13 +1,8 @@
 # Deferred dependency bumps
 
-One line per package the last `upgrade-deps` run audited and did not take.
-The next run's discovery step greps these back and re-audits each on or after
-its review-by date.
+One line per package the last `upgrade-deps` run audited and did not take. The next run's discovery step greps these back and re-audits each on or after its review-by date.
 
-Run of 2026-09-06. Publisher note: fastapi, sqlalchemy, pydantic-core, greenlet,
-mako, pygments, annotated-types, annotated-doc, ruff, and ty publish without a
-PyPI provenance attestation; they were taken on the user's decision after each
-tarball diff matched its changelog. Expect the same question next run.
+Run of 2026-09-06. Publisher note: fastapi, sqlalchemy, pydantic-core, greenlet, mako, pygments, annotated-types, annotated-doc, ruff, and ty publish without a PyPI provenance attestation; they were taken on the user's decision after each tarball diff matched its changelog. Expect the same question next run.
 
 ## Review-by 2026-09-09 (7-day floor from publish)
 

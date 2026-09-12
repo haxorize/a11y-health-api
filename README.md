@@ -53,9 +53,7 @@ make clean
 
 ## CLI
 
-The onboarding CLI (`uv run a11y`) drives the public API over HTTP — no direct
-database access. Four commands: `ingest`, `import`, `org-units list|create`,
-and `brands list`.
+The onboarding CLI (`uv run a11y`) drives the public API over HTTP — no direct database access. Four commands: `ingest`, `import`, `org-units list|create`, and `brands list`.
 
 Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by deriving its **Slug** from the `name` field in the axe DevTools JSON (lowercase ASCII, words joined by hyphens, accents folded — e.g. `My App (Prod)` → `my-app-prod`):
 
@@ -135,6 +133,4 @@ src/a11y_health/
 └── main.py                 # Application entrypoint
 ```
 
-Cross-cutting behavior (layering, scoring/rollups, the scan-run lifecycle,
-pagination, the error contract) is narrated in `docs/architecture.md`; the
-domain glossary is `DOMAIN.md`; decisions live in `docs/adr/`.
+Cross-cutting behavior (layering, scoring/rollups, the scan-run lifecycle, pagination, the error contract) is narrated in `docs/architecture.md`; the domain glossary is `DOMAIN.md`; decisions live in `docs/adr/`.

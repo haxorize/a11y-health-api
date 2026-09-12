@@ -71,8 +71,11 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.UV_PYTHON }}
-          # setup-uv v9 flipped this default to false; set it explicitly so the
-          # uv cache stays pruned regardless of what the action defaults to next.
+          # setup-uv v9 turned this off deliberately, to ease load on PyPI; it
+          # is a breaking change upstream because leaving it off grows the
+          # Actions cache. Set back to true: the pruned cache is the cheaper
+          # one to keep, and stating it means a later default flip is inert.
+          # See astral-sh/setup-uv#967.
           prune-cache: true
       - run: uv run pytest
 
@@ -102,8 +105,11 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.UV_PYTHON }}
-          # setup-uv v9 flipped this default to false; set it explicitly so the
-          # uv cache stays pruned regardless of what the action defaults to next.
+          # setup-uv v9 turned this off deliberately, to ease load on PyPI; it
+          # is a breaking change upstream because leaving it off grows the
+          # Actions cache. Set back to true: the pruned cache is the cheaper
+          # one to keep, and stating it means a later default flip is inert.
+          # See astral-sh/setup-uv#967.
           prune-cache: true
       - name: Migration roundtrip
         # Roundtrips to the newest irreversible migration, not base — its

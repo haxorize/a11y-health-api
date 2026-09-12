@@ -358,6 +358,57 @@ def markdown_continuations(document: str) -> list[int]:
     return found
 
 
+# A glossary entry: the bolded term in the first cell and its definition in the
+# second. The header and separator rows carry no bolded term, so the pattern
+# passes over them without naming them, and the aliases cell sits outside the
+# match because a list of words to avoid is not a definition and carries no
+# ceiling. The definition cell stops at the next `|` rather than running to the
+# end of the line, which is what keeps the aliases out of the count.
+_TERM_ROW = re.compile(r"^\|\s*\*\*(?P<term>[^*]+)\*\*\s*\|(?P<definition>[^|]*)\|")
+
+# The ceiling on one glossary definition, in words. A definition says what the
+# term is; the mechanism behind it belongs to the record that owns it, and the
+# failure this number catches is that mechanism creeping back into the glossary
+# one clause at a time. Anchored on the pruned file, whose longest definition is
+# 94 words: close enough that the ceiling still binds, far enough that no entry
+# sits one edit from red.
+#
+# Words, not sentences, because the sentence split a regex can do passes cells a
+# reader fails — a 74-word single sentence is over any cap a reader would set —
+# and doing better means understanding "e.g.", "2.1 AA", and a code span with a
+# period inside it. Counted by whitespace, the same way the audit that set the
+# number counted, so its figures reproduce here rather than needing conversion.
+DEFINITION_WORDS = 100
+
+
+def glossary_definitions(document: str) -> list[tuple[int, str, str]]:
+    """Every term row of the glossary, as line number, term, and definition.
+
+    Fenced code is blanked first: a table drawn inside a fence is an example of
+    the shape rather than an entry, and holding an example to the ceiling would
+    fail a document for explaining the rule.
+    """
+    return [
+        (number, match["term"], match["definition"].strip())
+        for number, line in enumerate(_markdown_body(document, keep_frontmatter=False).splitlines(), start=1)
+        if (match := _TERM_ROW.match(line))
+    ]
+
+
+def definitions_over_ceiling(document: str) -> list[tuple[int, str, int]]:
+    """Every definition past the ceiling, as line number, term, and word count.
+
+    Separate from the guard that reads `DOMAIN.md` so the boundary itself can be
+    put under test. A rule whose only subject is one real file is green whenever
+    that file is clean, which says nothing about where it turns red.
+    """
+    return [
+        (number, term, count)
+        for number, term, definition in glossary_definitions(document)
+        if (count := len(definition.split())) > DEFINITION_WORDS
+    ]
+
+
 # Copied from `british_words` in the skills repo's `scripts/lint-skills.sh`,
 # in that file's order so a drifted copy diffs cleanly against it. A word joins
 # or leaves the standard there, never here (ADR 0041).
@@ -402,6 +453,12 @@ BRITISH_WORDS = frozenset(
 DELIBERATE_BRITISH = {
     ("tests/cli/conftest.py", "Cancelled"): "CPython's `asyncio.CancelledError`, reached by import",
 }
+
+
+# The same one-literal rule as the spelling failure below, for the same reason:
+# the number is left out so the sentence stays one line, and the offender rows
+# carry each cell's own count anyway.
+_CEILING_FAILURE = "Glossary definitions run past the word ceiling. Move the mechanism to the record that owns it, and leave the definition:\n"  # noqa: E501
 
 
 # The failure a developer pastes into a search. It is one literal on one line,
@@ -752,6 +809,41 @@ class TestMarkdownContinuations:
         assert markdown_continuations("one\ntwo\nthree\n") == [2, 3]
 
 
+class TestGlossaryDefinitions:
+    def test_a_term_row_yields_its_term_and_definition(self) -> None:
+        row = "| **Slug** | A URL-friendly identifier for an app. | Key, code, handle |"
+        assert glossary_definitions(row) == [(1, "Slug", "A URL-friendly identifier for an app.")]
+
+    def test_the_header_and_separator_rows_are_not_entries(self) -> None:
+        assert glossary_definitions("| Term | Definition | Aliases to avoid |\n| --- | --- | --- |") == []
+
+    def test_a_row_reports_the_file_line_it_sits_on(self) -> None:
+        document = "# Ubiquitous Language\n\n| **App** | A web application. | Site |"
+        assert glossary_definitions(document) == [(3, "App", "A web application.")]
+
+    def test_the_aliases_cell_is_not_counted_as_definition(self) -> None:
+        row = "| **App** | Two words. | one two three four five six seven |"
+        assert glossary_definitions(row) == [(1, "App", "Two words.")]
+
+    def test_a_table_inside_a_fence_is_an_example_rather_than_an_entry(self) -> None:
+        assert glossary_definitions("```\n| **App** | A web application. | Site |\n```") == []
+
+
+class TestDefinitionsOverCeiling:
+    @staticmethod
+    def _row(words: int) -> str:
+        return f"| **Term** | {'word ' * words}| alias |"
+
+    def test_a_definition_one_word_past_the_ceiling_is_reported(self) -> None:
+        assert definitions_over_ceiling(self._row(101)) == [(1, "Term", 101)]
+
+    def test_a_definition_at_the_ceiling_is_not(self) -> None:
+        assert definitions_over_ceiling(self._row(100)) == []
+
+    def test_a_definition_one_word_under_the_ceiling_is_not(self) -> None:
+        assert definitions_over_ceiling(self._row(99)) == []
+
+
 class TestBritishSpellings:
     def test_a_british_form_in_prose_is_flagged(self) -> None:
         assert british_spellings("the colour of the behaviour here") == ["colour", "behaviour"]
@@ -902,6 +994,26 @@ def test_no_markdown_block_spans_more_than_one_line() -> None:
         "markdown blocks are hard wrapped; a paragraph, bullet, or blockquote is one line (ADR 0040):\n"
         + "\n".join(offenders)
     )
+
+
+def test_no_glossary_definition_runs_past_the_ceiling() -> None:
+    # Reds on a definition cell grown past the ceiling, which is the shape spec
+    # creep takes here: a query contract, an error table, or a list of ADR
+    # citations arriving one clause at a time inside what is meant to be a
+    # definition.
+    text = _file_text(_REPO / "DOMAIN.md")
+    assert text is not None, "DOMAIN.md is unreadable, so the ceiling has nothing to hold"
+    entries = glossary_definitions(text)
+    # A pattern that stopped matching reports the same green as a glossary under
+    # the ceiling, so the floor goes on what the rule was handed rather than on
+    # the offender list. The word floor is the second half of that: a match that
+    # kept the rows and lost the definition cell would clear a row count alone.
+    words = sum(len(definition.split()) for _, _, definition in entries)
+    assert len(entries) > 40, f"the glossary walk returned only {len(entries)} term rows"
+    assert words > 1500, f"the glossary walk returned only {words} definition words across {len(entries)} rows"
+
+    offenders = [f"DOMAIN.md:{number}: {term}, {count} words" for number, term, count in definitions_over_ceiling(text)]
+    assert not offenders, _CEILING_FAILURE + "\n".join(offenders)
 
 
 def test_prose_spells_american() -> None:

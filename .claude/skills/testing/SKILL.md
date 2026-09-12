@@ -21,7 +21,8 @@ tests/
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
   test_prose_shape.py      # the prose guards: code-prose wrap (the half W505 can't see),
-                           # one-line markdown blocks (ADR 0040), American spelling (ADR 0041)
+                           # one-line markdown blocks (ADR 0040), American spelling (ADR 0041),
+                           # the DOMAIN.md definition word ceiling (ADR 0018)
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # sample axe JSON payloads and other static test data
   api/

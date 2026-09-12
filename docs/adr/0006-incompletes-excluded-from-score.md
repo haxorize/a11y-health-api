@@ -8,3 +8,7 @@ Considered and rejected:
 - **Compute two parallel scores (with vs. without incompletes)**: rejected as premature; consumers consistently want a single decision-grade number.
 
 The line between violation and incomplete is owned by axe, not us. If a future review workflow promotes incompletes to violations, that surfaces in the score through the normal Rule Finding path.
+
+## Amendments
+
+- **2026-09-12 (#146)** — "preserved in raw JSON only" was already inexact when written. Passes and inapplicables are also persisted as two columns on the Page Result, `passes_count` and `inapplicable_count`, added in #45 before this record was backfilled. They still count toward no aggregate metric, so the decision stands; only the statement of where they live was wrong.

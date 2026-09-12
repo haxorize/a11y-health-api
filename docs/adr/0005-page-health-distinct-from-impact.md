@@ -11,3 +11,9 @@ Considered and rejected:
 - **Reuse axe's impact names verbatim**: the obvious choice, but conflates two different concepts. "This page is moderate" reads like a per-rule judgment, not a holistic page grade. The collision would also make scoring weights ambiguous in conversation ("does 'moderate' mean the rule or the page?").
 
 The vocabulary split costs one extra term but keeps the model legible in code, docs, and conversation. The mapping lives in scoring functions; renames here ripple to API responses and the glossary, so revisit only with consumer coordination.
+
+Revisit when: a term in the split is renamed — "renames here ripple to API responses and the glossary, so revisit only with consumer coordination".
+
+## Amendments
+
+- **2026-09-12 (#146)** — "The mapping lives in scoring functions" no longer points anywhere a reader can follow. The Impact-to-Page-Health mapping and the health ordering are the Scoring Vocabulary, [ADR 0020](0020-scoring-vocabulary-runtime-endpoint.md), in `services/scoring_vocabulary.py` with its completeness test. The vocabulary split this record decides is unchanged.

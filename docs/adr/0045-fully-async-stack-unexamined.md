@@ -1,0 +1,11 @@
+# The stack is fully async, and the choice is unexamined
+
+The data and transport layers are async end to end: async SQLAlchemy over `asyncpg`, Alembic on its async template, and `httpx.AsyncClient` over `ASGITransport` in the suite. Decided in `27a45ad` on 2026-04-06, which replaced a sync SQLAlchemy engine, session, and sessionmaker wholesale.
+
+**Considered options: unexamined.** No alternative was weighed on the record. The commit body is a list of what changed and states no reason, and the rationale was not recovered when the decision log was swept on 2026-09-05; the owner was asked and did not supply one. This record exists so the next reader knows the choice was made rather than derived, and treats it accordingly: an unexamined decision and a decision whose alternative was argued and rejected are different things to reopen.
+
+The alternative nobody is on record rejecting is sync SQLAlchemy behind FastAPI's own threadpool, which is the simpler shape for an internal CRUD API of this size and one a rational team picks. Naming it matters because two later records presuppose the async choice rather than restating it. [ADR 0007](0007-async-session-not-concurrency-safe.md) exists only because the session is async and would dissolve entirely under the sync shape. [ADR 0011](0011-transactional-rollback-test-isolation.md)'s savepoint mechanism is the async session's. A reader who reopens the async question without seeing that is reopening three decisions, not one.
+
+Reversing it is the expensive part, which is why it is worth a record even without a rationale. Every session call site, every service signature, the migration environment, and the whole suite's transport are written to it, and `asyncpg` is a SQLAlchemy driver with no sync twin, so the reversal is a dependency change as well as a rewrite. Nothing here argues the decision is wrong; the position is that it is load-bearing and undocumented, and this record closes the second half only.
+
+Revisit when: someone can supply the original reason, at which point this record is rewritten as a backfilled decision with its rationale labeled as such — or when a concrete cost of the async shape is measured, which would be the first evidence either way.

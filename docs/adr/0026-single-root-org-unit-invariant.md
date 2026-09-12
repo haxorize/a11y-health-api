@@ -1,3 +1,7 @@
 # Single-root Org Unit invariant, enforced by the database
 
 The Org Unit hierarchy is a tree, not a forest: at most one parentless Org Unit (the Root Org Unit) exists per deployment, because portfolio-level views and the Org Unit Rollup assume a single apex — with two roots the UI Overview silently rendered the lowest-id one (#92). A forest was rejected because nothing consumes a second root and every consumer would forever need to answer "which root is the portfolio?"; relaxing tree → forest later is cheap, while the reverse is a data remediation. Enforcement follows the Dependents Guard convention: a partial unique index on `parent_id IS NULL` is the source of truth (a service-only guard was rejected for the check-then-insert race), with the service raising the declared `duplicate_root` mode (409) on both `POST /org-units` and `PATCH /org-units/{id}`; the migration pre-checks existing data and fails with the offending ids rather than auto-reparenting, so no org structure is rewritten implicitly.
+
+## Amendments
+
+- **2026-09-12 (#146)** — This record says at most one Root Org Unit exists and never says where one comes from: it is seeded by migration `3737c72ff7ef` (`seed_org_unit_humana`), which is the only site in `src/` that creates a parentless Org Unit. A search for `parent_id=None` across `src` and `tests` returns no production site and only test fixtures, which create a second root precisely to prove the partial unique index rejects it.

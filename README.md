@@ -26,6 +26,8 @@ make dev
 
 The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
 
+Every route mounts without authentication, and the docs pages are ungated for the same reason: the deployment is assumed to be reachable from the intranet and from nowhere else. That is a decision with a stated boundary and three triggers that reopen it, recorded in [ADR 0042](docs/adr/0042-no-authentication-on-an-intranet-only-deployment.md).
+
 ## Development
 
 ```sh

@@ -88,7 +88,6 @@ asyncio_default_test_loop_scope = "session"
 asyncio_default_fixture_loop_scope = "session"
 addopts = ["--strict-markers", "--strict-config"]
 markers = [
-    "slow: tests that take noticeably longer (opt out with -m 'not slow')",
     "integration: end-to-end tests that exercise multiple layers",
 ]
 

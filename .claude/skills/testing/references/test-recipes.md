@@ -22,5 +22,5 @@ uv run pytest --lf                   # rerun only last-failed
 uv run pytest --ff                   # last-failed first, then the rest
 uv run pytest --pdb                  # drop into debugger on failure
 uv run pytest -k "scan and not run"  # filter by name expression
-uv run pytest -m "not slow"          # skip slow tests
+uv run pytest -m "not integration"   # skip the end-to-end files
 ```

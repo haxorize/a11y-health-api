@@ -11,6 +11,7 @@ Mirror the app structure — except for a **suite-wide mechanism** or a **topolo
 
 ```
 tests/
+  __init__.py              # one in every test directory except fixtures/, which holds data
   conftest.py              # shared fixtures (client, db_session, db_client, committed_session_factory)
   test_config.py           # top-level Settings/config tests
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
@@ -27,9 +28,15 @@ tests/
   fixtures/                # sample axe JSON payloads and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
-    test_<resource>.py      # one file per endpoint module
+    test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
+                            # three. Its two scan-run routers share test_scan_runs.py; pages_router
+                            # is test_pages.py; a nested read takes its own file
+                            # (test_scan_run_pages.py, test_scan_run_summary.py)
+    test_rollup_deadlock.py # the #104 deadlock 409 through the full request stack; `integration`
   services/
-    test_<resource>.py      # direct service-layer tests
+    test_<resource>.py      # direct service-layer tests, one per services/ module
+    test_finding_persistence.py   # what one payload leaves behind across the finding tables
+    test_rollup_serialization.py  # per-owner Rollup on two sessions (#101, ADR 0029); `integration`
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
   models/
@@ -38,7 +45,8 @@ tests/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
     conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`: the base URL of the app under uvicorn on an ephemeral port, its requests on real-commit sessions from the test engine (write through it with `committed_session_factory`), behind a fake proxy that stalls, redirects, or 413s a large POST on the `x-test-proxy` header; `socket_client`: the client `a11y` ships (`make_client`) against it; `forwarded`: each request that proxy handed the app since `socket_client` opened — TCP peer, request headers, response headers
-    test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py)
+    test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py,
+                            # test_brands.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
     test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect, a proxy's 413 on a large POST
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
@@ -53,7 +61,7 @@ Six fixtures, layered:
 - **`engine`** (session scope) — creates a test `AsyncEngine`, drops and recreates all tables once per session. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test (raise it per session only to steer which backend is the victim, as `test_rollup_deadlock.py` does). The GUC is superuser-set: dev and CI connect as superuser, and because it rides the connection startup packet, a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter` — the escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
-- **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB
+- **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB. The override yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why the override is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
 - **`committed_session_factory`** — factory for real-commit sessions on separate connections, for the rare test that needs one session's writes visible to another (genuine lock contention); teardown truncates every table. The sanctioned exception to rollback isolation — see [ADR 0011](../../../docs/adr/0011-transactional-rollback-test-isolation.md)
 - **`axe_payload`** (function scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests. Function scope prevents cross-test pollution from mutations
 
@@ -72,9 +80,10 @@ async def test_create_scan(db_client: AsyncClient) -> None:
 
 - Use `db_client` when the endpoint reads/writes the database
 - Use `client` for stateless endpoints (e.g., health check)
-- All test functions are `async def` (asyncio_mode is auto)
+- Test functions are `async def` (asyncio_mode is auto). A test that touches neither the app's event loop nor the database stays `def` — `tests/api/test_findings.py::test_openapi_declares_typed_classification_schema` reads the generated schema straight off `app.openapi()`
 - Explicit return type annotation: `-> None`
-- No docstrings on tests — the test name is the documentation. Use inline comments only when showing non-obvious context like formulas or math
+- No docstrings on test *functions* — the test name is the documentation. Use inline comments only when showing non-obvious context like formulas or math
+- A test *module* earns a header on the same criterion as a source module: its purpose is not evident from its path and a glance ([ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md), 2026-09-05 amendment). The topology guards, the migration-body suites, and the two-session and real-socket files carry one; a suite that mirrors a CRUD module does not
 
 ## Writing service tests
 
@@ -87,66 +96,11 @@ async def test_create_scan_service(db_session: AsyncSession) -> None:
     assert scan.scan_id is not None
 ```
 
-## Factory patterns
+## Arrange with a factory, compute the expectation yourself
 
-For test data setup, use simple async helper functions in `tests/factories.py` with explicit keyword arguments and defaults:
+Arrange side: reach for `tests/factories.py` and reuse production code freely — a factory that calls the real service to set a row up is arranging, not asserting. Writing one is [references/factories.md](references/factories.md).
 
-```python
-async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
-    org_unit = OrgUnit(name=name, parent_id=parent_id)
-    db.add(org_unit)
-    await db.flush()
-    return org_unit
-```
-
-Call in tests: `org_unit = await make_org_unit(db_session, name="Humana")`
-
-When computing derived values (e.g., ratios, percentages), import and reuse production helpers (e.g., `safe_ratio` from `services/score_snapshot.py`) rather than duplicating the formula inline.
-
-For resources with required parent FK chains, add `make_<resource>_with_parents` composite helpers that create the full ancestry in one call:
-
-```python
-scan_run = await make_scan_run_with_parents(db_session, slug="my-app", status=ScanRunStatus.PENDING)
-```
-
-For building in-memory data structures (e.g., axe JSON payloads), use sync helpers that return plain dicts:
-
-```python
-def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
-    return {"id": rule_id, "impact": impact, ...}
-
-def make_axe_payload(
-    *,
-    name: str = "test-app",
-    url: str = "https://example.com",
-    violations: Any = None,
-    incomplete: Any = None,
-    end_time: Any = None,  # untyped: tests hand it the values the boundary must reject; None omits the key
-    unmodeled: dict[str, Any] | None = None,  # keys the schema doesn't model, which Raw JSON must still carry
-) -> dict[str, Any]:
-    return {**(unmodeled or {}), "name": name, "testSubject": {"fileName": url}, "findings": {...}}
-```
-
-These don't touch the DB and don't need `async` or `flush()`.
-
-For factories that create many instances of the same resource, use a module-level `itertools.count()` sequence to generate unique defaults automatically:
-```python
-_brand_seq = itertools.count(1)
-
-
-async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
-    if name is None:
-        name = f"Test Brand {next(_brand_seq)}"
-    ...
-```
-
-Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored app. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one. `DEFAULT_SCORE_AGGREGATES` and `DEFAULT_SNAPSHOT_AT` are the one home of the snapshot defaults — the Score Aggregates and the observation time: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off them, and a test that has to build a raw `ScoreSnapshot` row `owned()` cannot express spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in beside `snapshot_at=DEFAULT_SNAPSHOT_AT` rather than restating the values.
-
-For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`:
-```python
-async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
-    return await _latest_snapshot(db, ScoreSnapshot.org_unit_id, org_unit_id)
-```
+Expected side: no production helper. Importing `safe_ratio` from `services/score_snapshot.py` to build the number you compare against asserts the formula against itself, and the test stays green when the formula is wrong. Write the expected value as a literal, with the arithmetic in an inline comment.
 
 ## What to test at which layer
 
@@ -184,14 +138,14 @@ The one exception is a test whose property *is* bitwise reproducibility — the 
 
 Declared in `pyproject.toml` under `[tool.pytest.ini_options]`:
 
-- `slow` — tests that take noticeably longer; skip locally with `-m "not slow"`
-- `integration` — end-to-end tests crossing multiple layers
+- `integration` — end-to-end tests crossing multiple layers; opt out with `-m "not integration"`
 
 `addopts = ["--strict-markers", "--strict-config"]` is on, so a typo'd marker fails the run. Add new markers to `pyproject.toml` before using them.
 
+An integration file is marked whole, not per function — three carry it (`tests/api/test_rollup_deadlock.py`, `tests/services/test_rollup_serialization.py`, `tests/cli/test_live_server.py`):
+
 ```python
-@pytest.mark.slow
-async def test_full_scan_ingestion(...) -> None: ...
+pytestmark = pytest.mark.integration
 ```
 
 ## Mocking
@@ -208,13 +162,14 @@ async def test_cli_uploads_scan(mocker) -> None:
     post.assert_awaited_once()
 ```
 
-- Mock at the seam closest to the boundary (e.g., `httpx.AsyncClient.post`), not deep into your own code
+- Mock at the seam closest to the boundary, not deep into your own code. For anything leaving the process, that seam is the transport: hand `httpx.MockTransport(handler)` to the client under test, the way `tests/cli/test_client.py` does, and the handler decodes a real request and returns a real response — so the code's own error decode, redirect, and timeout paths run rather than being stubbed past. Patch `httpx.AsyncClient.post` instead only when the assertion is about the call itself
 - For async callables use `new_callable=mocker.AsyncMock` and assert with `assert_awaited_once`/`assert_awaited_with`
 - Don't mock the database — the `db_session` rollback fixture is the canonical isolation mechanism
 
-## Recipes
+## References
 
-See [references/test-recipes.md](references/test-recipes.md) for coverage and runner-flag commands.
+- [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
+- [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
 
 ## Anti-patterns
 

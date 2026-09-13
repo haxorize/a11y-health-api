@@ -9,3 +9,5 @@ Considered and rejected:
 - **One session per request in tests**: the legitimate fix, but it removes the test affordance of asserting state through the same session that serviced the request. If the perf is ever genuinely worth it, that's the prerequisite — not a sneaked-in `gather`.
 
 If a refactor introduces parallel awaits, trace each call's `session` parameter: if any two share a session (or both route through `db_client` in tests), keep them sequential.
+
+**Amendment (2026-09-12, #147).** This record presupposes the fully async stack rather than deciding it. That choice is [ADR 0045](0045-fully-async-stack-unexamined.md), which records it as never having been examined — so reopening async is reopening this record too, not just that one.

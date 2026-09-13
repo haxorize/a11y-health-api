@@ -1,4 +1,4 @@
-# Astral-only Python toolchain: uv, ruff, ty
+# Astral-only Python toolchain: uv, ruff, ty, on a hard Python 3.14 floor
 
 Package management, linting/formatting, and type checking all run on Astral tools: `uv` for dependencies and command running, `ruff` for lint+format, `ty` for type checking. No pip, poetry, mypy, pyright, black, isort, or flake8.
 

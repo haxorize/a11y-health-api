@@ -24,3 +24,5 @@ Considered and rejected:
 If snapshot volume becomes a real cost, the answer is partition pruning or retention, not making them mutable.
 
 **Amendment (2026-08-05, #130).** The rollup queries moved from `services/score_snapshot.py` to `services/owner.py` (the Owner Dispatcher, ADR 0037). The append-only access pattern they are built around is unchanged.
+
+**Amendment (2026-09-12, #147).** The rule that an unscored Scan Run never mints a snapshot at all — so an empty run cannot enter this append-only history as a zero — is [ADR 0044](0044-an-unscored-scan-run-never-mints-a-score-snapshot.md).

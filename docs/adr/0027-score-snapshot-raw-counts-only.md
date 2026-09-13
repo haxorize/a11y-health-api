@@ -10,3 +10,5 @@ Considered and rejected:
 - **Rescale the values to match the percentage names**: no rename, but keeps the redundancy and diverges from the Score's established 0–1 wire scale, trading one inconsistency for another.
 
 The boundary: snapshots store observations, not presentations. A value derivable from columns in the same row doesn't get a column, and a derived value whose scale a reader must guess doesn't go on the wire — consumers (the UI, SQL, a report) derive shares and averages from the counts at whatever scale their display calls for. The Score itself stays: it is the one derived value with a declared definition (the Scoring Vocabulary, [ADR 0020](0020-scoring-vocabulary-runtime-endpoint.md)) and a documented 0–1 wire scale, and rollups aggregate it rather than recompute it.
+
+**Amendment (2026-09-12, #147).** What is never observed is also never stored: an unscored Scan Run mints no snapshot, rather than one recording zero. That is [ADR 0044](0044-an-unscored-scan-run-never-mints-a-score-snapshot.md).

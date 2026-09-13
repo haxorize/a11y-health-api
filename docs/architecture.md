@@ -171,7 +171,7 @@ A **Scan Run** is a small state machine (`services/scan_run.py`):
 
 - A run is created **Pending**. Pages may be added only while Pending; posting a page to a Completed run raises `ScanRunCompletedError` → 409.
 - The **only** legal transition is Pending → Completed (`_VALID_TRANSITIONS`). Anything else raises `InvalidStatusTransitionError` → 409. Completed is terminal — there is no reopening.
-- Completing requires **at least one Page Result** — an empty run raises `EmptyScanRunError` → 409, because its snapshot would score "no data" as 0.0 and roll that up into every ancestor mean.
+- Completing requires **at least one Page Result** — an empty run raises `EmptyScanRunError` → 409, because its snapshot would score "no data" as 0.0 and roll that up into every ancestor mean ([ADR 0044](adr/0044-an-unscored-scan-run-never-mints-a-score-snapshot.md)).
 - The Pending → Completed transition is what **triggers scoring**: it calls `on_scan_run_completed`, which computes the app score and runs both rollups (see [The scoring & rollup model](#2-the-scoring--rollup-model)).
 
 This is why ingestion is always "create run → add pages → complete run," in that order (see [Operating & debugging](#6-operating--debugging)).

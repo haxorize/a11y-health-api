@@ -13,3 +13,5 @@ Two consequences worth keeping in mind:
 - The same shared session that makes tests fast also makes concurrent awaits unsafe inside tests, which is why ADR-0007 exists.
 
 One sanctioned exception: a test whose point is that one transaction's state must be visible to another (genuine advisory-lock contention, e.g. the full-stack deadlock test from #110) cannot run inside a single rolled-back transaction. The `committed_session_factory` fixture serves those tests with real commits on separate connections and pays the rejected truncate cost on teardown — scoped to only the tests that need it.
+
+**Amendment (2026-09-12, #147).** This record presupposes the fully async stack rather than deciding it. That choice is [ADR 0045](0045-fully-async-stack-unexamined.md), which records it as never having been examined — so reopening async is reopening this record too, not just that one.

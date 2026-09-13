@@ -13,6 +13,8 @@ The boundary is the data's growth model, not its current row count: an operation
 
 ---
 
+## Amendments
+
 **Amended 2026-07-21 (#129):** `GET /org-units/{id}/descendants` was removed once its last consumer migrated to the `parent_id` filter on `GET /org-units` — not a graduation to the envelope but a departure from the surface. Three of the four operations remain; the decision stands unchanged for them.
 
 Revisit when: "one of these collections stops being bounded — or a consumer genuinely needs to page it", at which point "that operation graduates to the envelope as its own story".

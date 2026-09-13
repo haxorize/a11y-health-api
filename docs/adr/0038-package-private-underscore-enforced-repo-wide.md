@@ -22,4 +22,4 @@ Considered and rejected:
 
 The rule is only as strong as the package structure, and that limit is easy to miss: `services/` is one flat package, so `_latest_snapshot.py` and `_org_subtree.py` are siblings of every resource service and this rule permits all of them to import it. `TestScoringModuleImports` in `tests/test_sibling_imports.py` is what actually holds that line, and only for the modules it names. Privacy inside a flat package is an allowlist question, not an underscore question.
 
-See `docs/architecture.md` ("Underscore means package-private, and a test says so"). [ADR 0031](0031-typed-classification-compact-wire-shape.md)'s 2026-08-05 amendment records the two module moves that made this invariant true; this record covers the generalized rule and its enforcement.
+See `docs/architecture.md` ("Underscore means package-private"). [ADR 0031](0031-typed-classification-compact-wire-shape.md)'s 2026-08-05 amendment records the two module moves that made this invariant true; this record covers the generalized rule and its enforcement.

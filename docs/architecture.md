@@ -1,112 +1,95 @@
 # Architecture
 
-How this service is put together and why it behaves the way it does. This is the reading-first companion to the code: it explains the cross-cutting stories — scoring, the scan-run lifecycle, pagination, the API contract, and how to operate the thing — that no single file can tell on its own.
+Written for an engineer new to this service: the cross-cutting behavior no single file carries.
 
-Two siblings to this document:
-
-- **`DOMAIN.md`** — the glossary. Every **bold term** here (App, Scan Run, Page Health, Rollup, …) is defined there. Read it first if a word is unfamiliar.
-- **`docs/adr/`** — the decision log. Where a choice below is non-obvious, it links the ADR that records *why*.
+`DOMAIN.md`, the glossary, defines the domain terms bolded here (**Scan Run**, **Page Health**, **Score Snapshot**, **Axe Boundary**, and the rest); read it first if a word is unfamiliar. `docs/adr/` is the decision log, linked below wherever a choice is non-obvious.
 
 ---
 
 ## 1. The layers
 
-A request flows through four layers, each with one job. Nothing skips a layer.
+A request flows through three layers to Postgres, each with one job, and only the liveness check skips them; `schemas/` and `core/` below sit beside that flow rather than in it.
 
 ```
 HTTP request
    │
    ▼
-endpoint   api/v1/endpoints/*.py   thin: decode the request, call a service, serialize output
+endpoint   api/v1/endpoints/*.py
    │
    ▼
-service    services/*.py           all business logic and database access
+service    services/*.py
    │
    ▼
-model      models/*.py             SQLAlchemy tables (the shape of the data)
+model      models/*.py
    │
    ▼
 PostgreSQL
 ```
 
-**Endpoints** (`api/v1/endpoints/`) are deliberately thin. They declare the URL, accept a request validated by a **schema** (one exception, page-result ingest, is under **Services** below), hand off to a service, and convert the result back into a response schema. A whole endpoint is usually three lines — e.g. `create_app` in `api/v1/endpoints/apps.py`:
+- **Endpoints** (`api/v1/endpoints/`) declare the URL, accept a request validated by a schema, hand off to a service, and convert the result into a response schema. Logic found in an endpoint belongs in a service.
+- **Services** (`services/`) own the queries, the validation that needs the database, and the domain operations. They take a session plus plain arguments and return ORM objects or a `CursorPage`, almost never HTTP types, so tests can call them without the web layer. **Page Result** creation alone takes a raw document, crossing the **Axe Boundary** itself so the `invalid_axe_payload` mode is its own ([ADR 0009](adr/0009-axe-payload-pydantic-boundary.md)).
+- **Models** (`models/`) are SQLAlchemy table definitions, and they hold the layer-neutral leaves no other layer owns. `models/classification.py` holds the **Classification** value object and the **Classification Token** vocabulary naming it, kept together because its five production consumers span layers, the roster and the placement argument in [ADR 0031](adr/0031-typed-classification-compact-wire-shape.md).
+- **Schemas** (`schemas/`) are Pydantic request and response bodies, kept apart from the models so stored and wire shapes evolve independently.
+- **`core/`** holds the cross-cutting machinery every layer uses: `database.py`, `error_body.py`, `error_contract.py`, `exceptions.py`, `existence.py`, `integrity.py`, `pagination.py`, and `slug.py`.
+
+A whole endpoint is usually three lines under its decorator, whose `responses=` argument declares the operation's error modes (see [How errors become HTTP status codes](#how-errors-become-http-status-codes)). `DbSession` comes from `api/deps.py`:
 
 ```python
-@router.post("", status_code=201)
+@router.post("", status_code=201, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.DUPLICATE_SLUG))
 async def create_app(db: DbSession, data: AppCreate) -> AppRead:
     app = await app_service.create_app(db, data)
     return AppRead.model_validate(app)
 ```
 
-`DbSession` (defined in `api/deps.py`) is how every endpoint gets a database session — FastAPI injects it automatically. Endpoints never contain business rules; if you find logic in an endpoint, it belongs in a service.
+### Underscore means package-private
 
-**Services** (`services/`) own everything that matters: queries, validation that needs the database, and the domain operations (scoring, rollups, status transitions). They take a session plus plain arguments and return ORM objects or a `CursorPage` — never HTTP types, so tests can call them directly without spinning up the web layer. One service takes a raw document rather than a validated schema: page-result ingest (`services/page_result.py`) performs the axe boundary crossing itself, as its first statement, so the `invalid_axe_payload` error mode and the pending-run precondition are its own and the endpoint passes the request body straight through (ADR 0009, amended 2026-08-05). The CLI crosses the same boundary at scan load.
-
-**Models** (`models/`) are SQLAlchemy table definitions — the columns, types, and foreign keys. **Schemas** (`schemas/`) are Pydantic classes for request and response bodies; they are *not* the database models, and keeping them separate is what lets the stored shape and the wire shape evolve independently.
-
-`models/` also holds the layer-neutral leaves that every other layer needs and none of them owns. `models/classification.py` is the one to know: the **Classification** value object *and* the closed **Classification Token** vocabulary that names it — the query tokens the findings endpoint declares, the canonical mint for the stored shape, the **Filter Options** enumeration, and the screen that names a rule's raw axe tags at ingest — kept together so the import-time drift guard that pins them to each other has both halves in front of it. Every read runs the same closed table, so a token cannot mean one thing to a query and another to an ingest. It lives here because its consumers span layers (findings endpoint, filter service, read schema, column type, axe boundary); putting it in `schemas/` would send three of those five across a seam, and `services/` four ([ADR 0031](adr/0031-typed-classification-compact-wire-shape.md)).
-
-**`core/`** holds the cross-cutting machinery every layer leans on: `database.py` (engine, session, base classes), `pagination.py` (see [Pagination](#4-pagination)), `exceptions.py` (the domain error types), `error_contract.py` (the **Error Contract** — how domain errors become HTTP responses and contract declarations), `error_body.py` (the contract's `ErrorBody` and `ErrorCode` beside their lenient client-side twin, kept in their own module because it carries no web-framework import, and re-exported through `error_contract.py`), `integrity.py` (the **Integrity Guard** — a constraint violation turned into the domain error that names it, see [ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)), and `existence.py` (the **Existence Guard** — see below).
-
-### Underscore means package-private, and a test says so
-
-A source module whose name starts with `_` may be reached from within its own package and nowhere else — `schemas/_tag_parsing.py` is axe-tag ingest parsing for `schemas/axe_payload.py`; `services/_latest_snapshot.py` serves the **Owner Dispatcher**; `services/_org_subtree.py` serves three consumers inside `services/` (`owner.py`, `org_unit.py`, and `app.py`). A private *package* gates everything beneath it, so a public module inside one is not a way in. `tests/test_import_honesty.py` walks the source tree and fails on any crossing, in either import spelling, so the underscore is a checked claim rather than a hint. The rule covers the package and nothing else — tests, migrations, and scripts sit outside it, which is what lets a private module's own suite import it directly. It also does not say which modules inside one flat package *should* reach a private sibling: for the scoring modules, the sibling-import allowlist (below) holds that line; for the rest, the consumer list above is the record. [ADR 0038](adr/0038-package-private-underscore-enforced-repo-wide.md) records why this is enforced rather than conventional.
+A source module whose name starts with `_` may be reached from within its own package and nowhere else, and a private package gates everything beneath it. `tests/test_import_honesty.py` fails on any private-module import from outside, the walk covering the installed package so tests, migrations, and scripts sit outside the rule ([ADR 0038](adr/0038-package-private-underscore-enforced-repo-wide.md)).
 
 ### The Existence Guard and the two-tier call rule
 
-Checking that a referenced entity exists before an operation proceeds is one concept, owned by one deep module: `core/existence.py`. It has two entry points — `get_by_pk(session, model, id)` and `get_by_query(session, model, stmt, id)` — both returning the entity or raising `NotFoundError` with the entity's label from the module's one closed label table. That table is the only place entity label text lives (the services' other error modes read their entity's name from it too), and the guard is the only module that raises `NotFoundError` (a test pins both).
+One module owns checking that a referenced entity exists: `core/existence.py`. Its two entry points, `get_by_pk` and `get_by_query`, each return the entity or raise `NotFoundError` with the entity's label from the module's one closed label table. `tests/core/test_existence.py` fails if any other module raises `NotFoundError`; the label table's exclusivity is convention, not a checked claim.
 
-Callers follow a **two-tier call rule**:
+Callers follow a two-tier call rule:
 
-- **Each entity's own service keeps its named accessors** (`get_app`, `get_app_by_slug`, `get_brand`, `get_org_unit`, `get_scan_run`, `get_finding`) delegating to the guard. Endpoints read through these accessors, never through the guard.
-- **Every other module calls the guard directly** — `existence.get_by_pk(...)` with the model class. No service ever imports a sibling service just to ask "does it exist?" (or to fetch an entity it only reads); that import topology is what previously forced function-local imports to dodge cycles.
+- **Each entity's own service keeps its named accessors** (`get_app`, `get_brand`, and the rest), delegating to the guard. Endpoints read through these, never through the guard.
+- **Every other module calls the guard directly**, with the model class. No service imports a sibling service just to ask whether something exists; `tests/core/test_existence.py` checks that, and the **Sibling-Import Rule** in `DOMAIN.md` records the wider invariant.
 
-`tests/test_sibling_imports.py` holds the sibling-import rules that make this checkable: an allowlist of the siblings `score_snapshot`, `owner`, and `scoring_orchestration` may reach across `services/`, and a pin on every resource service — `org_unit`, `scan_run`, `app`, `brand`, `page_result`, and `rule_finding` — that it imports nothing from scoring directly (the ones that reach it do so through `scoring_orchestration`, which is the Rollup trigger by design). Only the modules named there are held; the next sibling-import rule lands in that module too.
-
-**Listing parameters split on whether the guard applies at all.** A *scope* — `/scores/latest`'s `brand_id` and `under_org_unit_id` — names one entity the answer is computed *relative to*, so it is guarded and an unknown id 404s. A *filter* — the apps listing's `brand_id`/`org_unit_id`, the org-units listing's `parent_id`, `/scores/latest`'s `owner_id` — narrows a set by matching values, takes a list, and is not guarded: unknown ids match nothing, and guarding would run an existence query per value to reject a request whose answer is already well-defined. A new listing parameter picks the side it belongs to rather than splitting the difference.
-
-The guard lives in the service/domain layer — not in endpoint dependencies — because services are entered from the CLI and scoring orchestration as well as from transport; a transport-level check would silently unguard those paths and violate the thin-endpoint rule. It concentrates the not-found mode into a single raise site the same way `paginate()` concentrated keyset pagination ([ADR 0017](adr/0017-keyset-pagination-deep-module.md)). Rationale and rejected alternatives: [ADR 0024](adr/0024-existence-guard-core-module-two-tier-rule.md).
+Listing parameters split on whether the guard applies. A scope, such as `/scores/latest`'s `under_org_unit_id`, names one entity the answer is relative to, so it is guarded and an unknown id returns 404. A filter, such as the apps listing's `org_unit_id`, narrows by matching values and is not guarded: unknown ids match nothing. A new parameter picks a side ([ADR 0024](adr/0024-existence-guard-core-module-two-tier-rule.md)).
 
 ### How the database session and transactions work
 
-`core/database.py`'s `get_db()` opens one session per request and wraps it in a transaction: **commit on success, roll back on any exception**. Services and endpoints therefore never call `commit()` themselves — they just `flush()` when they need a generated id mid-request. One request is one atomic unit of work.
+`core/database.py`'s `get_db()` opens one session per request and wraps it in a transaction: commit on success, roll back on any exception. Services and endpoints therefore never call `commit()` themselves; they call `flush()` for a generated id mid-request.
 
-The dependency is declared `Depends(get_db, scope="function")` (`api/deps.py`) so the commit lands **before the response is sent**. FastAPI's default `"request"` scope runs yield-dependency teardown after the response, which races a sequential client: it can receive a 201, immediately GET the new resource, and 404 because the creating request hasn't committed yet (observed as e2e seed flake in a11y-health-ui CI).
-
-A session is *not* safe to share across concurrent tasks — see [ADR 0007](adr/0007-async-session-not-concurrency-safe.md). Tests rely on the rollback behavior for isolation — [ADR 0011](adr/0011-transactional-rollback-test-isolation.md).
+The dependency is declared `Depends(get_db, scope="function")` so the commit lands before the response is sent; `docs/solutions/yield-teardown-commit-races-next-request.md` records the race that forced it. A session is not safe to share across concurrent tasks ([ADR 0007](adr/0007-async-session-not-concurrency-safe.md)), and tests rely on the rollback for isolation ([ADR 0011](adr/0011-transactional-rollback-test-isolation.md)).
 
 ### How errors become HTTP status codes
 
-Services raise **semantic** exceptions — subclasses of `DomainError` from `core/exceptions.py` (`NotFoundError`, `DuplicateSlugError`, and so on; the pagination module contributes `InvalidCursorError`). They do not know or care about HTTP. `core/error_contract.py` owns the **Error Contract**: one table (`ERROR_MODES`) maps each domain error mode to its status and machine-readable **Error Code**, and everything else derives from that table — the runtime handler (registered once for `DomainError`), the shared `ErrorBody` response shape (`{"code", "message"}`), and each operation's OpenAPI declaration (`error_responses(...)` on the route decorator, which also embeds the declared codes under `ERROR_CODES_KEY` — the vendor extension `x-error-codes`).
+Services raise semantic exceptions, subclasses of `DomainError`, and know nothing about HTTP. `core/error_contract.py` owns the **Error Contract**: one table, `ERROR_MODES`, maps each mode to its status and its **Error Code**, and the runtime handler, the shared `ErrorBody` shape, and each operation's OpenAPI declaration all derive from it.
 
-| Mode (exception → code) | Status |
+| Mode (exception, and its code) | Status |
 | --- | --- |
-| `NotFoundError` → `not_found` | 404 |
-| `CircularReferenceError` → `circular_reference`, `ConcurrentRollupError` → `concurrent_rollup`, `DuplicateRootError` → `duplicate_root`, `DuplicateSlugError` → `duplicate_slug`, `EmptyScanRunError` → `empty_scan_run`, `HasDependentsError` → `has_dependents`, `InvalidStatusTransitionError` → `invalid_status_transition`, `ScanRunCompletedError` → `scan_run_completed` | 409 |
-| `InvalidCursorError` → `invalid_cursor`, `InvalidAxePayloadError` → `invalid_axe_payload` | 400 |
-| Pydantic `ValidationError` (request failed FastAPI's own shape validation) | 422 |
+| `NotFoundError` (`not_found`) | 404 |
+| `CircularReferenceError` (`circular_reference`), `ConcurrentRollupError` (`concurrent_rollup`), `DuplicateRootError` (`duplicate_root`), `DuplicateSlugError` (`duplicate_slug`), `EmptyScanRunError` (`empty_scan_run`), `HasDependentsError` (`has_dependents`), `InvalidStatusTransitionError` (`invalid_status_transition`), `ScanRunCompletedError` (`scan_run_completed`) | 409 |
+| `InvalidCursorError` (`invalid_cursor`), `InvalidAxePayloadError` (`invalid_axe_payload`) | 400 |
+| Pydantic `ValidationError`, where the request never matched the declared schema | 422 |
 
-The 400-vs-422 rule: **422 belongs to the framework** — it means the request never matched the declared request schema, with FastAPI's standard error body. A request that is well-formed but fails *domain* validation (a malformed cursor, an axe payload that doesn't parse) returns **400 with a coded body**. There is no app-level handler for `ValidationError`: an internal validation failure escaping the domain is a bug and surfaces as a 500, never a disguised client error. See [ADR 0022](adr/0022-error-contract-single-table-400-vs-422.md).
+The 400-versus-422 rule: 422 belongs to the framework, while a well-formed request failing domain validation returns 400 with a coded body. No app-level handler catches `ValidationError`, because an internal validation failure escaping the domain is a defect and returns a 500 ([ADR 0022](adr/0022-error-contract-single-table-400-vs-422.md)).
 
-When the *database* is the rule's enforcer (a constraint backing a domain invariant, like the single **Root Org Unit**, the unique **Slug**, or the **Dependents Guard**'s RESTRICT FKs), services don't inspect `IntegrityError` themselves: they declare a constraint→error mapping and `core/integrity.py`'s `guard` — the **Integrity Guard** — translates a recognized violation into its mapped domain error with the surrounding transaction still usable, re-raising anything unrecognized. How violations are identified, and the SQLAlchemy subtlety that forces the guarded mutation *inside* the `guard` block, live in the module's docstrings; [ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md) records the decisions.
+Where the database is the rule's enforcer, as with the **Root Org Unit** or the **Dependents Guard**, services declare a constraint-to-error mapping instead of inspecting `IntegrityError`. `core/integrity.py`'s `guard`, the **Integrity Guard**, translates a recognized violation into its domain error with the transaction still usable ([ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)).
 
-So: to add a new failure mode, subclass `DomainError`, add its row to `ERROR_MODES`, and list its code in `error_responses(...)` on the operations that can produce it. An exhaustiveness test fails if a `DomainError` subclass lacks a table entry, and the test suite's declaration-honesty shim (the ASGI wrapper in `tests/_declaration_honesty.py`) fails any test that observes an undeclared error status or code. That module holds the whole mechanism — the audit that reads a declaration as well as the plumbing that applies it — and reads what `error_responses(...)` wrote through the contract's shared `ERROR_CODES_KEY`. The endpoint logic stays untouched.
-
-One mode can't be caught at the response: rollup-race 409s (`concurrent_rollup`) never fire organically in endpoint tests. The same test module closes that gap at the *raise site* instead — it instruments the public `rollup*` callables on the Owner Dispatcher (`services/owner.py`) through which `ConcurrentRollupError` can escape, and any operation observed reaching one during a request fails immediately unless it declares the retryable mode. Rollups fire on success paths, so enforcement reaches as deep as the suite drives rollup-triggering variants — each known rollup-triggering operation is pinned by an explicit HTTP canary in `tests/test_declaration_honesty.py`, and a structural test pins the attribute-access calling convention the instrumentation relies on (#113; ADR 0033 records the residuals).
-
-The reverse direction — an operation still declaring `concurrent_rollup` after its rollup call is removed — is caught at session finish (#121): on a green full-suite run, `conftest.py` diffs the operations declaring the mode against those observed reaching a rollup and fails the run on any stale declaration. Narrowed runs (positional paths, `--ignore`, deselection, or a mode that executes no tests) skip the diff, since a subset legitimately observes nothing for the operations it never drove; a red run also skips it, so a stale declaration surfaces on the next green full run.
+To add a failure mode: subclass `DomainError`, add its row to `ERROR_MODES`, and list its code in `error_responses(...)`. `tests/core/test_error_contract.py` fails if a subclass lacks a table entry, and the declaration-honesty check fails any test observing an undeclared status or code; what it reaches is [ADR 0033](adr/0033-rollup-race-declaration-enforced-at-raise-site.md).
 
 ---
 
 ## 2. The scoring & rollup model
 
-This is the heart of the system and the part worth reading slowly. The code splits as computation vs. dispatch: `services/score_snapshot.py` computes the app score (findings → Page Health → Score), and `services/owner.py` — the **Owner Dispatcher** — owns everything per-owner: snapshot construction, the latest/history score reads, and the rollups, plus the owner-agnostic **Score Aggregates** value those consume (the one piece of snapshot vocabulary the computation side imports from the dispatcher). Terms: **Page Health**, **Score**, **Score Aggregates**, **Score Snapshot**, **Rollup**, **Owner Dispatcher** — all in `DOMAIN.md`.
+The code splits as computation versus dispatch. `services/score_snapshot.py` computes the app score, from findings to **Page Health** to **Score**. `services/owner.py`, the **Owner Dispatcher**, owns everything per owner: snapshot construction, the latest and history score reads, the rollups, and the owner-agnostic **Score Aggregates** value those consume.
 
-The *meaning* behind the scoring value sets — the health ordering (worst → best, each health's rank derived from its position), the health weights, and the total Impact → Page Health mapping — has one home: the **Scoring Vocabulary** module, `services/scoring_vocabulary.py`. The scoring engine imports it, and `GET /scoring-vocabulary` serves the deployed server's copy so no client hard-codes it ([ADR 0020](adr/0020-scoring-vocabulary-runtime-endpoint.md)). The tables and weights quoted below are illustrations of that vocabulary, not a second authority.
+The health ordering, the health weights, and the total **Impact** to **Page Health** mapping have one home: `services/scoring_vocabulary.py`, the **Scoring Vocabulary**. The tables and weights quoted below illustrate that vocabulary; they are not a second authority. The scoring engine imports it, and `GET /scoring-vocabulary` serves the deployed server's copy so no client hard-codes it ([ADR 0020](adr/0020-scoring-vocabulary-runtime-endpoint.md)).
 
-### Step 1 — each page gets a Page Health
+### Step 1: each page gets a Page Health
 
-A **Page Result**'s health is decided by the **worst Impact** among its **Violation** findings. **Incompletes never count** — they are stored for manual review but excluded from every score ([ADR 0006](adr/0006-incompletes-excluded-from-score.md)). The vocabulary's Impact → Page Health mapping is intentionally lossy — and **total**: every Impact maps explicitly, so there is no "unmapped means Good" default. A page with no violations at all is Good; that empty case is the engine's, not the mapping's.
+A **Page Result**'s health is decided by the worst **Impact** among its **Violation** findings. **Incompletes** never count: they are stored for manual review but excluded from every score ([ADR 0006](adr/0006-incompletes-excluded-from-score.md)). The mapping is lossy and total: every **Impact** maps explicitly, so there is no "unmapped means Good" default. A page with no violations is Good; that empty case belongs to the engine.
 
 | Worst violation impact | Page Health |
 | --- | --- |
@@ -115,44 +98,42 @@ A **Page Result**'s health is decided by the **worst Impact** among its **Violat
 | moderate | Fair |
 | minor | Good |
 
-Page Health uses different words from Impact on purpose, so "the page is Fair" is never confused with "an issue is moderate" — [ADR 0005](adr/0005-page-health-distinct-from-impact.md).
+**Page Health** uses its own words at the 2 higher levels, so "the page is Fair" is never confused with "a finding is moderate" ([ADR 0005](adr/0005-page-health-distinct-from-impact.md)).
 
-### Step 2 — the app's Score is a weighted average of its pages
+### Step 2: the app's Score is a weighted average of its pages
 
-Each Page Health carries a weight in the vocabulary — currently **Critical = 0, Serious = 0.4, Fair = 0.8, Good = 1.0**. The **Score** is the mean of those weights across all pages:
+Each **Page Health** carries a weight in the vocabulary: Critical 0, Serious 0.4, Fair 0.8, Good 1.0. The **Score** is the mean of those weights across all pages:
 
 ```
 score = (0·critical_pages + 0.4·serious_pages + 0.8·fair_pages + 1.0·good_pages) / total_pages
 ```
 
-A perfect app scores 1.0; an all-critical app scores 0.0. The result is saved as a **Score Snapshot** — a denormalized row holding the **Score Aggregates**: the score plus the raw counts (total pages, total violations, pages with violations, pages with critical violations). An app snapshot's `snapshot_at` is the **Scan Run's `scanned_at`** (when the scan happened), not when it was uploaded.
+The result is saved as a **Score Snapshot** holding the **Score Aggregates**: the score plus the raw counts of total pages, total violations, pages with violations, and pages with critical violations. An app snapshot's `snapshot_at` is the **Scan Run**'s `scanned_at`, the observation time rather than the upload time.
 
-### Step 3 — the score rolls up to Org Units and Brands
+### Step 3: the score rolls up to Org Units and Brands
 
-Once an app snapshot exists, the totals roll up to the owners. A **Score Snapshot** belongs to exactly one of an App, an Org Unit, or a Brand — never more than one ([ADR 0002](adr/0002-score-snapshot-mutex-owner.md)) — and construction is owner-typed: `owner.owned()` picks the owner column from the spec table, so exactly-one-owner holds structurally, with the database check constraint as the backstop. Everything per-owner routes through the Owner Dispatcher's `OWNERS` spec table, derived from one exhaustive match over the owner enum — a missing owner case fails type checking, and adding an owner type touches exactly one module. The table is also the sanctioned test seam: the rollup-race harness swaps the whole table for a test's duration, and consumers resolve it at call time ([ADR 0037](adr/0037-per-owner-variation-concentrates-in-the-owner-dispatcher.md)). The module's charter is closed both ways: app-score computation stays out, and no per-owner dispatch may exist anywhere else. There are two rollup shapes, behind one `owner.rollup(session, owner_type, owner_id)` entrypoint:
+A **Score Snapshot** belongs to exactly one of an App, an Org Unit, or a Brand ([ADR 0002](adr/0002-score-snapshot-mutex-owner.md)), and owner-typed construction holds that structurally. Everything per owner routes through the **Owner Dispatcher**'s `OWNERS` spec table, one exhaustive match over the owner enum, so a new owner type touches one module ([ADR 0037](adr/0037-per-owner-variation-concentrates-in-the-owner-dispatcher.md)). There are 2 rollup shapes, behind one `owner.rollup` entrypoint:
 
-- **Org Unit Rollup is hierarchical and cascades.** An org unit recomputes from its children's *latest* snapshots (child apps **and** child org units), then calls itself on its parent, walking to the root.
-- **Brand Rollup is flat.** A brand aggregates the latest snapshots of all its apps in one shot, regardless of where those apps sit in the org tree. It does not cascade. [ADR 0004](adr/0004-org-unit-rollup-cascades-brand-rollup-flat.md).
+- **Org Unit Rollup is hierarchical and cascades.** A unit recomputes from its children's latest snapshots, apps and units alike, then repeats on its parent to the root.
+- **Brand Rollup is flat.** A brand aggregates its apps' latest snapshots at once, wherever they sit in the org tree ([ADR 0004](adr/0004-org-unit-rollup-cascades-brand-rollup-flat.md)).
 
-"Latest" has exactly one definition — newest `snapshot_at`, ties broken by `id`, per owner — owned by `services/_latest_snapshot.py` and shared by both rollup shapes and the `GET /scores/latest` read endpoint ([ADR 0023](adr/0023-scores-latest-read-endpoint.md)), so what a dashboard shows as "latest" can never disagree with what rollups aggregate. That endpoint's `owner_id` filter is exact-match, unlike the apps listing's descendant-expanding `org_unit_id`: a rollup owner's snapshot already aggregates everything it covers, so expansion would double-count. Any future owner-valued filter on a scores read should follow the exact-match side of that split. The `under_org_unit_id` scope is the sanctioned other side — it names a *place* in the org tree, not owners, and resolves per owner type: `app` serves apps placed anywhere in the unit's subtree (the unit's own apps included, matching the apps listing), `org_unit` serves the units strictly below it (the named unit is not "under" itself, and its own rollup already aggregates the subtree), and `brand` serves the empty set (brands have no org-tree placement). The scope's `direct_only` opt-in narrows that resolution one step per owner type — `app` serves apps placed exactly on the named unit, `org_unit` its depth-1 children, `brand` stays empty — so a caller rendering only a unit's direct rows can fetch a response that matches them instead of the whole subtree. Without `under_org_unit_id` there is no scope to refine, so `direct_only` is ignored ([ADR 0035](adr/0035-direct-only-opt-in-refines-the-under-org-unit-scope.md)). The apps listing's `org_unit_id` filter takes the same `direct_only`, with the same name, default, and ignored-without-a-scope posture, so the rows a client lists for one unit and the scores it fetches for them narrow the same way. They still sit on opposite sides of the scope/filter split above: an unknown `under_org_unit_id` 404s, an unknown `org_unit_id` matches nothing. The `brand_id` scope names a *brand*, not owners, and resolves the same way: `app` serves the brand's apps wherever they sit in the org tree (flat, like the Brand Rollup), while `org_unit` and `brand` serve the empty set — org units carry no brand, and the scoping brand's own rollup already aggregates the scoped apps (fetch it via `owner_id`). Both scopes and `owner_id` intersect when sent together — never mutually exclusive ([ADR 0036](adr/0036-brand-scope-resolves-per-owner-type.md)).
+"Latest" has one definition, newest `snapshot_at` with ties broken by `id`, per owner. `services/_latest_snapshot.py` owns it, and both rollup shapes and the `GET /scores/latest` read share it ([ADR 0023](adr/0023-scores-latest-read-endpoint.md)), so a dashboard's "latest" cannot disagree with what rollups aggregate. That read also takes 2 scopes beside its exact-match `owner_id` filter, each resolving per owner type ([ADR 0034](adr/0034-under-org-unit-scope-resolves-per-owner-type.md), [ADR 0036](adr/0036-brand-scope-resolves-per-owner-type.md)); `direct_only` refines one of them rather than adding a third ([ADR 0035](adr/0035-direct-only-opt-in-refines-the-under-org-unit-scope.md)).
 
-A parent's `score` is the **unweighted arithmetic mean of its children's scores** — every child counts equally, a 2-page app and a 2000-page app alike. The count columns, by contrast, are *summed totals* — so a share or average a consumer derives from a rollup's counts is page-weighted and can legitimately diverge from the headline score. That arithmetic lives on **Score Aggregates** (`ScoreAggregates.rolled_up` in the Owner Dispatcher): the one value for the Score and counts a snapshot summarizes, which snapshot construction takes, app-score computation produces, and the rollup builds from its children's. The sum under the mean is exactly rounded (`math.fsum`), so the mean is the same in any child order: a recompute is bitwise-reproducible and the no-change skip below can compare for equality (#136).
+A parent's score is the unweighted arithmetic mean of its children's scores, so a 2-page app and a 2000-page app count equally, while the count columns are summed totals. A share derived from those counts is therefore page-weighted and can diverge from the score itself. Both live on **Score Aggregates**.
 
-> **Why snapshots get pruned during a rollup.** Snapshots are append-only ([ADR 0015](adr/0015-score-snapshot-append-only.md)), so a rollup writes a new row rather than mutating one. The new row's `snapshot_at` is the newest among its children. Any existing owner snapshot dated *after* that — left behind by data that has since been deleted — is now orphaned (the numbers behind it are gone), so the rollup deletes those forward rows before inserting. If a node ends up with no children at all, its snapshots are deleted outright.
->
-> **One snapshot per distinct observation.** A rollup trigger is not itself an observation (#95): when the recomputed aggregate lands on the observation time the owner's latest snapshot already holds, identical **Score Aggregates** record nothing, and changed ones replace the rows sharing that time (delete + insert, never update). Only a newer observation time appends — even when the values didn't move, so the latest snapshot never claims an observation whose source data has since been deleted. Since #98 the database enforces this for rollup owners: partial unique indexes on (owner, `snapshot_at`) decide same-observation write races, the losing rollup failing as `ConcurrentRollupError` (409, retryable). App snapshots stay unconstrained — two Scan Runs may share an observation time (ADR 0015).
->
-> **Concurrency model.** Recomputes for one owner are serialized by a transaction-scoped advisory lock acquired as the rollup's first statement — before the children read — so a rollup deriving an older observation can never prune or displace a newer one committed concurrently: the two different-observation rows never collide, which puts that interleaving beyond what the #98 indexes can decide ([ADR 0029](adr/0029-per-owner-advisory-lock-rollup-serialization.md), #101). Locks are per owner (org unit or brand), acquired leaf-to-root along the cascade. The two-subtree triggers — app reassignment and org-unit reparenting — break that single order (the second subtree's locks are taken after the root is already held) and can deadlock with any concurrent rollup; Postgres detects the cycle and fails one transaction (ADR 0029). The loser's `40P01` is translated at the lock acquisition into the retryable `concurrent_rollup` 409 (#104), declared on every rollup-triggering operation. The indexes stay the backstop for same-observation races, unchanged.
+Three rules govern how a rollup writes. Snapshots are append-only, so a rollup inserts rather than mutates, and first deletes any owner snapshot dated after the new row's observation time, or all of them where no children are left ([ADR 0015](adr/0015-score-snapshot-append-only.md)). One observation time carries at most one snapshot per rollup owner: an unchanged recompute records nothing, a changed one replaces the rows sharing that time, and only a newer time appends. App snapshots stay unconstrained, since two Scan Runs may share an observation time. Recomputes for one owner are serialized by a blocking advisory lock ([ADR 0029](adr/0029-per-owner-advisory-lock-rollup-serialization.md)), with partial unique indexes deciding same-observation races ([ADR 0015](adr/0015-score-snapshot-append-only.md)); ordinary contention waits its turn, while a deadlock or a lost index race surfaces as `ConcurrentRollupError`, a retryable 409, through the Integrity Guard ([ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)).
+
+Nothing in this repo retries that 409; the message tells the caller to reissue the request.
 
 ### What triggers a rollup
 
-`services/scoring_orchestration.py` is the switchboard. Any event that changes an app's latest snapshot fires the appropriate rollups:
+`services/scoring_orchestration.py` is the switchboard: any event changing an app's latest snapshot fires the appropriate rollups:
 
 | Event | What recomputes |
 | --- | --- |
 | Scan Run completed | app score, then its org-unit chain and its brand |
 | Scan Run deleted | the app's org-unit chain and brand |
-| App deleted | the (former) org-unit chain and brand |
+| App deleted | the former org-unit chain and brand |
 | App reassigned to a new Org Unit | both old and new org-unit chains |
 | Org Unit reparented | both old and new parent chains |
 
@@ -160,7 +141,7 @@ A parent's `score` is the **unweighted arithmetic mean of its children's scores*
 
 ## 3. The scan-run lifecycle
 
-A **Scan Run** is a small state machine (`services/scan_run.py`):
+A **Scan Run** is a small state machine, held across `services/scan_run.py` and `services/page_result.py`:
 
 ```
             add Page Results                 transition
@@ -169,40 +150,39 @@ A **Scan Run** is a small state machine (`services/scan_run.py`):
 [ PENDING ] ─────────────────────────────► [ COMPLETED ]   (terminal)
 ```
 
-- A run is created **Pending**. Pages may be added only while Pending; posting a page to a Completed run raises `ScanRunCompletedError` → 409.
-- The **only** legal transition is Pending → Completed (`_VALID_TRANSITIONS`). Anything else raises `InvalidStatusTransitionError` → 409. Completed is terminal — there is no reopening.
-- Completing requires **at least one Page Result** — an empty run raises `EmptyScanRunError` → 409, because its snapshot would score "no data" as 0.0 and roll that up into every ancestor mean ([ADR 0044](adr/0044-an-unscored-scan-run-never-mints-a-score-snapshot.md)).
-- The Pending → Completed transition is what **triggers scoring**: it calls `on_scan_run_completed`, which computes the app score and runs both rollups (see [The scoring & rollup model](#2-the-scoring--rollup-model)).
+- A run is created **Pending**. Pages may be added only while Pending; posting one to a Completed run raises `ScanRunCompletedError`, a 409, from `services/page_result.py`.
+- The only legal transition is Pending to Completed (`_VALID_TRANSITIONS`). Anything else raises `InvalidStatusTransitionError`, a 409. Completed is terminal.
+- Completing requires at least one **Page Result**. An empty run raises `EmptyScanRunError`, a 409, because its snapshot would score "no data" as 0.0 and roll that up into every ancestor mean ([ADR 0044](adr/0044-an-unscored-scan-run-never-mints-a-score-snapshot.md)).
+- The Pending to Completed transition triggers scoring: it calls `on_scan_run_completed`, which computes the app score and runs both rollups (see [The scoring & rollup model](#2-the-scoring--rollup-model)).
 
-This is why ingestion is always "create run → add pages → complete run," in that order (see [Operating & debugging](#6-operating--debugging)).
+The order is therefore always create run, add pages, complete run (see [Operating & debugging](#6-operating--debugging)).
 
 ---
 
 ## 4. Pagination
 
-Every **unbounded** list endpoint is **keyset (cursor) paginated** through one shared function, `paginate()` in `core/pagination.py` — [ADR 0017](adr/0017-keyset-pagination-deep-module.md). No list service hand-rolls its own paging. Bounded reference collections — brand and org-unit listings and the ancestors traversal — deliberately return bare arrays instead; the boundary is the data's growth model, not its row count ([ADR 0025](adr/0025-bounded-reference-lists-stay-bare-arrays.md)).
+Every unbounded list endpoint follows the **Cursor Pagination** contract, keyset paginated through one shared function, `paginate()` in `core/pagination.py` ([ADR 0017](adr/0017-keyset-pagination-deep-module.md)). Bounded reference collections return bare arrays; the test is whether the collection can grow without bound ([ADR 0025](adr/0025-bounded-reference-lists-stay-bare-arrays.md)).
 
-What a caller does: pass a filtered query plus the **keyset** (the columns that order and tiebreak the results), and `paginate` handles the rest — applying the cursor, ordering, fetching `limit + 1` rows to detect whether more exist, slicing, and encoding the `next_cursor`. A **cursor** is just the keyset values of the last row, base64-encoded; the client sends it back to get the next page. Paging is **forward-only**, tiebroken by `id` wherever the keyset isn't already unique. Direction is ascending unless the operation says otherwise: most listings bake their direction server-side (Scan Run history pages newest-first), and the three score-history listings let the client choose via an `order` query param (`asc`/`desc`, ascending by default).
+A caller passes a filtered query plus the keyset, the columns that order and tiebreak the results, and `paginate` applies the cursor, orders, fetches one row past the limit to detect more, slices, and encodes the `next_cursor`. Paging is forward-only, tiebroken by `id`, and ascending unless the operation says otherwise; the three score-history listings let the client pick with `order=asc|desc`. The endpoint turns the internal `CursorPage` into the public `Page` through `Page.from_cursor_page`, calling the converter without a mapper where the items are already the public type; a totalled page uses `TotalledPage.from_totalled_cursor_page` instead.
 
-`paginate` returns the internal `CursorPage` (ORM items + cursor); the endpoint turns that into the public `Page` wire response with `Page.from_cursor_page(page, ItemRead.model_validate)`, which maps each item through the Read schema and carries the cursor across unchanged. The conversion lives in one place, co-located with `Page`, so no list endpoint re-assembles the response item-by-item. Endpoints whose items are already the public type (the `into` aggregates) call it without a mapper.
+An operation needing the exact filtered count opts into the totalled envelope, where `paginate` also serves `total`, counted from the same statement the page runs over. The count is a second query, skipped where the first page is also the last, so it matches the page's scope but not always its instant ([ADR 0032](adr/0032-filtered-total-as-per-operation-totalled-page.md)).
 
-An operation whose consumers need the **exact filtered count** opts into the **totalled** envelope: the service passes `with_total=True` and `paginate` also serves `total`, counted from the same statement the page runs over so the two can never disagree on which rows are in scope (the count is skipped when the first page is also the last). The equivalence is of scope, not snapshot: the count is a second query, so a write committed between the two can shift `total` relative to the page until the next fetch — acceptable for a result-count announcement. The pair `TotalledCursorPage`/`TotalledPage` extends the plain envelope per-operation — every other listing keeps its two-field shape and pays no count query. Today the findings listing (its UI announces "N results" after a filter change) and an app's scan-run listing (its UI's history count line) are totalled; the conformance sweep requires any totalled operation to publish `total` as a required response property.
+The module owns the request-facing half too: an endpoint declares one `pagination: PageParams` argument, so the page-size bounds and default reach every operation and the OpenAPI document. `tests/core/test_pagination.py` fails any operation that breaks that, and `docs/solutions/fastapi-query-model-stops-flattening-beside-other-query-params.md` says why it is a `Depends()` dependency.
 
-The module also owns the **request-facing half**: a paginated endpoint declares one `pagination: PageParams` argument (a `PaginationParams` dependency from `core/pagination.py`) instead of hand-rolling `cursor`/`limit` parameters, so the page-size bounds and default live only on that model and flow into every operation and the OpenAPI document together. Contract tests in `tests/core/test_pagination.py` enforce the arrangement suite-wide, discovering operations by their `Page` response envelope — so one that loses its cursor fails the sweep by name instead of dropping out of it. Every operation serving the envelope must accept a cursor, obtain it via `PageParams` (no re-declaration anywhere in its dependency tree), and declare the `invalid_cursor` error mode; an inverse check makes a cursor imply the envelope — so neither a forgetful new route nor a hand-rolled cursor slips past the module. `PageParams` is a `Depends()` dependency rather than a `Query()` parameter model because a `Query()` model silently stops flattening into its fields when the endpoint declares any other query parameter (swept red on every FastAPI from 0.115.13 through 0.139.0; not re-swept at the pinned 0.141.1). Endpoints that expose paging direction consume the shared `OrderParam` declaration the same way, so the `order` vocabulary and its `asc` default also live only in `core/pagination.py`.
+When you touch it:
 
-Two things to know if you touch it:
-
-- Keyset columns must be **NOT NULL** (a NULL breaks the row-value comparison and silently drops rows). Current keysets are primary keys, NOT NULL columns, or — for `/scores/latest` — the owner FK the query already filters to non-NULL.
-- An optional `into` callback maps each result row into a response object. Most lists return ORM objects directly; `list_page_metrics` and `list_findings` use `into` to shape aggregate query rows into their Read models.
+- **Keyset columns must be `NOT NULL`.** A NULL breaks the row-value comparison and silently drops rows.
+- **An optional `into` callback maps each row into a response object.** `list_page_metrics` and `list_findings` use it.
 
 ---
 
 ## 5. The OpenAPI contract pipeline
 
-The API is the **source of truth** for the contract the UI consumes. The full cross-repo flow is the `contract-change` skill (`.claude/skills/contract-change/`, a copy of the workspace root's); the API-side essentials:
+The API is the source of truth for the contract the UI consumes. The full cross-repo flow is the `contract-change` skill (`.claude/skills/contract-change/`); the API-side essentials:
 
-- `make openapi` writes a deterministic `openapi.json`, committed alongside code so contract changes show up in PR diffs.
-- Each endpoint's **operation id** is its **route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Consequently **two endpoint functions may not share a name across routers** — a collision corrupts `openapi.json` and breaks UI codegen. Keep route function names unique repo-wide.
+- **`make openapi` writes a deterministic `openapi.json`**, committed alongside code so contract changes show up in PR diffs.
+- **`make openapi-check` fails the CI lint job if `openapi.json` is stale**, so a contract change cannot merge without its regenerated spec.
+- **Each endpoint's operation id is its route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Two endpoint functions may therefore not share a name across routers: FastAPI warns and writes the duplicate, which is an invalid OpenAPI document and breaks UI codegen.
 
 ---
 
@@ -210,40 +190,38 @@ The API is the **source of truth** for the contract the UI consumes. The full cr
 
 ### Getting scan data in: the CLI
 
-`cli/` (`uv run a11y …`) is a thin client that drives the *public API over HTTP* — it has no direct database access, so anything it does, you could do with `curl`. It splits by concern over the shared error base in `_errors`: `_scan` reads directories off disk and crosses the axe boundary once per file, `_client` makes the requests (one function per call), `_operations` sequences those two into the commands below, and `_terminal` parses argv and prints. `_scan` and `_client` never import each other, which is what lets a failure that happens before the first request be tested with no server at all (`tests/cli/conftest.py`'s `no_server`). The transport is httpx's own, and the suite runs both of its real adapters plus its stub: the command suites in-process over `ASGITransport`, `tests/cli/test_live_server.py` over a real socket against the app under uvicorn, for the failures only a socket produces, and `test_client.py` (with `no_server`) over `MockTransport`, for the decode and transport-failure cases no server would produce on cue. Four commands. Two of them are chosen by app state:
+`cli/` (`uv run a11y …`) is a thin client over the public API, 5 concern modules over one error base ([ADR 0043](adr/0043-onboarding-cli-five-concern-modules-over-one-error-base.md)). Of its 4 commands, 2 are chosen by app state:
 
-- **`a11y ingest <dir>`** — upload one scan to an **existing** app. It loads every JSON file in the directory through the axe boundary (a file the server would reject fails here, before any upload), derives the **Slug** from the document's `name` and resolves the app by it, then runs the lifecycle: create Scan Run → POST each page → PATCH to Completed. If the app isn't registered it raises `AppNotFoundError` pointing you to `import`.
-- **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** — onboard an app from a directory of `YYYY-MM-DD/` subdirectories, creating the app if missing and uploading each date subdirectory as its own Scan Run.
+- **`a11y ingest <dir>`** uploads one **Scan Directory** to an existing app. Every JSON file crosses the **Axe Boundary** first, so one the server would reject fails before any upload; then create **Scan Run**, POST each page, PATCH to Completed.
+- **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** onboards an app from `YYYY-MM-DD/` subdirectories, creating it if missing and uploading each as a **Scan Run**.
 
-The other two are lookups, and they are how an operator gets the two ids `import` needs:
+The other 2, `a11y org-units` and `a11y brands`, are the lookups behind those ids: `list` and `create` on the first, `list` only on the second.
 
-- **`a11y org-units list`** and **`a11y org-units create`** — read the org tree, or add a unit under an existing parent.
-- **`a11y brands list`** — read the seeded brands. There is no `create`: brands come from migrations and the API exposes no write (see § Prerequisites in `CLAUDE.md`).
-
-The **Slug** is derived from the axe JSON `name` by the single derivation function in `core/slug.py` — lowercase ASCII, non-alphanumeric runs collapsed to hyphens, accents folded — and both name and Slug are immutable after creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md), [ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)). Every failure an operator can cause is a named subclass of `CliError`, which is the only *error* `main()` catches: it prints one `ERROR:` line and exits 1. Anything else keeps its traceback, because anything else is a bug. Ctrl-C is neither — it prints `Interrupted.` and exits 130, leaving any Scan Run created before the interrupt Pending and unscored.
+An app's name and **Slug** are immutable after creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md), [ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)). Every operator-caused failure is a named `CliError` subclass, the only error `main()` catches: it prints one `ERROR:` line and exits 1. Ctrl-C prints `Interrupted.` and exits 130, leaving any Scan Run already created Pending; anything else keeps its traceback.
 
 | Error | Cause |
 | --- | --- |
-| `AppNotFoundError` | `ingest` against an app that was never imported |
-| `ApiUnreachableError` | the server isn't running, or `--base-url` points somewhere else |
-| `ApiTimeoutError` | the server answered the connection but not the request in time |
-| `UnreadableApiResponseError` | a success status carrying a body that isn't JSON — `--base-url` names something that isn't this API |
-| `NoDateDirsError` | `import` against a directory with no `YYYY-MM-DD/` subdirs |
-| `NameResolutionError` | JSON files missing a `name`, or names that derive to different slugs (different Apps) — presentation-only differences that share a slug resolve to one App, newest scan's variant winning |
-| `NameOverrideMismatchError` | `import --name` that doesn't derive to the same slug as the JSON `name` |
-| `MissingScanDirectoryError` | the scan directory doesn't exist |
-| `EmptyScanDirectoryError` | the scan directory holds no `*.json` |
-| `MalformedScanFileError` | a scan file isn't valid JSON or isn't valid UTF-8 |
-| `InvalidScanFilesError` | one or more scan files that parse as JSON but are not valid axe documents — not a JSON object, a missing `findings`, a non-string `name`, an unreadable `endTime` — every offender in one message, across all of an `import`'s date directories. The server applies the same rules on upload (a non-object body is FastAPI's 422 there, not this mode); the message says to fix the files first and names the reinstall for a CLI whose version differs from the server's |
-| `UnderivableAppNameError` | a `name` (or `import --name`) that derives to an empty or over-long slug |
-| `ApiError` | the API answered with a coded error body; its `code` and `message` are what the operator sees |
+| `AppNotFoundError` | `ingest` on an unimported app |
+| `ApiUnreachableError` | server down, or wrong `--base-url` |
+| `ApiTimeoutError` | the request timed out |
+| `UnreadableApiResponseError` | success status, non-JSON body |
+| `NoDateDirsError` | no `YYYY-MM-DD/` subdirectories |
+| `NameResolutionError` | missing `name`, or names deriving to different slugs |
+| `NameOverrideMismatchError` | `import --name` deriving elsewhere |
+| `MissingScanDirectoryError` | no such directory |
+| `EmptyScanDirectoryError` | no `*.json` inside |
+| `MalformedScanFileError` | not valid JSON or UTF-8 |
+| `InvalidScanFilesError` | JSON, but not an axe document |
+| `UnderivableAppNameError` | a name with no usable slug |
+| `ApiError` | a coded error body from the API |
 
 ### Tracing a request
 
-Endpoint (`api/v1/endpoints/`) → service (`services/`) → model. A failing request surfaces as a JSON `{"code": …, "message": …}` body (the **Error Contract**'s `ErrorBody`); the `code` names the exact domain error mode, and the status tells you which layer rejected it (404/409/400-with-code = a domain exception; 422 = the request body failed FastAPI's schema validation before any service ran, with the framework's standard body). Map the code back through the [`ERROR_MODES` table](#how-errors-become-http-status-codes) to the exception, then grep for where that exception is raised.
+Endpoint (`api/v1/endpoints/`), then service (`services/`), then model. A failing request surfaces as a JSON `{"code": …, "message": …}` body, the **Error Contract**'s `ErrorBody`. Map the code back through the [`ERROR_MODES` table](#how-errors-become-http-status-codes), then grep for where that exception is raised.
 
 ### Inspecting the data
 
-- Every **Page Result** keeps its full axe payload as **Raw JSON** (JSONB) for reprocessing and debugging — [ADR 0008](adr/0008-defer-jsonb-by-access-pattern.md) explains why it's loaded only on demand.
-- Set `DEBUG=true` (see `config.py`) to echo every SQL statement the engine runs.
-- `GET /api/v1/health` is the liveness check; Swagger UI is at `/docs`, ReDoc at `/redoc`.
+- Every **Page Result** keeps its full axe payload as **Raw JSON** (JSONB) for reprocessing, loaded only on demand ([ADR 0008](adr/0008-defer-jsonb-by-access-pattern.md)).
+- **Set `DEBUG=true`** (see `config.py`) to echo every SQL statement the engine runs.
+- **`GET /api/v1/health`** is the liveness check; Swagger UI is at `/docs` and ReDoc at `/redoc`.
+- **`scripts/race_loop.sh`** reruns a suite until it goes red and saves the output, for a failure that will not reproduce under capture.

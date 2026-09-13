@@ -13,9 +13,14 @@ src/a11y_health/
   config.py        # pydantic-settings Settings singleton
   cli/             # Onboarding CLI: _scan (disk), _client (API), _operations (sequences), _terminal (argv), _errors
   core/
-    database.py    # engine, async_session, Base, get_db dependency
-    exceptions.py  # domain exceptions raised by services, caught by endpoints
-    error_body.py  # ErrorCode + the served/client body shapes (no FastAPI import)
+    database.py       # engine, async_session, Base, get_db dependency
+    exceptions.py     # domain exceptions raised by services, caught by endpoints
+    error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
+    error_contract.py # ERROR_MODES, the handler, error_responses()
+    existence.py      # the Existence Guard: get_by_pk/get_by_query + ENTITY_LABELS
+    integrity.py      # guard(): a named constraint violation becomes a domain error
+    pagination.py     # paginate(): cursor decode, keyset walk, encode
+    slug.py           # derive_slug()/rederive_slugs() — an App's Slug from its name
   api/
     deps.py        # Annotated type aliases (DbSession, etc.)
     v1/
@@ -34,7 +39,7 @@ src/a11y_health/
 4. **Endpoint** in `api/v1/endpoints/<resource>.py` — thin router delegating to service
 5. **Register** router in `api/v1/router.py`
 6. **Re-export** model in `models/__init__.py`
-7. **Migration** via `alembic revision --autogenerate -m "add <resource>"` — review output, then verify the downgrade/upgrade roundtrip (see the database skill)
+7. **Migration** — the database skill's "After a model change" section owns the sequence
 
 ## Endpoints
 
@@ -56,7 +61,7 @@ src/a11y_health/
       brand_id: Annotated[list[int] | None, Query()] = None,
   ) -> Page[AppRead]: ...
   ```
-- Paginated endpoints never declare `cursor`/`limit` themselves — they take one `pagination: PageParams` argument (see Pagination below); a contract test fails any operation that re-declares the pair locally
+- Paginated endpoints: see Pagination
 - Return Pydantic response models with explicit type annotations
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
 - Use `async def` — this project uses async SQLAlchemy throughout
@@ -102,8 +107,10 @@ async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> Non
     await on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)  # → owner.rollup(...) per owner
 
 
-# services/scan_run.py — calls orchestration after status change
-scan_run = await _do_status_update(session, scan_run, data)
+# services/scan_run.py — update_scan_run_status calls orchestration after the flush
+scan_run.status = data.status
+await session.flush()
+await session.refresh(scan_run)
 if data.status == ScanRunStatus.COMPLETED:
     await scoring_orchestration.on_scan_run_completed(session, scan_run)
 ```
@@ -120,7 +127,7 @@ if data.status == ScanRunStatus.COMPLETED:
 
 Cursor-based (keyset) pagination via `core/pagination.py` — one deep module owns both halves (see [ADR 0017](../../../docs/adr/0017-keyset-pagination-deep-module.md) and `docs/architecture.md` "Pagination"):
 
-- **Request surface** — endpoints take one `pagination: PageParams` argument; never declare `cursor`/`limit` locally. Page-size bounds and `DEFAULT_PAGE_SIZE` live on `PaginationParams` only. `PageParams` is a `Depends()` model dependency, not a `Query()` parameter model — a `Query()` model silently stops flattening into its fields when the endpoint has any other query parameter (all FastAPI versions through 0.141).
+- **Request surface** — endpoints take one `pagination: PageParams` argument; never declare `cursor`/`limit` locally. Page-size bounds and `DEFAULT_PAGE_SIZE` live on `PaginationParams` only. `PageParams` is a `Depends()` model dependency, not a `Query()` parameter model — a `Query()` model silently stops flattening into its fields when the endpoint has any other query parameter. The repro in `docs/solutions/fastapi-query-model-stops-flattening-beside-other-query-params.md` was swept across 0.115.13 through 0.139.0 and is red on every one. It was never re-run at the pinned 0.141.1, so that version is unmeasured rather than known-red; re-run the repro before treating an upgrade as the fix.
 - **Query mechanics** — services call `paginate(session, stmt, keyset=[...], cursor=..., limit=...)`; no service hand-rolls the cursor decode/encode, ordering, or `limit + 1` probe.
 
 **Endpoint:**
@@ -160,13 +167,13 @@ Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts 
 
 ## Domain exceptions
 
-Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`:
+Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. **The message opens on a literal, never on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for:
 ```python
 class NotFoundError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id
-        super().__init__(f"{resource} {resource_id} not found")
+        super().__init__(f"Not found: {resource} {resource_id}")
 ```
 
 Follow this pattern for new exceptions — attributes enable structured logging and testing; `str(exc)` provides the HTTP response detail.

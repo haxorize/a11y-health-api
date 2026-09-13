@@ -5,7 +5,7 @@ description: This repo's prose regime — where comprehension lives (prose and `
 
 # Code documentation
 
-Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md). Five guards check the shape, so a failure from any of them is a rule below, not a style preference.
+Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md). Six guards check the shape, so a failure from any of them is a rule below, not a style preference. One is a `ruff` rule; the other five live in `tests/test_prose_shape.py`.
 
 ## Where a thing is explained
 
@@ -21,8 +21,9 @@ Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](.
 
 The two checks split the mechanical part: `W505` fails a doc line that is too _long_, and `tests/test_prose_shape.py` fails one left too _short_ — a line that stopped before the wrap width while the next line still held a word that would have fit, in comments and docstrings alike. That second shape is what an in-place edit leaves behind, since the formatter never reflows prose. **When you change a word inside a comment or docstring, rewrap the whole block, not the line.** Structured blocks are skipped by both — list items, `Raises:`, examples, a line holding a URL or pragma (`_STRUCTURED` and `_UNBREAKABLE` in the test) — because their line breaks are the author's, not the wrap's. No ruff `D` rules enforce the rest; shape and content are judgment, applied here.
 
-The other three guards live in the same module and ask for a different fix, so read which one failed before rewrapping anything:
+The other four guards live in the same module and ask for a different fix, so read which one failed before rewrapping anything:
 
 - **A markdown continuation** ([ADR 0040](../../../docs/adr/0040-prose-documents-soft-wrap-one-line-per-paragraph.md)) — a paragraph, bullet, or blockquote in a `.md` file split across lines. The fix is to **join it onto one line**, not to rewrap it. A quoted line ends where the author put a hard break (two trailing spaces); without one, a following `>` line reads as a wrapped quote.
 - **A British spelling** ([ADR 0041](../../../docs/adr/0041-prose-spells-american-with-three-carve-outs.md)) — over code prose and markdown alike. The fix is to **change the word**. Only where another system matches the form by string does it take a `DELIBERATE_BRITISH` entry, keyed by the file whose consumer requires it.
+- **`docs/architecture.md` outside its budget** — the document is held to a 2250-2750 word band and at most 2 em dashes in its body, the quantities #148's pare was measured in. The fix is to **cut or restore prose until the band holds**, not to raise the band: the band is the document's brief, and a breach means the document has taken on a job another artifact owns. The word count is over the whole file, the way `wc -w` reads it, fences included.
 - **A glossary definition past the word ceiling** ([ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md)) — a `DOMAIN.md` definition cell over 100 words. The fix is to **move the mechanism to the record that owns it**, leaving a definition and the authority that settles it; trimming words until the cell fits keeps the spec in the glossary and is the failure the ceiling exists to catch. ADR 0018 caps a definition at 3 sentences as the shape to aim for, and its 2026-09-12 amendment records the word ceiling as what the suite actually holds it to, because the sentence split a regex can do passes cells a reader fails.

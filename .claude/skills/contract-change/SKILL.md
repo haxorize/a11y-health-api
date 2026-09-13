@@ -7,8 +7,6 @@ description: The two-repo procedure for changing the Accessibility Health REST c
 
 The API is the source of truth and the contract is `a11y-health-api/openapi.json`; the UI consumes it through `@hey-api/openapi-ts` into `a11y-health-ui/src/client/` (types, fetch SDK, Zod response validators, TanStack Query options). Both artifacts are committed so a PR diff shows the contract moving. A change to one side without the other is the drift this procedure exists to prevent: `tsc` catches a type break at build time, and a Zod `ZodError` at the call site catches a shape the types did not, but only after the client is regenerated.
 
-This skill is the same file in the workspace root and in both subrepos (copied, hash-locked in each subrepo's `skills-sync.lock`), so the procedure is present in a single-repo session that opened without the root.
-
 ## Workflow
 
 1. **API first.** Make the change, then `make openapi` regenerates `openapi.json` deterministically. Operation ids drive the UI's method names — `_operation_id` in `src/a11y_health/main.py` — so a renamed operation is a UI rename too. Commit `openapi.json` in the same change as the code; `make openapi-check` is the drift check, and CI runs the same two commands (`scripts/export_openapi.py`, then `git diff --exit-code openapi.json`).

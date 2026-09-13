@@ -51,7 +51,7 @@ Project-local skills that carry this repo's conventions — one per layer, plus 
 - **`database`** — data layer: PostgreSQL schema design, SQLAlchemy models/columns/types, migrations, indexes/constraints, and query patterns. Owns migration finalization after a model change.
 - **`fastapi`** — backend layer: endpoints, schemas, services, and app configuration.
 - **`testing`** — test layer: fixtures, factories, test layout, markers, and mocking.
-- **`code-documentation`** — prose layer: where an explanation lives, when a docstring is written, the 80-column wrap `W505` checks over code prose, the short-line shape `test_prose_shape.py` checks, the one-line-per-paragraph rule it checks over markdown (ADR 0040), the American spelling it checks over both (ADR 0041), the 100-word ceiling it checks over a `DOMAIN.md` definition (ADR 0018), and the fix a failure from each asks for.
+- **`code-documentation`** — prose layer: where an explanation lives, when a docstring is written, the 80-column wrap `W505` checks over code prose, the short-line shape `test_prose_shape.py` checks, the one-line-per-paragraph rule it checks over markdown (ADR 0040), the American spelling it checks over both (ADR 0041), the 100-word ceiling it checks over a `DOMAIN.md` definition (ADR 0018), the word band and em-dash cap it checks over `docs/architecture.md` (#148), and the fix a failure from each asks for.
 - **`contract-change`** — the two-repo OpenAPI procedure; a copy of the workspace root's skill, hash-locked in `skills-sync.lock` — edit it at the root and run `scripts/sync-skills.sh` there, never here.
 - **`verify`** — the build/launch/drive recipe for checking a change against a live dev server, including the scratch-database setup § Commands points at.
 
@@ -69,7 +69,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds four of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), and the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018) — each with a floor or a guard holding its own walk honest.
+Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds five of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018), and the word band and em-dash cap on `docs/architecture.md` (#148's criterion, which no ADR carries) — each with a floor or a guard holding its own walk honest.
 
 ## Review lenses
 

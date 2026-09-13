@@ -10,9 +10,9 @@ description: Database conventions for this project (PostgreSQL schema design + S
 - **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` for PKs; `UUID` only when opacity or federation is needed
 - **Strings**: `TEXT` always; enforce length with `CHECK (LENGTH(col) <= n)`, never `VARCHAR(n)` or `CHAR(n)`
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times. In SQLAlchemy ORM, use `DateTime(timezone=True)` — it maps to `TIMESTAMPTZ` in PostgreSQL
-- **Money/precision**: `NUMERIC(p,s)` for financial or precision-critical values; `FLOAT` is fine for informational ratios and scores
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
-- **JSON**: `JSONB` with GIN index; only for optional/semi-structured attributes
+- **Scores and ratios**: `FLOAT`. Nothing here is financial, so `NUMERIC` has no site in this schema
+- **JSON**: `JSONB`. GIN only on a column a query filters (`rule_finding.wcag_criteria`, `rule_finding.classifications`); a payload column is `deferred()` and unindexed ([ADR 0008](../../../docs/adr/0008-defer-jsonb-by-access-pattern.md)), which is why `page_result.raw_json` and `node_finding.checks` carry no index
 
 ### Do not use
 
@@ -20,26 +20,31 @@ description: Database conventions for this project (PostgreSQL schema design + S
 
 ## Model definition
 
-Models in `src/a11y_health/models/` inherit from `core.database.Base`. `Base` provides `id` (BIGINT IDENTITY PK). Mutable tables also inherit `TimestampMixin` for `created_at`/`updated_at`:
+Models in `src/a11y_health/models/` inherit from `core.database.Base`. `Base` provides `id` (BIGINT IDENTITY PK). Mutable tables also inherit `TimestampMixin` for `created_at`/`updated_at`.
+
+Declare every constraint name as a module-level constant and give every `ForeignKey` a `name=`, including the ones autogenerate would name for you — the auto-generated `<table>_<col>_fkey` cannot be mapped in an `integrity.guard` call, and changing its `ON DELETE` later costs a rename migration first. `models/app.py` is the worked example:
 
 ```python
-from datetime import datetime
-
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
-
-from a11y_health.core.database import Base, TimestampMixin, enum_values
-from a11y_health.models.enums import ScanRunStatus
+UQ_APP_SLUG = "uq_app_slug"
+CK_APP_NAME_LENGTH = "ck_app_name_length"
+FK_APP_ORG_UNIT_ID = "fk_app_org_unit_id"
 
 
-class ScanRun(TimestampMixin, Base):
-    __tablename__ = "scan_run"
-    app_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="CASCADE"), nullable=False)
-    status: Mapped[ScanRunStatus] = mapped_column(
-        Enum(ScanRunStatus, name="scan_run_status", values_callable=enum_values), nullable=False
+class App(TimestampMixin, Base):
+    __tablename__ = "app"
+    __table_args__ = (
+        CheckConstraint("LENGTH(name) <= 255", name=CK_APP_NAME_LENGTH),
+        UniqueConstraint("slug", name=UQ_APP_SLUG),
+        Index("ix_app_org_unit_id", "org_unit_id"),
     )
-    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    org_unit_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("org_unit.id", ondelete="RESTRICT", name=FK_APP_ORG_UNIT_ID), nullable=False
+    )
 ```
+
+For an enum column and a timestamp column, `models/scan_run.py` is the shape: `Enum(ScanRunStatus, name="scan_run_status", values_callable=enum_values)` and `DateTime(timezone=True)`.
 
 Omit `TimestampMixin` on immutable child records that are always created and deleted with their parent (e.g., `rule_finding`, `node_finding`).
 
@@ -59,7 +64,7 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 ## Table conventions
 
 - `NOT NULL` everywhere semantically required
-- Singular table names matching the resource (`scan`, `rule`, `page`)
+- Singular table names matching the resource (`org_unit`, `scan_run`, `score_snapshot`)
 - PK column named `id` (not `<resource>_id`)
 - Use a plain tuple for `__table_args__` — no trailing `{}` dict:
   ```python
@@ -73,24 +78,29 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 
 - **PK**: every reference table gets one
 - **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs). Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
-- **UNIQUE**: use `NULLS NOT DISTINCT` (PG15+) unless multiple NULLs are intentional
+- **UNIQUE**: a uniqueness rule that holds only for some rows is a partial unique `Index`, not a `UniqueConstraint` — see `UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT` and `UQ_ORG_UNIT_SINGLE_ROOT`, both of which exist because the column is nullable
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
 - **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`, `fk_<table>_<col>`). Export constraint names as module-level constants (e.g., `UQ_APP_SLUG`, `FK_APP_ORG_UNIT_ID`) for the constraint→error mappings passed to `integrity.guard` (see the fastapi skill's Services section)
 
 ## Indexes
 
-- **Composite indexes**: equality columns first, range columns last; prefer one composite over two singletons when queries `AND` the columns
-- **Partial indexes** when queries consistently filter on the same predicate (status, soft-delete, non-null):
+The repo uses three index kinds — plain B-tree (every FK column), composite, and GIN. A fourth kind is an ADR, not a judgment call at the model.
+
+- **Composite**: equality columns first, range columns last; prefer one composite over two singletons when queries `AND` the columns (`ix_rule_finding_page_result_id_type`, `ix_page_result_scan_run_id_id`)
+- **Partial**, via `postgresql_where`, when the predicate is what makes the rule true — both sites are uniqueness over a nullable column:
   ```python
   from sqlalchemy import text
 
-  Index("ix_scan_run_pending_scanned_at", "scanned_at", postgresql_where=text("status = 'pending'"))
+  Index(
+      UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+      "org_unit_id",
+      "snapshot_at",
+      unique=True,
+      postgresql_where=text("org_unit_id IS NOT NULL"),
+  )
   ```
-- **Covering indexes (`INCLUDE`)** for hot read paths to enable index-only scans:
-  ```python
-  Index("ix_app_slug", "slug", postgresql_include=["name", "org_unit_id"])
-  ```
-- **BRIN** for large append-only time-series columns (10–100x smaller than B-tree); good fit for monotonically growing `scanned_at`-style columns once the table is large
+- **GIN** on a JSONB column a query filters: `Index("ix_rule_finding_wcag_criteria", "wcag_criteria", postgresql_using="gin")`
+- **Every index is built non-concurrently.** `migrations/env.py` wraps each revision in one transaction and `CREATE INDEX CONCURRENTLY` cannot run inside one, so a new index on `rule_finding` or `page_result` holds a `SHARE` lock against ingest for the whole build. Adding one to a large table needs an autocommit escape hatch in `env.py` first; the existing indexes were all applied when the tables were small
 
 ## Relationships
 
@@ -113,24 +123,20 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
   ```python
   apps = (await session.execute(select(App).where(App.id.in_(app_ids)))).scalars().all()
   ```
-- **UPSERT** for idempotent ingest, not check-then-insert:
-  ```python
-  from sqlalchemy.dialects.postgresql import insert
-
-  stmt = insert(App).values(rows)
-  stmt = stmt.on_conflict_do_update(
-      index_elements=["slug"],
-      set_={"name": stmt.excluded.name},
-  )
-  await session.execute(stmt)
-  ```
-  Use `on_conflict_do_nothing(...)` for insert-or-skip. Conflict target must match a UNIQUE or PK constraint
-- **Batch inserts** in ingest — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk; for very large loads use `COPY`
+- **Batch inserts** in ingest — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk
 - **Cursor/keyset pagination** for list endpoints, never `OFFSET` — implementation (helpers, composite cursors, `Page[T]`) is owned by the fastapi skill's Pagination section
 - **AsyncSession isn't concurrent-safe**: never `asyncio.gather` (or otherwise interleave) operations on a shared session — concurrent use deadlocks or corrupts state. One session per concurrent task
 - **Short transactions**: never `await` HTTP or external I/O inside an open transaction. Locks held during I/O serialize unrelated requests and pin connections from the async pool. Do the I/O first, then open the transaction for the write
 
-## Alembic migrations
+## After a model change
+
+Every model edit — a new table, a new column, a changed type — finishes here, and the sequence is three steps:
+
+1. **Autogenerate** the revision: `uv run alembic revision --autogenerate -m "add scan_run table"`.
+2. **Read what it wrote.** Autogenerate compares neither `ON DELETE` actions, CHECK bodies, GIN methods, nor partial predicates, so anything in that list is yours to write into the revision by hand.
+3. **Roundtrip it**: `uv run alembic downgrade <floor> && uv run alembic upgrade head`, where `<floor>` is the newest irreversible migration. The floor is pinned as `DOWNGRADE_FLOOR` in CI's migration-drift job (`.github/workflows/ci.yml`) and nowhere else, so read it there.
+
+An irreversible migration (e.g. a one-time data repair) raises `NotImplementedError` in `downgrade()` and becomes the new floor; everything above the floor must stay reversible.
 
 Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
 ```python
@@ -151,4 +157,3 @@ uv run alembic downgrade -1                                      # roll back one
 - One migration per logical schema change
 - Message format: verb + object (`"add scan_run table"`, `"add index on page_result.url"`)
 - Data migrations use `op.execute()` with raw SQL, not ORM models
-- Test with `uv run alembic downgrade <floor> && uv run alembic upgrade head`, where `<floor>` is the newest irreversible migration (pinned as `DOWNGRADE_FLOOR` in CI's migration-drift job). An irreversible migration (e.g. a one-time data repair) raises `NotImplementedError` in `downgrade()` and becomes the new floor; everything above the floor must stay reversible

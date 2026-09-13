@@ -1250,3 +1250,28 @@ def test_no_prose_paragraph_strands_a_line() -> None:
     assert not offenders, "prose lines stopped short mid-paragraph; rewrap the block, not the line:\n" + "\n".join(
         offenders
     )
+
+
+ARCHITECTURE_WORD_BAND = (2250, 2750)
+ARCHITECTURE_DASH_CAP = 2
+
+
+def test_the_architecture_doc_stays_inside_its_stated_budget() -> None:
+    # #148 pared this document to a word band and a dash cap, and nothing in
+    # the repo measured either: every other floor here counts lines, files, or
+    # paragraphs, so a pare that overshot by a third moved no check at all. The
+    # band is the quantity the whole change is about, which is the argument for
+    # spending a guard on it.
+    text = _file_text(_REPO / "docs/architecture.md")
+    assert text is not None, "docs/architecture.md is unreadable"
+    # The band is counted over the whole file, the way `wc -w` counts it and
+    # the way #148's criterion was measured. `_markdown_body` would blank the
+    # fences and read 73 words lighter, so a guard built on it sits green
+    # through a breach the criterion calls a failure.
+    words = len(text.split())
+    low, high = ARCHITECTURE_WORD_BAND
+    assert low <= words <= high, f"docs/architecture.md is {words} words, outside its {low}-{high} band"
+    dashes = _markdown_body(text, keep_frontmatter=False).count("—")
+    assert dashes <= ARCHITECTURE_DASH_CAP, (
+        f"docs/architecture.md carries {dashes} em dashes, over its cap of {ARCHITECTURE_DASH_CAP}"
+    )

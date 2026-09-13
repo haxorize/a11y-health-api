@@ -5,7 +5,7 @@ description: This repo's prose regime — where comprehension lives (prose and `
 
 # Code documentation
 
-Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md). Four guards check the shape, so a failure from any of them is a rule below, not a style preference.
+Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md). Five guards check the shape, so a failure from any of them is a rule below, not a style preference.
 
 ## Where a thing is explained
 
@@ -25,4 +25,4 @@ The other three guards live in the same module and ask for a different fix, so r
 
 - **A markdown continuation** ([ADR 0040](../../../docs/adr/0040-prose-documents-soft-wrap-one-line-per-paragraph.md)) — a paragraph, bullet, or blockquote in a `.md` file split across lines. The fix is to **join it onto one line**, not to rewrap it. A quoted line ends where the author put a hard break (two trailing spaces); without one, a following `>` line reads as a wrapped quote.
 - **A British spelling** ([ADR 0041](../../../docs/adr/0041-prose-spells-american-with-three-carve-outs.md)) — over code prose and markdown alike. The fix is to **change the word**. Only where another system matches the form by string does it take a `DELIBERATE_BRITISH` entry, keyed by the file whose consumer requires it.
-- **A glossary definition past the word ceiling** ([ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md)) — a `DOMAIN.md` definition cell over 100 words. The fix is to **move the mechanism to the record that owns it**, leaving a definition and the authority that settles it; trimming words until the cell fits keeps the spec in the glossary and is the failure the ceiling exists to catch. ADR 0018 caps a definition at 3 sentences and the guard counts words instead, because the sentence split a regex can do passes cells a reader fails.
+- **A glossary definition past the word ceiling** ([ADR 0018](../../../docs/adr/0018-documentation-strategy-prose-over-docstrings.md)) — a `DOMAIN.md` definition cell over 100 words. The fix is to **move the mechanism to the record that owns it**, leaving a definition and the authority that settles it; trimming words until the cell fits keeps the spec in the glossary and is the failure the ceiling exists to catch. ADR 0018 caps a definition at 3 sentences as the shape to aim for, and its 2026-09-12 amendment records the word ceiling as what the suite actually holds it to, because the sentence split a regex can do passes cells a reader fails.

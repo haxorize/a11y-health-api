@@ -32,7 +32,7 @@ gh run view --log-failed         # a red CI run's failing step output, without o
 
 Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns `{"status":"healthy"}` (Postgres from § Prerequisites has to answer `pg_isready` first). `make migrate` seeds the state — root org unit 1 `Humana Inc.` and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`). The brands are API-read-only: there is no `POST`, `PATCH` or `DELETE /brands`. The root org unit is **not** — `POST`, `PATCH` and `DELETE /org-units` are all live, nothing special-cases id 1, and a freshly seeded root has no dependents, so `DELETE /api/v1/org-units/1` deletes it and returns 204. For a scratch database instead, the recipe is the `verify` skill.
 
-Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, 324 lines under `docs/` blame to that commit instead of to whatever last changed their words.
+Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, 317 lines under `docs/` blame to that commit instead of to whatever last changed their words.
 
 `.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit takes as long as the suite does, and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made.
 
@@ -69,7 +69,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds four of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), and the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018) — each with a coverage guard over its own walk.
+Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds four of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), and the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018) — each with a floor or a guard holding its own walk honest.
 
 ## Registry
 

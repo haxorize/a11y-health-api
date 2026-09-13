@@ -125,7 +125,7 @@ src/a11y_health/
 ├── models/                 # SQLAlchemy models
 ├── schemas/                # Pydantic schemas (incl. the axe payload boundary)
 ├── services/               # Business logic (scoring, rollups, orchestration)
-├── cli/                    # Onboarding CLI (scan loading, API client, operations, terminal)
+├── cli/                    # Onboarding CLI (errors, scan loading, API client, operations, terminal)
 ├── config.py               # Settings
 └── main.py                 # Application entrypoint
 ```

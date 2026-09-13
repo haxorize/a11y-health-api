@@ -6,12 +6,14 @@ substituting a word inside a wrapped paragraph pushes the overflow onto its own
 line instead of reflowing the block. The formatter never reflows prose, so the
 result survives format, lint, type check, and the whole suite.
 
-Three rules answer that, and three coverage guards keep each rule's walk honest.
-A document soft-wraps instead, one line per paragraph (ADR 0040), so a later
-diff shows the sentence that changed rather than the reflow around it. A word
-scan holds code and documents alike to the American spelling (ADR 0041) — that
-rule is the one that reads both formats, while the one-line rule reads only
-markdown.
+Four rules answer that, each with a floor or a guard keeping its own walk
+honest. A document soft-wraps instead, one line per paragraph (ADR 0040), so a
+later diff shows the sentence that changed rather than the reflow around it. A
+word scan holds code and documents alike to the American spelling (ADR 0041) —
+that rule is the one that reads both formats, while the one-line rule reads only
+markdown. The fourth reads one file: a `DOMAIN.md` definition is capped in words
+(ADR 0018), because the mechanism behind a term belongs to the record that owns
+it rather than to the glossary.
 
 The stranded rule is exact rather than a guess about raggedness: a line is
 stranded when it stopped short of the wrap width while the next line still held
@@ -358,54 +360,137 @@ def markdown_continuations(document: str) -> list[int]:
     return found
 
 
-# A glossary entry: the bolded term in the first cell and its definition in the
-# second. The header and separator rows carry no bolded term, so the pattern
-# passes over them without naming them, and the aliases cell sits outside the
-# match because a list of words to avoid is not a definition and carries no
-# ceiling. The definition cell stops at the next `|` rather than running to the
-# end of the line, which is what keeps the aliases out of the count.
-_TERM_ROW = re.compile(r"^\|\s*\*\*(?P<term>[^*]+)\*\*\s*\|(?P<definition>[^|]*)\|")
+# What divides one table cell from the next. A cell holds a literal pipe by
+# escaping it, so an escaped one is not a division; a pipe inside a code span
+# divides cells there as it does anywhere else, which is why GFM asks for the
+# escape in the first place.
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 
-# The ceiling on one glossary definition, in words. A definition says what the
-# term is; the mechanism behind it belongs to the record that owns it, and the
-# failure this number catches is that mechanism creeping back into the glossary
-# one clause at a time. Anchored on the pruned file, whose longest definition is
-# 94 words: close enough that the ceiling still binds, far enough that no entry
-# sits one edit from red.
+# A term cell: one bolded run and nothing beside it. The header and separator
+# rows fail it, so the walk passes over them without naming them.
+_BOLD_TERM = re.compile(r"^\*\*(?P<term>[^*]+)\*\*$")
+
+# Term, definition, aliases. What the ceiling needs from a row's shape is that
+# the definition is the second of exactly three — the aliases cell carries no
+# ceiling, a list of words to avoid being not a definition, and a row that
+# splits into some other number of cells is one whose second cell is not the
+# definition at all.
+GLOSSARY_CELLS = 3
+
+# The ceiling on one glossary definition, in words (ADR 0018). A definition says
+# what the term is; the mechanism behind it belongs to the record that owns it,
+# and the failure this number catches is that mechanism creeping back into the
+# glossary one clause at a time.
 #
 # Words, not sentences, because the sentence split a regex can do passes cells a
 # reader fails — a 74-word single sentence is over any cap a reader would set —
 # and doing better means understanding "e.g.", "2.1 AA", and a code span with a
 # period inside it. Counted by whitespace, the same way the audit that set the
 # number counted, so its figures reproduce here rather than needing conversion.
+#
+# The guard asserts the ceiling still binds rather than recording which entry
+# sits closest to it. A number written here would describe a glossary one prune
+# ago, and the failure it is meant to rule out — every definition drifting so
+# far under that nothing can cross — is one the guard can measure for itself.
 DEFINITION_WORDS = 100
 
+# The documents that restate this number in prose, none of which can derive it.
+# `test_the_word_ceiling_is_stated_wherever_it_is_restated` is the drift alarm
+# on that copy, the way the wrap width's guard is on `WRAP`.
+CEILING_RESTATED_IN = ("CLAUDE.md", ".claude/skills/code-documentation/SKILL.md")
 
-def glossary_definitions(document: str) -> list[tuple[int, str, str]]:
-    """Every term row of the glossary, as line number, term, and definition.
+# One literal on one line, for the reason `_SPELLING_FAILURE` gives below: the
+# line a reader copies out of a failure has to be the line they find when they
+# search for it. The ceiling is interpolated rather than spelled, so the
+# sentence cannot come to name a number the rule has stopped enforcing.
+_CEILING_FAILURE = f"Glossary definitions run past the {DEFINITION_WORDS}-word ceiling. Move the mechanism to the record that owns it, and leave the definition (ADR 0018):\n"  # noqa: E501
+
+# The other way past a ceiling: a row the walk cannot read the definition cell
+# of. Reported rather than skipped, because a silent skip is the exemption this
+# rule exists to refuse.
+_ROW_SHAPE_FAILURE = f"Glossary rows do not split into {GLOSSARY_CELLS} cells, so the ceiling is not reading their definitions. A pipe inside a cell is written `\\|` (ADR 0018):\n"  # noqa: E501
+
+
+def table_row_cells(line: str) -> list[str] | None:
+    """The cells of a markdown table row, or None when the line divides none.
+
+    Splitting beats matching a row edge to edge. A pattern anchored on a leading
+    `|` reads an indented row, a row GFM lets drop its outer pipes, or a term
+    cell carrying anything but one bolded run as no row at all — and every one
+    of those misses is silent, leaving no offender and no error behind, so one
+    definition stays exempt from the ceiling until somebody re-reads the
+    pattern. Splitting instead makes the same rows land on the wrong cell count,
+    which is something a caller can report.
+    """
+    cells = _UNESCAPED_PIPE.split(line.strip())
+    if len(cells) < 2:
+        return None
+    if not cells[0].strip():
+        cells = cells[1:]
+    if cells and not cells[-1].strip():
+        cells = cells[:-1]
+    return [cell.replace(r"\|", "|").strip() for cell in cells]
+
+
+def bold_term_rows(document: str) -> list[tuple[int, str, list[str]]]:
+    """Every table row whose first cell is one bolded run, as line number, term,
+    and cells.
+
+    Named for the shape it reads rather than for the glossary, because it has no
+    notion of one — no header check, no section anchor, no table identity. Point
+    it at a README and every bolded-first-cell row in it comes back.
 
     Fenced code is blanked first: a table drawn inside a fence is an example of
     the shape rather than an entry, and holding an example to the ceiling would
     fail a document for explaining the rule.
     """
-    return [
-        (number, match["term"], match["definition"].strip())
-        for number, line in enumerate(_markdown_body(document, keep_frontmatter=False).splitlines(), start=1)
-        if (match := _TERM_ROW.match(line))
-    ]
+    found: list[tuple[int, str, list[str]]] = []
+    for number, line in enumerate(_markdown_body(document, keep_frontmatter=False).splitlines(), start=1):
+        cells = table_row_cells(line)
+        if cells and (term := _BOLD_TERM.match(cells[0])):
+            found.append((number, term["term"].strip(), cells))
+    return found
 
 
-def definitions_over_ceiling(document: str) -> list[tuple[int, str, int]]:
+def glossary_entries(rows: Collection[tuple[int, str, list[str]]]) -> list[tuple[int, str, str]]:
+    """The rows that carry a definition where the ceiling reads one, as line
+    number, term, and definition."""
+    return [(number, term, cells[1]) for number, term, cells in rows if len(cells) == GLOSSARY_CELLS]
+
+
+def misshapen_term_rows(rows: Collection[tuple[int, str, list[str]]]) -> list[tuple[int, str, int]]:
+    """The rows the ceiling cannot read, as line number, term, and cell count.
+
+    The counterpart to `glossary_entries` over the same walk, so that a row the
+    ceiling skips is reported rather than dropped. Every shape that used to slip
+    past silently — a pipe inside a code span, a missing outer pipe — arrives
+    here as a cell count that is not the glossary's.
+    """
+    return [(number, term, len(cells)) for number, term, cells in rows if len(cells) != GLOSSARY_CELLS]
+
+
+def definition_words(definition: str) -> int:
+    """How long a definition is, asked in one place.
+
+    The rule and the floor that checks the rule has not gone quiet both need
+    this number. Two spellings of "a word" would drift the day one of them
+    learns to strip a code span, and the floor would stop measuring the rule.
+    """
+    return len(definition.split())
+
+
+def definitions_over_ceiling(entries: Collection[tuple[int, str, str]]) -> list[tuple[int, str, int]]:
     """Every definition past the ceiling, as line number, term, and word count.
 
-    Separate from the guard that reads `DOMAIN.md` so the boundary itself can be
-    put under test. A rule whose only subject is one real file is green whenever
+    Takes parsed entries rather than the document, so the guard that reads
+    `DOMAIN.md` walks it once and the boundary still goes under test on a row
+    built in place. A rule whose only subject is one real file is green whenever
     that file is clean, which says nothing about where it turns red.
     """
     return [
         (number, term, count)
-        for number, term, definition in glossary_definitions(document)
-        if (count := len(definition.split())) > DEFINITION_WORDS
+        for number, term, definition in entries
+        if (count := definition_words(definition)) > DEFINITION_WORDS
     ]
 
 
@@ -453,12 +538,6 @@ BRITISH_WORDS = frozenset(
 DELIBERATE_BRITISH = {
     ("tests/cli/conftest.py", "Cancelled"): "CPython's `asyncio.CancelledError`, reached by import",
 }
-
-
-# The same one-literal rule as the spelling failure below, for the same reason:
-# the number is left out so the sentence stays one line, and the offender rows
-# carry each cell's own count anyway.
-_CEILING_FAILURE = "Glossary definitions run past the word ceiling. Move the mechanism to the record that owns it, and leave the definition:\n"  # noqa: E501
 
 
 # The failure a developer pastes into a search. It is one literal on one line,
@@ -809,39 +888,84 @@ class TestMarkdownContinuations:
         assert markdown_continuations("one\ntwo\nthree\n") == [2, 3]
 
 
-class TestGlossaryDefinitions:
-    def test_a_term_row_yields_its_term_and_definition(self) -> None:
+class TestTableRowCells:
+    def test_a_row_splits_into_its_cells(self) -> None:
+        assert table_row_cells("| **App** | A web application. | Site |") == ["**App**", "A web application.", "Site"]
+
+    def test_the_outer_pipes_are_optional(self) -> None:
+        assert table_row_cells("**App** | A web application. | Site") == ["**App**", "A web application.", "Site"]
+
+    def test_a_row_is_read_through_its_indent(self) -> None:
+        assert table_row_cells("  | **App** | A web application. | Site |") == [
+            "**App**",
+            "A web application.",
+            "Site",
+        ]
+
+    def test_an_escaped_pipe_stays_inside_its_cell(self) -> None:
+        assert table_row_cells(r"| **App** | Either \| or. | Site |") == ["**App**", "Either | or.", "Site"]
+
+    def test_a_pipe_in_a_code_span_divides_cells_as_gfm_says_it_does(self) -> None:
+        assert table_row_cells("| **App** | A `a|b` span. | Site |") == ["**App**", "A `a", "b` span.", "Site"]
+
+    def test_a_line_with_no_separator_is_not_a_row(self) -> None:
+        assert table_row_cells("Just a sentence.") is None
+
+
+class TestBoldTermRows:
+    def test_a_term_row_yields_its_term_and_cells(self) -> None:
         row = "| **Slug** | A URL-friendly identifier for an app. | Key, code, handle |"
-        assert glossary_definitions(row) == [(1, "Slug", "A URL-friendly identifier for an app.")]
+        assert bold_term_rows(row) == [
+            (1, "Slug", ["**Slug**", "A URL-friendly identifier for an app.", "Key, code, handle"])
+        ]
 
     def test_the_header_and_separator_rows_are_not_entries(self) -> None:
-        assert glossary_definitions("| Term | Definition | Aliases to avoid |\n| --- | --- | --- |") == []
+        assert bold_term_rows("| Term | Definition | Aliases to avoid |\n| --- | --- | --- |") == []
+
+    def test_a_term_cell_carrying_more_than_the_bold_run_is_not_a_term_row(self) -> None:
+        assert bold_term_rows("| **App** (deprecated) | A web application. | Site |") == []
 
     def test_a_row_reports_the_file_line_it_sits_on(self) -> None:
         document = "# Ubiquitous Language\n\n| **App** | A web application. | Site |"
-        assert glossary_definitions(document) == [(3, "App", "A web application.")]
-
-    def test_the_aliases_cell_is_not_counted_as_definition(self) -> None:
-        row = "| **App** | Two words. | one two three four five six seven |"
-        assert glossary_definitions(row) == [(1, "App", "Two words.")]
+        assert [(number, term) for number, term, _ in bold_term_rows(document)] == [(3, "App")]
 
     def test_a_table_inside_a_fence_is_an_example_rather_than_an_entry(self) -> None:
-        assert glossary_definitions("```\n| **App** | A web application. | Site |\n```") == []
+        assert bold_term_rows("```\n| **App** | A web application. | Site |\n```") == []
+
+
+class TestGlossaryEntries:
+    def test_the_aliases_cell_is_not_the_definition(self) -> None:
+        row = "| **App** | Two words. | one two three four five six seven |"
+        assert glossary_entries(bold_term_rows(row)) == [(1, "App", "Two words.")]
+
+    def test_a_row_of_the_wrong_width_yields_no_entry(self) -> None:
+        assert glossary_entries(bold_term_rows("| **App** | A web application.")) == []
+
+
+class TestMisshapenTermRows:
+    def test_a_row_missing_its_aliases_cell_is_reported(self) -> None:
+        assert misshapen_term_rows(bold_term_rows("| **App** | A web application.")) == [(1, "App", 2)]
+
+    def test_a_pipe_a_cell_failed_to_escape_is_reported(self) -> None:
+        assert misshapen_term_rows(bold_term_rows("| **App** | A `a|b` span. | Site |")) == [(1, "App", 4)]
+
+    def test_a_well_shaped_row_is_not(self) -> None:
+        assert misshapen_term_rows(bold_term_rows("| **App** | A web application. | Site |")) == []
 
 
 class TestDefinitionsOverCeiling:
     @staticmethod
-    def _row(words: int) -> str:
-        return f"| **Term** | {'word ' * words}| alias |"
+    def _entries(words: int) -> list[tuple[int, str, str]]:
+        return glossary_entries(bold_term_rows(f"| **Term** | {'word ' * words}| alias |"))
 
     def test_a_definition_one_word_past_the_ceiling_is_reported(self) -> None:
-        assert definitions_over_ceiling(self._row(101)) == [(1, "Term", 101)]
+        assert definitions_over_ceiling(self._entries(101)) == [(1, "Term", 101)]
 
     def test_a_definition_at_the_ceiling_is_not(self) -> None:
-        assert definitions_over_ceiling(self._row(100)) == []
+        assert definitions_over_ceiling(self._entries(100)) == []
 
     def test_a_definition_one_word_under_the_ceiling_is_not(self) -> None:
-        assert definitions_over_ceiling(self._row(99)) == []
+        assert definitions_over_ceiling(self._entries(99)) == []
 
 
 class TestBritishSpellings:
@@ -960,6 +1084,20 @@ def test_the_wrap_width_is_anchored_to_the_linter_setting() -> None:
     assert WRAP == 79
 
 
+def test_the_word_ceiling_is_stated_wherever_it_is_restated() -> None:
+    # `WRAP` is derived from the setting it pairs with, so it cannot drift. The
+    # ceiling has no such upstream — two instruction files state the number in
+    # prose, and a reader who follows either one to a rule enforcing something
+    # else has been handed a check that is green where the hole is. Changing
+    # `DEFINITION_WORDS` reds here until both documents have followed.
+    for name in CEILING_RESTATED_IN:
+        text = _file_text(_REPO / name)
+        assert text is not None, f"{name} restates the definition word ceiling and is unreadable"
+        assert f"{DEFINITION_WORDS} words" in text or f"{DEFINITION_WORDS}-word" in text, (
+            f"{name} states the definition word ceiling and no longer says {DEFINITION_WORDS}"
+        )
+
+
 def test_the_prose_path_set_reaches_every_governed_root() -> None:
     covered = {_repo_name(path) for path in _prose_documents()}
     # ADR 0040 names five roots. Walking `*.md` reaches them only while each one
@@ -1001,18 +1139,55 @@ def test_no_glossary_definition_runs_past_the_ceiling() -> None:
     # creep takes here: a query contract, an error table, or a list of ADR
     # citations arriving one clause at a time inside what is meant to be a
     # definition.
-    text = _file_text(_REPO / "DOMAIN.md")
-    assert text is not None, "DOMAIN.md is unreadable, so the ceiling has nothing to hold"
-    entries = glossary_definitions(text)
-    # A pattern that stopped matching reports the same green as a glossary under
-    # the ceiling, so the floor goes on what the rule was handed rather than on
-    # the offender list. The word floor is the second half of that: a match that
-    # kept the rows and lost the definition cell would clear a row count alone.
-    words = sum(len(definition.split()) for _, _, definition in entries)
-    assert len(entries) > 40, f"the glossary walk returned only {len(entries)} term rows"
-    assert words > 1500, f"the glossary walk returned only {words} definition words across {len(entries)} rows"
+    glossary = _REPO / "DOMAIN.md"
+    name = _repo_name(glossary)
+    text = _file_text(glossary)
+    assert text is not None, f"{name} is unreadable, so the ceiling has nothing to hold"
 
-    offenders = [f"DOMAIN.md:{number}: {term}, {count} words" for number, term, count in definitions_over_ceiling(text)]
+    # A fence opened and never closed blanks every line below it, and a blanked
+    # line reads exactly like a blank one, so the walk would report a clean
+    # glossary over definitions it can no longer see. The markdown rule asks the
+    # same question over its own document set, and `DOMAIN.md` is in it — but
+    # leaning on that would make this rule's honesty a sibling guard's property.
+    opened_at = unclosed_fence(text)
+    assert opened_at is None, (
+        f"{name}:{opened_at} opens a fenced block and never closes it; every definition below it is "
+        "invisible to the ceiling while it stays open"
+    )
+
+    rows = bold_term_rows(text)
+    entries = glossary_entries(rows)
+    # A walk that stopped matching reports the same green as a glossary under
+    # the ceiling, so the floors go on what the rule was handed rather than on
+    # the offender list. Three keys, because any one of them can be the thing
+    # that broke. The first is an exact second count of the same rows taken off
+    # the raw lines without going through the parser, so a parser that starts
+    # dropping rows reds here rather than going quiet.
+    bolded = sum(
+        1
+        for line in _markdown_body(text, keep_frontmatter=False).splitlines()
+        if "**" in line and _UNESCAPED_PIPE.search(line)
+    )
+    words = sum(definition_words(definition) for _, _, definition in entries)
+    assert len(rows) == bolded, f"the glossary parser read {len(rows)} of the {bolded} bolded table rows in {name}"
+    assert len(rows) > 40, f"the glossary walk returned only {len(rows)} term rows"
+    assert words > 1500, f"the glossary definitions came to only {words} words across {len(entries)} rows"
+
+    # The ceiling binds only while something in the file is near it. A prune
+    # that took every definition far under would leave this rule green whatever
+    # anyone wrote afterwards, which is the failure it exists to catch with the
+    # sign flipped. Asked of the file rather than recorded in a comment, because
+    # a recorded number describes the glossary of one prune ago.
+    longest = max(definition_words(definition) for _, _, definition in entries)
+    assert longest > DEFINITION_WORDS // 2, (
+        f"the longest definition in {name} is {longest} words against a {DEFINITION_WORDS}-word ceiling, "
+        "so the ceiling no longer binds anything"
+    )
+
+    misshapen = [f"{name}:{number}: {term}, {count} cells" for number, term, count in misshapen_term_rows(rows)]
+    assert not misshapen, _ROW_SHAPE_FAILURE + "\n".join(misshapen)
+
+    offenders = [f"{name}:{number}: {term}, {count} words" for number, term, count in definitions_over_ceiling(entries)]
     assert not offenders, _CEILING_FAILURE + "\n".join(offenders)
 
 

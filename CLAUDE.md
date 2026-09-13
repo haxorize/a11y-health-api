@@ -11,11 +11,11 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 ## Prerequisites
 
-Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the full env config.
+Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the 4 settings an operator sets; `src/a11y_health/config.py` declares 3 more (`PROJECT_NAME`, `VERSION`, `API_V1_PREFIX`) that it does not list.
 
 Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives.
 
-`gitleaks` on PATH (`brew install gitleaks`) — the pre-commit hook's first stage; a commit cannot be made without it.
+`gitleaks` on PATH (`brew install gitleaks`) — the first stage of `.githooks/pre-commit`, which scans the staged changes before any other check runs. That is not a guarantee a secret cannot reach history: the hook runs only once `core.hooksPath` is wired per clone (§ Commands), and `git commit --no-verify` skips it. The backstop is `ci.yml`'s lint job, which scans the whole history (`fetch-depth: 0`) on every push to `main` and every pull request against it.
 
 ## Commands
 
@@ -70,6 +70,12 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 ## Code documentation
 
 Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds four of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), and the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018) — each with a floor or a guard holding its own walk honest.
+
+## Review lenses
+
+`review-changes` runs one declared lens here on top of its standing set: a **docstring-regime lens** over any diff that touches a docstring, a comment block, or a markdown document, reporting each new or edited block against ADR 0018 — a docstring only where the signature cannot carry the contract, no `Args:`/`Returns:` blocks, no restated types. `W505` and `tests/test_prose_shape.py` fail a prose *shape*; neither asks whether the prose was owed at all, which is what this lens reads.
+
+No other lens is declared, and the three absences are deliberate. No accessibility lens: this repo stores and scores accessibility findings, and serves JSON plus the framework's generated docs pages while authoring no interface of its own, so that surface is `../a11y-health-ui`'s. No guard lens: the suite's own invariant tests (`test_import_honesty.py`, `test_sibling_imports.py`, `test_declaration_honesty.py`, `test_reachability.py`) hold those lines, and a review lens would only restate them. No vocabulary lens: DOMAIN conformance already runs as one of `review-changes`' standing lenses.
 
 ## Registry
 

@@ -57,7 +57,7 @@ make clean
 
 The onboarding CLI (`uv run a11y`) drives the public API over HTTP — no direct database access. Four commands: `ingest`, `import`, `org-units list|create`, and `brands list`.
 
-Upload a single scan directory as a **Scan Run** to an existing **App**. The **App** is resolved by deriving its **Slug** from the `name` field in the axe DevTools JSON (lowercase ASCII, words joined by hyphens, accents folded — e.g. `My App (Prod)` → `my-app-prod`):
+Upload a single **Scan Directory** as a **Scan Run** to an existing **App**. A **Scan Directory** holds one axe DevTools JSON export per scanned page, and `ingest` loads every `*.json` file directly inside it, in name order — it does not descend into subdirectories, and a directory with no JSON file in it is refused. The **App** is resolved by deriving its **Slug** from the `name` field in the axe DevTools JSON (lowercase ASCII, words joined by hyphens, accents folded — e.g. `My App (Prod)` → `my-app-prod`):
 
 ```sh
 uv run a11y ingest <directory>
@@ -106,7 +106,7 @@ Configuration is managed via environment variables or a `.env` file:
 
 | Variable | Default | Description |
 |---|---|---|
-| `DEBUG` | `False` | Enable debug mode |
+| `DEBUG` | `False` | Echoes every SQL statement to the log, and allows a wildcard `*` in `ALLOWED_ORIGINS` |
 | `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health` | Database connection string |
 | `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health_test` | Test database connection string |
 | `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins (wildcard `*` rejected when `DEBUG=False`) |
@@ -120,8 +120,15 @@ src/a11y_health/
 │   └── v1/
 │       ├── endpoints/      # Route handlers
 │       └── router.py       # API router
-├── core/                   # Deep modules: database, error contract and body,
-│                           # existence and integrity guards, pagination, slug
+├── core/                   # Deep modules, with the record to read beside each:
+│   ├── database.py         # Engine, session factory, ORM base (ADR 0007)
+│   ├── error_body.py       # Wire shape of a coded error body (ADR 0022)
+│   ├── error_contract.py   # Error mode table: status + Error Code (ADR 0022)
+│   ├── exceptions.py       # The DomainError hierarchy the table keys on (ADR 0022)
+│   ├── existence.py        # The Existence Guard (ADR 0024)
+│   ├── integrity.py        # The Integrity Guard's guarded flush (ADR 0028)
+│   ├── pagination.py       # Keyset pagination: params and query (ADR 0017)
+│   └── slug.py             # The single source of App Slugs (ADR 0019)
 ├── models/                 # SQLAlchemy models
 ├── schemas/                # Pydantic schemas (incl. the axe payload boundary)
 ├── services/               # Business logic (scoring, rollups, orchestration)

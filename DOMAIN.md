@@ -112,7 +112,7 @@
 
 ## Flagged ambiguities
 
-- **"Issue"** was used informally to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). Avoid "issue" entirely: the snapshot columns that carried it were renamed to **Violation** in #18, and the word survives only in that migration's own history. Use **Violation** when counting failures that affect scoring, **Rule Finding** for the general concept, and **Node Finding** for a specific element instance.
+- **"Issue"** was used informally to mean both a **Rule Finding** (a rule that failed) and a **Node Finding** (a specific DOM element). Avoid "issue" entirely: no field or column carries the word today, the snapshot columns that did having been renamed to **Violation** in #18, where it survives as a literal naming what they were called before. Use **Violation** when counting failures that affect scoring, **Rule Finding** for the general concept, and **Node Finding** for a specific element instance.
 - **"Score"** can refer to the computed value, the value with its counts, or the full persisted record. Use **Score** for the 0–1 value, **Score Aggregates** for the **Score** plus its counts as one unpersisted value, and **Score Snapshot** for the persisted record.
 - **"Page"** carries three senses: a URL being tested, the **Page Result** record, and a page of list results in **Cursor Pagination**, carried by the `Page` and `TotalledPage` envelopes. Use **Page Result** for the stored data and "page of results" when talking about pagination. "Page" is acceptable in compound metrics like "pages with violations" where the meaning is clear.
 - **"Severity"** and **"Impact"** were used interchangeably. The canonical term is **Impact**, matching axe's own terminology.

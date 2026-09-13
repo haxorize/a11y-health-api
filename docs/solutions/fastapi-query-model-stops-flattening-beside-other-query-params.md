@@ -20,7 +20,7 @@ Converting `cursor`/`limit` into a Pydantic query-parameter model — `Annotated
 ## What didn't work
 
 - **The documented `Query()` parameter-model form.** It works only while the endpoint declares *no other query parameter*. The moment a sibling query param exists (plain scalar or `Annotated[..., Query()]`), flattening silently turns off. Path parameters and `Depends()` siblings co-exist fine — which is why endpoints without extra query filters passed and only `list_apps`/`list_findings` (which have filter params) failed.
-- **Treating it as a version regression.** A minimal repro swept FastAPI 0.115.13 → 0.139.0: red on every version. Never supported; upgrading or pinning cannot fix it.
+- **Treating it as a version regression.** A minimal repro swept FastAPI 0.115.13 → 0.139.0: red on every version. Never supported; upgrading or pinning cannot fix it. The sweep was not re-run at the pinned 0.141.1, so that version is unmeasured rather than known-red.
 
 ## Fix
 

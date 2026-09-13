@@ -6,4 +6,4 @@ Empty rather than 400 for the non-`app` owner types, for 0034's reason unchanged
 
 **`brand_id` composes with `owner_id` and `under_org_unit_id` by intersection, not mutual exclusivity.** #128 floated exclusivity as a semantic to pin down; it was rejected because every other multi-filter surface in this API already intersects — 0034's scope with `owner_id`, the apps listing's `brand_id` with `org_unit_id` — so exclusivity would make this one operation the exception, and enforcing it means the same new `ErrorCode` the paragraph above declines. The intersection is also the useful reading: "this brand's apps within this subtree" is a question the UI's Brand and Org Unit views can both ask, and "this brand's apps, of these ids" is how a client narrows a known set without a second request.
 
-See `docs/architecture.md` ("The scoring & rollup model") for where this sits in the scores-read surface.
+See `docs/architecture.md` ("The scoring & rollup model") for the `GET /scores/latest` scope list this record belongs to.

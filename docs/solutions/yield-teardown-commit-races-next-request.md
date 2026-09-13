@@ -36,5 +36,5 @@ DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
 
 ## Prevention
 
-- The scope choice and its rationale are recorded at the `Depends` site in `api/deps.py` and in `docs/architecture.md` ("How the database session and transactions work") — any new session-like yield dependency should copy the function scope.
+- The scope choice is recorded at the `Depends` site in `api/deps.py`, and `docs/architecture.md` ("How the database session and transactions work") points here for the rationale — any new session-like yield dependency should copy the function scope.
 - Watch for this on FastAPI upgrades: teardown timing has already flipped once upstream (0.118 moved it after the response; 0.121 added the opt-out).

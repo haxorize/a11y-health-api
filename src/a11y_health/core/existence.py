@@ -3,7 +3,9 @@
 `get_by_pk()` and `get_by_query()` are the only two ways the app asks "does it
 exist?", and this module is the only raise site for `NotFoundError`. Entity
 services keep one-line accessors delegating here for endpoints; every other
-module calls the guard directly instead of importing a sibling service.
+module calls the guard directly instead of importing a sibling service. The
+six accessors are `get_app`, `get_app_by_slug`, `get_brand`, `get_org_unit`,
+`get_scan_run`, and `get_finding`.
 
 See `docs/architecture.md` ("The Existence Guard and the two-tier call rule").
 """

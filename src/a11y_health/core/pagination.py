@@ -29,6 +29,12 @@ from a11y_health.core.exceptions import DomainError
 
 
 class InvalidCursorError(DomainError):
+    """The pagination module's own contribution to the domain error set.
+
+    Defined here rather than in `core/exceptions.py`, so a reader greping that
+    module for the full set of `DomainError` subclasses will not find this one.
+    """
+
     def __init__(self) -> None:
         super().__init__("Invalid cursor")
 

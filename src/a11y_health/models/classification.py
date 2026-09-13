@@ -8,9 +8,10 @@ nothing else. All three run the same closed table, so a token cannot mean one
 thing to a query and another to an ingest. Reading a tag's *shape* — a Category,
 a WCAG Criterion — is `schemas/_tag_parsing.py`'s job.
 
-See `docs/architecture.md` ("The layers") for why this lives in `models/` and
-who reads it, ADR 0031 for the wire shape, and `DOMAIN.md` for Classification
-and Classification Token.
+See `docs/architecture.md` ("The layers") for why this lives in `models/`, ADR
+0031 for the wire shape, its five production consumers, and the placement
+argument that put the vocabulary here, and `DOMAIN.md` for Classification and
+Classification Token.
 """
 
 import logging

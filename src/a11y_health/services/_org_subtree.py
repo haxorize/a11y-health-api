@@ -8,6 +8,10 @@ check — get one recursive-CTE definition without importing a sibling
 resource service. Two exports over that one CTE: `select_descendant_ids` to
 embed the subtree inside a statement, `get_descendant_ids` when the caller
 needs the ids as a Python set.
+
+That consumer list is this module's own record. `services/` is one flat
+package, so the underscore stops nothing here and no test names these
+importers; `TestScoringModuleImports` covers `owner` alone.
 """
 
 from sqlalchemy import Select, select

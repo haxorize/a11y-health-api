@@ -145,7 +145,8 @@ async def list_latest_scores(
         # Exact-match, unlike list_apps' org_unit_id filter, which expands to
         # the subtree unless direct_only: a rollup owner's snapshot already
         # aggregates everything it covers (an org unit's subtree, a brand's
-        # flat app set), so expansion would double-count.
+        # flat app set), so expansion would double-count. Any future
+        # owner-valued filter on a scores read follows this exact-match side.
         snapshots = snapshots.where(owner_col.in_(owner_id))
     stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
     # Keyset on the owner id alone: it is unique here (one row per owner),

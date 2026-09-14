@@ -71,7 +71,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings (ADR 0018); the rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds five of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018), and the word band and em-dash cap on `docs/architecture.md` (#148's criterion, which no ADR carries) — each with a floor or a guard holding its own walk honest.
+Comprehension lives in prose, not blanket docstrings (ADR 0018): `docs/architecture.md` carries the behavioral and structural story and `docs/operating.md` the operating one, split by 0018's 2026-09-13 amendment. The rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds five of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018), and the word band and em-dash cap on `docs/architecture.md` (#148's criterion, which no ADR carries) — each with a floor or a guard holding its own walk honest.
 
 ## Review lenses
 

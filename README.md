@@ -143,4 +143,4 @@ src/a11y_health/
 └── main.py                 # Application entrypoint
 ```
 
-Cross-cutting behavior (layering, scoring/rollups, the scan-run lifecycle, pagination, the error contract) is narrated in `docs/architecture.md`; the domain glossary is `DOMAIN.md`; decisions live in `docs/adr/`.
+Cross-cutting behavior (the layers, scoring and rollup, the scan-run lifecycle, pagination, the OpenAPI contract pipeline) is narrated in `docs/architecture.md`; running, checking and debugging it is `docs/operating.md`; the domain glossary is `DOMAIN.md`; decisions live in `docs/adr/`.

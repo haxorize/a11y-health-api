@@ -155,7 +155,7 @@ A **Scan Run** is a small state machine, held across `services/scan_run.py` and 
 - Completing requires at least one **Page Result**. An empty run raises `EmptyScanRunError`, a 409, because its snapshot would score "no data" as 0.0 and roll that up into every ancestor mean ([ADR 0044](adr/0044-an-unscored-scan-run-never-mints-a-score-snapshot.md)).
 - The Pending to Completed transition triggers scoring: it calls `on_scan_run_completed`, which computes the app score and runs both rollups (see [The scoring & rollup model](#2-the-scoring--rollup-model)).
 
-The order is therefore always create run, add pages, complete run (see [Operating & debugging](#6-operating--debugging)).
+The order is therefore always create run, add pages, complete run (see [Operating & debugging](operating.md)).
 
 ---
 
@@ -185,43 +185,3 @@ The API is the source of truth for the contract the UI consumes. The full cross-
 - **Each endpoint's operation id is its route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Two endpoint functions may therefore not share a name across routers: FastAPI warns and writes the duplicate, which is an invalid OpenAPI document and breaks UI codegen.
 
 ---
-
-## 6. Operating & debugging
-
-### Getting scan data in: the CLI
-
-`cli/` (`uv run a11y …`) is a thin client over the public API, 5 concern modules over one error base ([ADR 0043](adr/0043-onboarding-cli-five-concern-modules-over-one-error-base.md)). Of its 4 commands, 2 are chosen by app state:
-
-- **`a11y ingest <dir>`** uploads one **Scan Directory** to an existing app. Every JSON file crosses the **Axe Boundary** first, so one the server would reject fails before any upload; then create **Scan Run**, POST each page, PATCH to Completed.
-- **`a11y import <dir> --org-unit-id <id> --brand-id <id>`** onboards an app from `YYYY-MM-DD/` subdirectories, creating it if missing and uploading each as a **Scan Run**.
-
-The other 2, `a11y org-units` and `a11y brands`, are the lookups behind those ids: `list` and `create` on the first, `list` only on the second.
-
-An app's name and **Slug** are immutable after creation ([ADR 0010](adr/0010-slug-derived-from-axe-name-immutable.md), [ADR 0019](adr/0019-slug-slugified-and-app-identity-locked-at-creation.md)). Every operator-caused failure is a named `CliError` subclass, the only error `main()` catches: it prints one `ERROR:` line and exits 1. Ctrl-C prints `Interrupted.` and exits 130, leaving any Scan Run already created Pending; anything else keeps its traceback.
-
-| Error | Cause |
-| --- | --- |
-| `AppNotFoundError` | `ingest` on an unimported app |
-| `ApiUnreachableError` | server down, or wrong `--base-url` |
-| `ApiTimeoutError` | the request timed out |
-| `UnreadableApiResponseError` | success status, non-JSON body |
-| `NoDateDirsError` | no `YYYY-MM-DD/` subdirectories |
-| `NameResolutionError` | missing `name`, or names deriving to different slugs |
-| `NameOverrideMismatchError` | `import --name` deriving elsewhere |
-| `MissingScanDirectoryError` | no such directory |
-| `EmptyScanDirectoryError` | no `*.json` inside |
-| `MalformedScanFileError` | not valid JSON or UTF-8 |
-| `InvalidScanFilesError` | JSON, but not an axe document |
-| `UnderivableAppNameError` | a name with no usable slug |
-| `ApiError` | a coded error body from the API |
-
-### Tracing a request
-
-Endpoint (`api/v1/endpoints/`), then service (`services/`), then model. A failing request surfaces as a JSON `{"code": …, "message": …}` body, the **Error Contract**'s `ErrorBody`. Map the code back through the [`ERROR_MODES` table](#how-errors-become-http-status-codes), then grep for where that exception is raised.
-
-### Inspecting the data
-
-- Every **Page Result** keeps its full axe payload as **Raw JSON** (JSONB) for reprocessing, loaded only on demand ([ADR 0008](adr/0008-defer-jsonb-by-access-pattern.md)).
-- **Set `DEBUG=true`** (see `config.py`) to echo every SQL statement the engine runs.
-- **`GET /api/v1/health`** is the liveness check; Swagger UI is at `/docs` and ReDoc at `/redoc`.
-- **`scripts/race_loop.sh`** reruns a suite until it goes red and saves the output, for a failure that will not reproduce under capture.

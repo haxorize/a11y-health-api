@@ -1,6 +1,6 @@
 ---
 name: code-documentation
-description: This repo's prose regime — where comprehension lives (prose and `docs/architecture.md`, not blanket docstrings), when a docstring is written, and the 80-column and bare-`#` rules the guards check. Use when writing or editing a docstring, a comment block, a module header, or `docs/architecture.md`, when `W505` or `test_prose_shape.py` fails, or when reviewing a diff for restated types.
+description: This repo's prose regime — where comprehension lives (prose and `docs/architecture.md`, not blanket docstrings), when a docstring is written, and the six guards: the 80-column and bare-`#` rules over code prose, one line per paragraph over markdown (ADR 0040), American spelling over both (ADR 0041), the `DOMAIN.md` definition word ceiling (ADR 0018), and `docs/architecture.md`'s word band and em-dash cap. Use when writing or editing a docstring, a comment block, a module header, `DOMAIN.md`, `docs/architecture.md`, or any markdown document in this repo, when `W505` or `test_prose_shape.py` fails, or when reviewing a diff for restated types.
 ---
 
 # Code documentation
@@ -9,7 +9,7 @@ Comprehension lives in prose, not blanket docstrings — the why is [ADR 0018](.
 
 ## Where a thing is explained
 
-- **Cross-cutting behavior and architecture go in [`docs/architecture.md`](../../../docs/architecture.md)** — the layer model, scoring and rollup, scan-run lifecycle, pagination, the contract pipeline, operating. `DOMAIN.md` holds the domain model — terms, relationships, and the mechanisms named in domain language — not the layer model or operating notes.
+- **Cross-cutting behavior and architecture go in [`docs/architecture.md`](../../../docs/architecture.md)** — the layer model, scoring and rollup, scan-run lifecycle, pagination, the contract pipeline. **Operating prose goes in [`docs/operating.md`](../../../docs/operating.md)** — how a change is checked, the CLI, tracing a request, inspecting data; it carries no word band, and the band below is `architecture.md`'s brief alone. `DOMAIN.md` holds the domain model — terms, relationships, and the mechanisms named in domain language — not the layer model or operating notes.
 - **Module docstrings only on modules whose job isn't self-evident** (scoring, pagination, the axe boundary), and they point to the relevant `architecture.md` section rather than re-explaining it. No docstring on a module whose purpose is clear from its path.
 - **Function docstrings only for a caller contract the signature can't express** — a precondition or a `Raises:` (see `paginate()`).
 - **Explain the non-obvious; never restate what types and names already say.** No `Args:`/`Returns:` blocks — the type hints carry that. Docstrings, when written, are plain prose.

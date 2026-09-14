@@ -6,6 +6,8 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/) package manager
+- PostgreSQL 15 (`brew install postgresql@15`) — the version CI and the sibling UI's e2e job run; `CLAUDE.md` § Prerequisites has the reason
+- `make` — the pre-commit hook runs `make lint`, `make openapi-check` and `make test`
 - [gitleaks](https://github.com/gitleaks/gitleaks) on PATH (`brew install gitleaks`) — the pre-commit hook's first stage
 - `python3` on PATH — the JSON parser the agent-side hooks read their tool payload with. It is a requirement separate from the Python above, because uv manages the project interpreter without putting a `python3` on PATH, and these hooks are wired from outside this repo (see `## Hooks wired from outside this repo` in `CLAUDE.md`). Without it they fail open: `rename-safety.sh` and `review-receipt.sh` allow every command instead of guarding, announcing it on stderr rather than failing.
 

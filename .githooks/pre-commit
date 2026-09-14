@@ -14,72 +14,78 @@ echo "Scanning staged changes for secrets..."
 gitleaks git --pre-commit --staged --redact --no-banner
 
 # Every check below runs against a checkout of the index in a throwaway
-# worktree, so what they measure is the commit being made and nothing else:
-# no unstaged edit and no untracked file reaches them. Without that a green
-# hook says nothing about the commit, because it measured staged and unstaged
-# work mixed together, and in a multi-commit split it can pass an intermediate
-# commit that is broken standing alone.
-#
-# Two earlier designs were tried and rejected, both for the same reason: they
-# wrote the developer's tree and relied on putting it back.
-#
-#   Reverting the tree to the index and restoring a saved patch afterwards
-#   leaves untracked files in place, so an untracked module a committed file
-#   imports still carries the run, and a `git rm --cached` is checked with the
-#   file it deletes still on disk. Moving untracked files aside too closes
-#   that, but a run killed outright then leaves them somewhere the developer
-#   has to be told about.
-#
-#   `git stash push --keep-index` is worse than either. A pop over one file
-#   that is both staged and unstaged conflicts every time and leaves the index
-#   unmerged, destroying the staged selection about to be committed.
-#
-# This design cannot lose work because it never writes here. The developer's
+# worktree, so what they measure is the commit being made and nothing else.
+# This design cannot lose work because it never writes here: the developer's
 # index is read through a copy and their worktree is not touched at all.
-WT_PREFIX="${TMPDIR:-/tmp}/a11y-precommit-wt."
+#
+# Why the index and not the working tree, and the two designs rejected before
+# it, are docs/adr/0046-per-commit-checks-run-against-a-checkout-of-the-index.md.
+
+# Both temp paths end in this run's PID. $TMPDIR is shared across a user's
+# terminals, nothing serializes two commits, and the sweep below is an `rm -rf`
+# — so without an identity in the name one commit deleted a concurrent one's
+# live checkout mid-suite, and the victim failed with vanished-file errors that
+# named nothing about the cause.
+PREFIX="${TMPDIR:-/tmp}/a11y-precommit"
+WORKTREE="$PREFIX-wt.$$"
+STAGED_INDEX="$PREFIX-index.$$"
 
 # A run killed outright (SIGKILL, a panic, a closed terminal) leaves its
-# directory and its .git/worktrees entry behind. `git worktree prune` reclaims
-# the entry only once the directory is gone, so sweep first, then prune.
-for stale in "$WT_PREFIX"*; do
+# directory, its index copy, and its .git/worktrees entry behind. Sweep only
+# what no live process still owns, by testing the PID the name carries: a
+# directory whose owner is running belongs to a concurrent commit, not to a
+# dead one. `git worktree prune` reclaims the entry only once the directory is
+# gone, so sweep first, then prune.
+for stale in "$PREFIX"-wt.* "$PREFIX"-index.*; do
   [ -e "$stale" ] || continue
+  pid="${stale##*.}"
+  case "$pid" in "" | *[!0-9]*) continue ;; esac
+  kill -0 "$pid" 2>/dev/null && continue
   rm -rf "$stale"
 done
-git worktree prune
+# Guarded for the same reason as the one in cleanup(): pruning is housekeeping,
+# and a transient .git/worktrees lock or permission problem here would abort
+# under `set -e` and refuse the commit with a bare git error, before any check
+# has run and with nothing in the hook's output naming the sweep.
+git worktree prune || true
 
-# The index git is about to commit is not always .git/index: `git commit -a`
-# and `git commit <paths>` build the tree in .git/index.lock and hold the lock
-# while this hook runs. Reading whichever one git named, through a copy, gets
-# the tree that will actually be committed and never writes the real file.
-STAGED_INDEX="$(mktemp "${TMPDIR:-/tmp}/a11y-precommit-index.XXXXXX")"
-cp "${GIT_INDEX_FILE:-.git/index}" "$STAGED_INDEX"
-
-# git exports GIT_INDEX_FILE to a hook as a path relative to the repo root.
-# Inherited by a command that runs in the new worktree it resolves against the
-# wrong directory, where .git is a file, and `worktree add` dies with
-# "index file open failed: Not a directory".
-unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
-
-STAGED_TREE="$(GIT_INDEX_FILE="$STAGED_INDEX" git write-tree)"
-# A commit rather than the bare tree: `worktree add` takes a commit-ish, and
-# checking one out seeds the new worktree's own index with the staged tree.
-# That is what keeps `make openapi-check`'s bare `git diff openapi.json`
-# meaning "the staged spec is stale" rather than comparing against nothing.
-# The object is unreachable once the worktree is gone, and `git gc` takes it.
-STAGED_COMMIT="$(git commit-tree "$STAGED_TREE" -m 'pre-commit: staged tree')"
-
-WORKTREE="$(mktemp -d "$WT_PREFIX"XXXXXX)"
-rmdir "$WORKTREE"
-
+# Set before the first temp path exists, so a failure or a signal anywhere
+# below reclaims both. The sweep above is the backstop for a SIGKILL, which no
+# trap can catch.
 cleanup() {
-  # rm before prune, not `git worktree remove`: the OpenAPI stage rewrites
-  # openapi.json in there, and `remove` refuses a dirty worktree.
+  # rm before prune, not `git worktree remove`: the OpenAPI stage regenerates
+  # in there, and `remove` refuses a dirty worktree.
   rm -rf "$WORKTREE" "$STAGED_INDEX"
   git -C "$ROOT" worktree prune || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# The index git is about to commit is not always .git/index: `git commit -a`
+# builds the tree in .git/index.lock and `git commit <paths>` in a
+# next-index-<pid>.lock beside it, holding it while this hook runs. Reading
+# whichever one git named, through a copy, gets the tree that will actually be
+# committed and never writes the real file. `--git-path` rather than a literal
+# .git/index for the fallback, because .git is a file in a linked worktree.
+rm -rf "$WORKTREE" "$STAGED_INDEX"
+(umask 077 && : >"$STAGED_INDEX")
+cp "${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}" "$STAGED_INDEX"
+
+# git exports GIT_INDEX_FILE to a hook in all three commit shapes — relative to
+# the repo root for a plain `git commit`, absolute for the other two. Inherited
+# by a command that runs in the new worktree the relative form resolves against
+# the wrong directory, where .git is a file, and `worktree add` dies with
+# "index file open failed: Not a directory".
+unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
+
+STAGED_TREE="$(GIT_INDEX_FILE="$STAGED_INDEX" git write-tree)"
+# A commit rather than the bare tree: `worktree add` takes a commit-ish, and
+# checking one out seeds the new worktree with the staged content — which is
+# what `make openapi-check` regenerates against, so a staged-but-stale spec is
+# still caught. The object is unreachable once the worktree is gone, and
+# `git gc` takes it.
+STAGED_COMMIT="$(git commit-tree "$STAGED_TREE" -m 'pre-commit: staged tree')"
 
 git worktree add --detach --quiet "$WORKTREE" "$STAGED_COMMIT"
 

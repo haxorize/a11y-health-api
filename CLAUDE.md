@@ -15,6 +15,8 @@ Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the 4 s
 
 Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives.
 
+`make` on PATH — the hook runs `make lint`, `make openapi-check` and `make test`, so a machine without it (a slim container, macOS without the Xcode command line tools) fails the hook after the worktree is built. Apple's GNU Make 3.81 is enough; there is no version floor.
+
 `gitleaks` on PATH (`brew install gitleaks`) — the first stage of `.githooks/pre-commit`, which scans the staged changes before any other check runs. That is not a guarantee a secret cannot reach history: the hook runs only once `core.hooksPath` is wired per clone (§ Commands), and `git commit --no-verify` skips it. The backstop is `ci.yml`'s lint job, which scans the whole history (`fetch-depth: 0`) on every push to `main` and every pull request against it.
 
 ## Commands
@@ -34,7 +36,7 @@ Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` retur
 
 Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, 317 lines under `docs/` blame to that commit instead of to whatever last changed their words.
 
-`.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit takes as long as the suite does, and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made. The hook enforces that second one rather than assuming it: it checks the index out into a throwaway worktree and runs the checks there, so what it measures is the commit and not the tree around it — an unstaged edit and an untracked file both stay out of the run. It never writes this working tree, which is why a failed or killed run has nothing to put back. The one thing it carries across is `.env`, copied in deliberately so the checks see the settings the developer's own `make test` sees.
+`.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit costs the suite plus a secret scan, a dependency sync into a fresh checkout, and a second full app import for the OpenAPI stage — measurably more than `make test` alone, so budget against the hook and not against the suite — and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made. The hook enforces that second one rather than assuming it, by running the checks against a checkout of the index; ADR 0046 records the design and what it replaced.
 
 Two CI checks stay out of the hook, both Alembic stages in the `migration-drift` job: `Migration roundtrip` and `Check for model/migration drift`. Each needs a live Postgres to upgrade and downgrade against, and a hook that reached for a developer's database would either rewrite it or fail on a machine that has none — which is also why the OpenAPI staleness check *is* in the hook, being the one CI stage of the three that needs no database. The roundtrip's downgrade floor is `DOWNGRADE_FLOOR` in the `Makefile`, where the person adding a migration can see it; CI gets it by invoking `make migrate-roundtrip` rather than keeping a copy.
 
@@ -113,6 +115,8 @@ Two tracked artifacts here are read by global agent hooks, not by anything in th
 
 - `.claude/rename-safety` — an empty opt-in **marker**, not a config file. It turns on `rename-safety.sh`, which blocks `sed -i`, `perl -i`, `ruby -i` and `xargs` feeding them in any directory under it. The file must stay empty: the hook tests `-f` and never reads the contents. Deleting it to unblock an edit disarms the guard repo-wide.
 - `Review required: yes` under § Landing — read by `review-receipt.sh`, which refuses a `git push` unless a report in the temp-dir landing zone carries a `Reviewed-tree:` stamp matching the tree being pushed. A push the user runs in their own terminal is its one skip path.
+
+Both hooks fail **open**, and on more than a missing marker: without `python3` on PATH they allow every command, announce one line on stderr, and exit 0 — so `rename-safety` stops blocking `sed -i` and `Review required: yes` stops gating pushes, with nothing in this repo checking for the condition or going red on it. `python3` is in `README.md` § Requirements for that reason; uv manages the project interpreter without putting one on PATH.
 
 The other Landing keys are read by skills only. `Push pre-authorized:` and `Ticket close pre-authorized:` have no hook behind them and gate nothing mechanically.
 

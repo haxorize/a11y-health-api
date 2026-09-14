@@ -1,0 +1,18 @@
+# Per-commit checks run against a checkout of the index, in a throwaway worktree
+
+`.githooks/pre-commit` scans the staged changes for secrets in the developer's own repo, then builds a detached worktree from the staged tree and runs lint, the OpenAPI staleness check, and the full suite inside it. What the checks measure is therefore the commit being made and nothing else: an unstaged edit and an untracked file both stay out of the run. Two properties depend on this and neither is cosmetic. A hook that measured the working tree passes a commit whose staged half is broken, because the unstaged half completed it. And `CLAUDE.md` promises that every commit in a multi-commit split passes standing alone — a promise the hook now enforces rather than assumes, which is what makes a split with a broken intermediate commit impossible to create rather than merely discouraged.
+
+The index the hook reads is not always `.git/index`: `git commit -a` builds the tree in `.git/index.lock` and `git commit <paths>` in a `next-index-<pid>.lock` beside it, holding it while the hook runs. The hook copies whichever one git named through `GIT_INDEX_FILE`, writes a tree from the copy, and wraps it in a commit object, because `worktree add` takes a commit-ish and checking one out seeds the new worktree with the staged content. The copy is why the developer's real index is never written.
+
+One deliberate exception to "the checks see only what is committed": `.env` is gitignored, so it is absent from the checkout, and the hook copies it in. Without it the checks would run against `config.py`'s defaults rather than the developer's settings, and would test a different database than the developer's own `make test` does. The OpenAPI stage is insulated from that copy separately — `scripts/export_openapi.py` generates from the declared settings rather than the environment, so a local `VERSION` cannot make the committed spec look stale.
+
+Accepted cost: a commit pays a secret scan, a dependency sync into a fresh checkout, a second full app import for the OpenAPI stage, and the suite — measurably more than `make test` alone. Temp paths carry the run's PID and the sweep skips a PID that is still alive, so two commits in two terminals cannot delete each other's checkout.
+
+Considered and rejected:
+
+- **Reverting the tree to the index and restoring a saved patch afterwards:** leaves untracked files in place, so an untracked module a committed file imports still carries the run, and a `git rm --cached` is checked with the file it deletes still on disk. Moving untracked files aside too closes that, but a run killed outright then leaves them somewhere the developer has to be told about. Both variants write the developer's tree and rely on putting it back.
+- **`git stash push --keep-index`:** worse than either. A pop over one file that is both staged and unstaged conflicts every time and leaves the index unmerged, destroying the staged selection about to be committed.
+- **Running the checks in the working tree, as the hook did before:** the cheapest option and the one this record replaces. It cannot distinguish a green commit from a green tree, which is the whole question a pre-commit check is asked.
+- **`git worktree remove` instead of `rm -rf` in cleanup:** the OpenAPI stage regenerates inside the worktree, and `remove` refuses a dirty one.
+
+The two Alembic stages stay in CI rather than the hook, because each needs a live Postgres to upgrade and downgrade against and a hook that reached for a developer's database would either rewrite it or fail on a machine that has none. See [`docs/operating.md`](../operating.md) ("How a change is checked") for the three gates in the order a change meets them.

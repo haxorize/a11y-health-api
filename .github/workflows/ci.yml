@@ -1,5 +1,38 @@
 name: CI
 
+# Pins and their reasons live here once. A YAML comment cannot be shared by an
+# anchor, and `env` does not reach `services.*.image` — GitHub exposes `env` to
+# `services.<id>.credentials` and `services.<id>.env.<id>` and nothing else — so
+# the two values that read as mistakes without a reason point back here rather
+# than carrying a copy. Issue #152 records why, and the sibling UI's workflow
+# holds its own copies.
+#
+# postgres:15
+#   The major local dev runs (Homebrew PostgreSQL 15.x) and the one the sibling
+#   UI's e2e job runs, so the suite is measured against the server version it is
+#   developed against. The bare major tracks the newest 15.x patch.
+#   `docs/adr/0013-postgresql-only.md` owns the PostgreSQL dependency and
+#   records no version, so this file and `CLAUDE.md` are where the major lives.
+#
+# prune-cache: true
+#   setup-uv v9 turned this off deliberately, to ease load on PyPI; it is a
+#   breaking change upstream because leaving it off grows the Actions cache. Set
+#   back to true: the pruned cache is the cheaper one to keep, and stating it
+#   means a later default flip is inert. See astral-sh/setup-uv#967.
+#
+# actions/checkout@v7 and astral-sh/setup-uv@v10.0.1 are the refs this workflow
+# stands on, recorded so a report measured against it can tell whether it was
+# measured against these. Neither is pinned to a revision: that was weighed
+# against this repo's threat model and declined, and setup-uv publishes no
+# floating major tag that could drift underneath.
+#
+# Deliberately absent, so a search for either stops here rather than reading the
+# gap as an oversight: no `permissions:` block, because token scope comes from
+# the repository setting and fork pull requests get a read-only token either way;
+# and no Dependabot or Renovate config, because its main job would have been
+# keeping revision pins fresh and those were declined above. Both were weighed
+# against this repo's threat model and left out on purpose (#152).
+
 on:
   push:
     branches: [main]
@@ -9,6 +42,10 @@ on:
 
 env:
   UV_PYTHON: "3.14"
+  # Asserts uv.lock has not drifted from pyproject.toml on every uv call in every
+  # job, so a bound edited without relocking fails the first one. The Makefile
+  # exports the same variable and holds the reasoning.
+  UV_LOCKED: "1"
 
 jobs:
   lint:
@@ -17,6 +54,20 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks scans the whole history
+      # Ahead of the uv setup and the history scan: it reads only
+      # .github/workflows/ and needs neither, so a broken workflow is reported
+      # without paying for the rest of the job first.
+      - name: Install actionlint
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/actionlint-bin"
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP/actionlint-bin" actionlint
+          echo "$RUNNER_TEMP/actionlint-bin" >> "$GITHUB_PATH"
+      - name: Lint workflows
+        # Nothing else validates this file; before this step a syntax error was
+        # caught by pushing and by nothing earlier.
+        run: actionlint
       - name: Install gitleaks
         run: |
           curl -sSL -o "$RUNNER_TEMP/gitleaks.tgz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
@@ -26,32 +77,26 @@ jobs:
           echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
       - name: Scan history for secrets
         run: gitleaks git --no-banner --redact
-      - uses: astral-sh/setup-uv@v10.0.1
+      # Anchored here and aliased by the other two jobs, so this pin and its
+      # inputs have one home. A plain alias, not a merge key (`<<:`): GitHub
+      # supports the first and not the second.
+      - &setup_uv
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.UV_PYTHON }}
-          # setup-uv v9 turned this off deliberately, to ease load on PyPI; it
-          # is a breaking change upstream because leaving it off grows the
-          # Actions cache. Set back to true: the pruned cache is the cheaper
-          # one to keep, and stating it means a later default flip is inert.
-          # See astral-sh/setup-uv#967.
-          prune-cache: true
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run ty check
-      - run: uv run deptry src migrations scripts
-      - name: Check openapi.json is not stale
-        run: |
-          uv run python scripts/export_openapi.py
-          git diff --exit-code openapi.json
+          prune-cache: true # see the header note
+      # One step per tool so a red step names the tool, but the commands are the
+      # Makefile's, which is also what the pre-commit hook runs as `make lint`.
+      - run: make lint-style
+      - run: make lint-types
+      - run: make lint-deps
+      - run: make openapi-check
 
   test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Pinned to the major local dev runs (Homebrew PostgreSQL 15.x), so the
-        # suite is measured against one server version everywhere. Bare major
-        # tracks the newest 15.x patch.
-        image: postgres:15
+        image: postgres:15 # see the header note
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -64,29 +109,24 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
+      # Names a database the service container never creates. Nothing in the
+      # suite may read the non-test setting, so a fixture that leaks to it fails
+      # to connect here rather than passing quietly against the test database —
+      # the leak tests/cli/conftest.py's live_server binding exists to prevent
+      # (ADR 0011). Locally the two settings differ only by name, which is why
+      # CI is the only place this can be caught.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_must_not_be_read
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          python-version: ${{ env.UV_PYTHON }}
-          # setup-uv v9 turned this off deliberately, to ease load on PyPI; it
-          # is a breaking change upstream because leaving it off grows the
-          # Actions cache. Set back to true: the pruned cache is the cheaper
-          # one to keep, and stating it means a later default flip is inert.
-          # See astral-sh/setup-uv#967.
-          prune-cache: true
+      - *setup_uv
       - run: uv run pytest
 
   migration-drift:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Pinned to the major local dev runs (Homebrew PostgreSQL 15.x), so the
-        # suite is measured against one server version everywhere. Bare major
-        # tracks the newest 15.x patch.
-        image: postgres:15
+        image: postgres:15 # see the header note
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -102,39 +142,28 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          python-version: ${{ env.UV_PYTHON }}
-          # setup-uv v9 turned this off deliberately, to ease load on PyPI; it
-          # is a breaking change upstream because leaving it off grows the
-          # Actions cache. Set back to true: the pruned cache is the cheaper
-          # one to keep, and stating it means a later default flip is inert.
-          # See astral-sh/setup-uv#967.
-          prune-cache: true
+      - *setup_uv
       - name: Migration roundtrip
-        # Roundtrips to the newest irreversible migration, not base — its
-        # downgrade() raises by design (b362121027a0, the one-time duplicate
-        # rollup snapshot cleanup; #97). Bump the floor when a new irreversible
-        # migration lands; everything above it must stay reversible.
-        env:
-          DOWNGRADE_FLOOR: "b362121027a0"
-        run: |
-          uv run alembic upgrade head
-          uv run alembic downgrade "$DOWNGRADE_FLOOR"
-          uv run alembic upgrade head
+        # The floor this downgrades to is DOWNGRADE_FLOOR in the Makefile, which
+        # is also where the reason for its current value is written. Invoking
+        # the target keeps it one value with one home, readable where the person
+        # adding a migration works.
+        run: make migrate-roundtrip
       - name: Check for model/migration drift
+        # --rev-id fixes the generated path, so the check names the file it is
+        # about instead of searching the directory for whatever is newest.
         run: |
-          uv run alembic revision --autogenerate -m "_drift_check" 2>&1
-          MIGRATION=$(ls -t migrations/versions/*_drift_check.py 2>/dev/null | head -1)
-          if [ -z "$MIGRATION" ]; then
+          uv run alembic revision --autogenerate -m "drift_check" --rev-id driftcheck
+          migration=migrations/versions/driftcheck_drift_check.py
+          if [ ! -f "$migration" ]; then
             echo "No migration generated — models and migrations are in sync."
             exit 0
           fi
-          if grep -q "pass" "$MIGRATION" && ! grep -qE "op\." "$MIGRATION"; then
+          if grep -q "pass" "$migration" && ! grep -qE "op\." "$migration"; then
             echo "Empty migration — models and migrations are in sync."
             exit 0
           fi
           echo "::error::Model/migration drift detected. Run 'alembic revision --autogenerate' locally."
           echo "--- Generated migration ---"
-          cat "$MIGRATION"
+          cat "$migration"
           exit 1

@@ -134,7 +134,7 @@ Every model edit — a new table, a new column, a changed type — finishes here
 
 1. **Autogenerate** the revision: `uv run alembic revision --autogenerate -m "add scan_run table"`.
 2. **Read what it wrote.** Autogenerate compares neither `ON DELETE` actions, CHECK bodies, GIN methods, nor partial predicates, so anything in that list is yours to write into the revision by hand.
-3. **Roundtrip it**: `uv run alembic downgrade <floor> && uv run alembic upgrade head`, where `<floor>` is the newest irreversible migration. The floor is pinned as `DOWNGRADE_FLOOR` in CI's migration-drift job (`.github/workflows/ci.yml`) and nowhere else, so read it there.
+3. **Roundtrip it**: `make migrate-roundtrip` upgrades, downgrades to the floor, and upgrades again. The floor is `DOWNGRADE_FLOOR` in the `Makefile`, where the person adding a migration reads it; CI's migration-drift job invokes that same target rather than carrying a copy of the value.
 
 An irreversible migration (e.g. a one-time data repair) raises `NotImplementedError` in `downgrade()` and becomes the new floor; everything above the floor must stay reversible.
 

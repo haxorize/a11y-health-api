@@ -7,6 +7,7 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/) package manager
 - [gitleaks](https://github.com/gitleaks/gitleaks) on PATH (`brew install gitleaks`) — the pre-commit hook's first stage
+- `python3` on PATH — the JSON parser the agent-side hooks read their tool payload with. It is a requirement separate from the Python above, because uv manages the project interpreter without putting a `python3` on PATH, and these hooks are wired from outside this repo (see `## Hooks wired from outside this repo` in `CLAUDE.md`). Without it they fail open: `rename-safety.sh` and `review-receipt.sh` allow every command instead of guarding, announcing it on stderr rather than failing.
 
 ## Setup
 
@@ -37,7 +38,8 @@ make test
 # Run tests with coverage
 make coverage
 
-# Lint (ruff + ty + deptry)
+# Lint (ruff check + ruff format --check + ty + deptry); the pre-commit hook
+# runs this same target, and CI runs its lint-style / lint-types / lint-deps parts
 make lint
 
 # Format code
@@ -98,6 +100,10 @@ make migrate-create msg="add users table"
 
 # Roll back the last migration
 make migrate-downgrade
+
+# Upgrade, downgrade to DOWNGRADE_FLOOR, and upgrade again — what CI's
+# migration-drift job runs to prove the revisions above the floor reverse
+make migrate-roundtrip
 ```
 
 ## Configuration

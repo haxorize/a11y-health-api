@@ -1,24 +1,120 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Running pre-commit checks..."
+# Covers a `uv` call added directly to this file later; the make targets below
+# carry it through the Makefile's own export, which holds the reasoning.
+export UV_LOCKED=1
 
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# gitleaks reads the real staged diff rather than the working tree, so it runs
+# here, in the developer's repo, before anything else is built.
 echo "Scanning staged changes for secrets..."
 gitleaks git --pre-commit --staged --redact --no-banner
 
-echo "Checking formatting..."
-uv run ruff format --check .
+# Every check below runs against a checkout of the index in a throwaway
+# worktree, so what they measure is the commit being made and nothing else:
+# no unstaged edit and no untracked file reaches them. Without that a green
+# hook says nothing about the commit, because it measured staged and unstaged
+# work mixed together, and in a multi-commit split it can pass an intermediate
+# commit that is broken standing alone.
+#
+# Two earlier designs were tried and rejected, both for the same reason: they
+# wrote the developer's tree and relied on putting it back.
+#
+#   Reverting the tree to the index and restoring a saved patch afterwards
+#   leaves untracked files in place, so an untracked module a committed file
+#   imports still carries the run, and a `git rm --cached` is checked with the
+#   file it deletes still on disk. Moving untracked files aside too closes
+#   that, but a run killed outright then leaves them somewhere the developer
+#   has to be told about.
+#
+#   `git stash push --keep-index` is worse than either. A pop over one file
+#   that is both staged and unstaged conflicts every time and leaves the index
+#   unmerged, destroying the staged selection about to be committed.
+#
+# This design cannot lose work because it never writes here. The developer's
+# index is read through a copy and their worktree is not touched at all.
+WT_PREFIX="${TMPDIR:-/tmp}/a11y-precommit-wt."
+
+# A run killed outright (SIGKILL, a panic, a closed terminal) leaves its
+# directory and its .git/worktrees entry behind. `git worktree prune` reclaims
+# the entry only once the directory is gone, so sweep first, then prune.
+for stale in "$WT_PREFIX"*; do
+  [ -e "$stale" ] || continue
+  rm -rf "$stale"
+done
+git worktree prune
+
+# The index git is about to commit is not always .git/index: `git commit -a`
+# and `git commit <paths>` build the tree in .git/index.lock and hold the lock
+# while this hook runs. Reading whichever one git named, through a copy, gets
+# the tree that will actually be committed and never writes the real file.
+STAGED_INDEX="$(mktemp "${TMPDIR:-/tmp}/a11y-precommit-index.XXXXXX")"
+cp "${GIT_INDEX_FILE:-.git/index}" "$STAGED_INDEX"
+
+# git exports GIT_INDEX_FILE to a hook as a path relative to the repo root.
+# Inherited by a command that runs in the new worktree it resolves against the
+# wrong directory, where .git is a file, and `worktree add` dies with
+# "index file open failed: Not a directory".
+unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
+
+STAGED_TREE="$(GIT_INDEX_FILE="$STAGED_INDEX" git write-tree)"
+# A commit rather than the bare tree: `worktree add` takes a commit-ish, and
+# checking one out seeds the new worktree's own index with the staged tree.
+# That is what keeps `make openapi-check`'s bare `git diff openapi.json`
+# meaning "the staged spec is stale" rather than comparing against nothing.
+# The object is unreachable once the worktree is gone, and `git gc` takes it.
+STAGED_COMMIT="$(git commit-tree "$STAGED_TREE" -m 'pre-commit: staged tree')"
+
+WORKTREE="$(mktemp -d "$WT_PREFIX"XXXXXX)"
+rmdir "$WORKTREE"
+
+cleanup() {
+  # rm before prune, not `git worktree remove`: the OpenAPI stage rewrites
+  # openapi.json in there, and `remove` refuses a dirty worktree.
+  rm -rf "$WORKTREE" "$STAGED_INDEX"
+  git -C "$ROOT" worktree prune || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+git worktree add --detach --quiet "$WORKTREE" "$STAGED_COMMIT"
+
+# .env is gitignored, so it is absent from the index and from the checkout.
+# Copied rather than left out, and this is the one deliberate exception to
+# "the checks see only what is committed": config.py reads `env_file=".env"`
+# relative to the working directory, so without it the checks would run
+# against config.py's defaults instead of the developer's settings. Today
+# every line in .env is commented out and this is a no-op; the day someone
+# activates a key is the day a hook without this line tests a different
+# database than the developer's own `make test` does.
+if [ -f "$ROOT/.env" ]; then
+  cp "$ROOT/.env" "$WORKTREE/.env"
+fi
+
+cd "$WORKTREE"
+
+echo "Running pre-commit checks on the staged tree..."
+
+# A fresh checkout has no .venv, and the developer's cannot be borrowed: its
+# editable-install .pth is an absolute path into their src/, so a borrowed one
+# would import the tree these checks exist to exclude. A sync off the warm uv
+# cache is well under a second, and the blocks are shared with that cache.
+uv sync --quiet
 
 echo "Linting..."
-uv run ruff check .
+make lint
 
-echo "Checking dependencies..."
-uv run deptry src migrations scripts
-
-echo "Type checking..."
-uv run ty check
+# The one CI stage of the three that needs no database, so the only one that
+# can run here; `CLAUDE.md` § Commands names the two Alembic stages that stay
+# in CI and why.
+echo "Checking openapi.json is not stale..."
+make openapi-check
 
 echo "Running tests..."
-uv run pytest -v
+make test
 
 echo "All checks passed."

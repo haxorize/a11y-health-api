@@ -15,6 +15,10 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 # Install dependencies
 make install
 
+# After editing a dependency bound: uv.lock is asserted on every uv call, so
+# `make install` refuses rather than resolving. This is the way to record it.
+make lock
+
 # Copy environment config
 cp .env.example .env
 
@@ -39,7 +43,8 @@ make test
 make coverage
 
 # Lint (ruff check + ruff format --check + ty + deptry); the pre-commit hook
-# runs this same target, and CI runs its lint-style / lint-types / lint-deps parts
+# runs this same target, and CI enumerates its four parts as separate steps:
+# lint-style / lint-format / lint-types / lint-deps
 make lint
 
 # Format code

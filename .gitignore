@@ -13,6 +13,7 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+cov_out/
 
 # Linting / Type checking
 .ruff_cache/

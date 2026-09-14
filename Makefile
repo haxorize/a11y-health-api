@@ -1,4 +1,4 @@
-.PHONY: install dev test coverage lint lint-style lint-types lint-deps format clean migrate migrate-create migrate-downgrade migrate-roundtrip openapi openapi-check
+.PHONY: install lock dev test coverage lint lint-style lint-format lint-types lint-deps format clean migrate migrate-create migrate-downgrade migrate-roundtrip openapi openapi-check
 
 # Asserts uv.lock has not drifted from pyproject.toml, failing the command if it
 # has, so editing a bound without relocking is refused instead of quietly
@@ -25,6 +25,15 @@ DOWNGRADE_FLOOR := 8b3a1162eb95
 install:
 	uv sync
 
+# The way out of the assertion above. `uv sync` refuses to resolve a bound that
+# moved, which is the point, and leaves no way to record the move — so the
+# relock gets a target of its own rather than a flag a reader has to know.
+# UV_LOCKED is cleared for this one recipe: inherited, it would turn the relock
+# into an assertion that the lock will not change, which fails exactly when it
+# is needed.
+lock:
+	UV_LOCKED=0 uv lock
+
 dev:
 	uv run uvicorn a11y_health.main:app --reload
 
@@ -36,11 +45,19 @@ coverage:
 
 # The project's one lint set, so the hook and CI cannot drift from each other or
 # from a developer's `make lint`: the hook runs this target, and CI runs the
-# three subtargets separately only to keep one red step per tool in its UI.
-lint: lint-style lint-types lint-deps
+# subtargets separately only to keep one red step per tool in its UI. A check
+# added here has to be added to CI's enumeration too, which is the cost of that
+# UI.
+lint: lint-style lint-format lint-types lint-deps
 
 lint-style:
 	uv run ruff check .
+
+# Its own target rather than a second line under lint-style: make stops at the
+# first failing line, so bundled, a ruff check failure meant the formatting
+# failures were not reported until the check ones had been fixed and it was run
+# again. CI reported both before the targets existed.
+lint-format:
 	uv run ruff format --check .
 
 lint-types:
@@ -70,11 +87,24 @@ migrate-roundtrip:
 openapi:
 	uv run python scripts/export_openapi.py
 
-openapi-check: openapi
-	@git diff --exit-code openapi.json || (echo "" && echo "openapi.json is stale — run 'make openapi' and commit the result" && exit 1)
+# Generates to a temp path instead of taking `openapi` as a prerequisite. As a
+# prerequisite it overwrote the tracked file before reading it, so a developer
+# running the check to find out whether they needed to regenerate got a clean
+# report on the re-run and an unstaged regeneration sitting in their tree.
+openapi-check:
+	@tmp=$$(mktemp); \
+	uv run python scripts/export_openapi.py "$$tmp" >/dev/null; \
+	if diff -q openapi.json "$$tmp" >/dev/null; then \
+		rm -f "$$tmp"; \
+	else \
+		rm -f "$$tmp"; \
+		echo ""; \
+		echo "openapi.json is stale — run 'make openapi' and commit the result"; \
+		exit 1; \
+	fi
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -rf .pytest_cache .ruff_cache htmlcov
+	rm -rf .pytest_cache .ruff_cache htmlcov cov_out
 	rm -f .coverage

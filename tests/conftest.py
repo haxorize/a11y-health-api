@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import suppress
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from a11y_health.config import settings
@@ -77,21 +79,72 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         session.exitstatus = 1
 
 
+# TEST_DATABASE_URL names the *template*; each run gets its own database from
+# it, suffixed with the run's pid. The engine below drops and recreates every
+# table, so two runs sharing one database drop each other's schema mid-test —
+# and the pre-commit hook made that ordinary rather than rare, since it runs the
+# suite on every commit while the developer may be running `make test` in
+# another terminal. The worktree isolates every file and would not have isolated
+# this one shared thing.
+def _run_database_urls() -> tuple[str, str, str]:
+    template = make_url(settings.TEST_DATABASE_URL)
+    name = f"{template.database}_{os.getpid()}"
+    run_url = template.set(database=name).render_as_string(hide_password=False)
+    # Maintenance connection: CREATE DATABASE cannot run from inside the
+    # database being created, and `postgres` is the one every deployment has.
+    admin_url = template.set(database="postgres").render_as_string(hide_password=False)
+    return run_url, admin_url, name
+
+
+async def _recreate_database(admin_url: str, name: str) -> None:
+    # AUTOCOMMIT because CREATE/DROP DATABASE cannot run inside a transaction.
+    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            # A previous run killed mid-suite leaves its database behind with
+            # nothing holding it; a pid collision after a wrap would otherwise
+            # fail the DROP rather than reclaim it.
+            await conn.execute(
+                text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
+                {"name": name},
+            )
+            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+            await conn.execute(text(f'CREATE DATABASE "{name}"'))
+    finally:
+        await admin.dispose()
+
+
+async def _drop_database(admin_url: str, name: str) -> None:
+    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            await conn.execute(
+                text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
+                {"name": name},
+            )
+            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+    finally:
+        await admin.dispose()
+
+
 @pytest.fixture(scope="session")
 async def engine() -> AsyncIterator[AsyncEngine]:
+    run_url, admin_url, name = _run_database_urls()
+    await _recreate_database(admin_url, name)
     eng = create_async_engine(
-        settings.TEST_DATABASE_URL,
+        run_url,
         echo=settings.DEBUG,
         # Deadlock tests would otherwise idle out the 1s default before
         # detection fires. PGC_SUSET — dev and CI connect as superuser (#112).
         connect_args={"server_settings": {"deadlock_timeout": "50ms"}},
     )
     async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.execute(text("DROP TYPE IF EXISTS brand"))
         await conn.run_sync(Base.metadata.create_all)
-    yield eng
-    await eng.dispose()
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+        await _drop_database(admin_url, name)
 
 
 @pytest.fixture

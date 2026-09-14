@@ -108,8 +108,9 @@ make migrate-create msg="add users table"
 # Roll back the last migration
 make migrate-downgrade
 
-# Upgrade, downgrade to DOWNGRADE_FLOOR, and upgrade again — what CI's
-# migration-drift job runs to prove the revisions above the floor reverse
+# Upgrade, downgrade to DOWNGRADE_FLOOR, and upgrade again over the revisions
+# above the floor — what CI's migration-drift job runs. Uses a scratch database
+# it creates and drops, never DATABASE_URL; see the Makefile comment beside it
 make migrate-roundtrip
 ```
 
@@ -121,7 +122,7 @@ Configuration is managed via environment variables or a `.env` file:
 |---|---|---|
 | `DEBUG` | `False` | Echoes every SQL statement to the log, and allows a wildcard `*` in `ALLOWED_ORIGINS` |
 | `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health` | Database connection string |
-| `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health_test` | Test database connection string |
+| `TEST_DATABASE_URL` | `postgresql+asyncpg://localhost:5432/a11y_health_test` | Template for the test database. Each pytest run creates and drops its own database from it, suffixed with the run's pid, so two runs never share a schema |
 | `ALLOWED_ORIGINS` | `["http://localhost:3000"]` | CORS allowed origins (wildcard `*` rejected when `DEBUG=False`) |
 
 ## Project Structure

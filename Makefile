@@ -11,16 +11,22 @@ export UV_LOCKED := 1
 # The revision `migrate-roundtrip` downgrades to, and the floor CI's
 # migration-drift job gets by invoking that target rather than carrying a copy.
 #
-# It is the current head. 8b3a1162eb95's upgrade() re-runs the #97 dedupe
-# DELETE over score_snapshot, and its downgrade() restores none of the rows that
-# DELETE removes — it only puts the dropped uniqueness indexes back. So going
-# below it and coming back up re-runs that DELETE against a window where the
-# indexes were absent, and removes whatever duplicate rollup snapshots landed in
-# it without a word. Raise this floor whenever a migration lands whose downgrade
-# cannot undo its upgrade; everything above it must stay reversible. While the
-# floor is the head the roundtrip exercises no revisions, and that coverage
-# comes back with the next reversible migration.
-DOWNGRADE_FLOOR := 8b3a1162eb95
+# b362121027a0 is the deepest revision the roundtrip can reach: its own
+# downgrade() raises NotImplementedError, so it is downgraded *to* and never
+# crossed. Raise this floor whenever a migration lands whose downgrade cannot
+# undo its upgrade; everything above it must stay reversible, and
+# test_downgrade_floor.py fails if the floor ever reaches the head, since a
+# floor at the head downgrades across nothing and the stage proves nothing.
+#
+# It sat at the head (8b3a1162eb95) until the roundtrip got its own scratch
+# database: that revision's upgrade() re-runs the #97 dedupe DELETE over
+# score_snapshot and its downgrade() restores none of those rows, so crossing
+# it in a database holding real data destroys rollup snapshots. Isolating the
+# target is what made the floor safe to lower rather than raising it forever.
+DOWNGRADE_FLOOR := b362121027a0
+
+# Created and dropped around the roundtrip. Never DATABASE_URL: see the script.
+ROUNDTRIP_DB := a11y_health_roundtrip
 
 install:
 	uv sync
@@ -80,9 +86,7 @@ migrate-downgrade:
 	uv run alembic downgrade -1
 
 migrate-roundtrip:
-	uv run alembic upgrade head
-	uv run alembic downgrade $(DOWNGRADE_FLOOR)
-	uv run alembic upgrade head
+	./scripts/migrate_roundtrip.sh $(DOWNGRADE_FLOOR) $(ROUNDTRIP_DB)
 
 openapi:
 	uv run python scripts/export_openapi.py

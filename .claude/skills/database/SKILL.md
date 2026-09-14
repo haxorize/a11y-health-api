@@ -134,9 +134,9 @@ Every model edit — a new table, a new column, a changed type — finishes here
 
 1. **Autogenerate** the revision: `uv run alembic revision --autogenerate -m "add scan_run table"`.
 2. **Read what it wrote.** Autogenerate compares neither `ON DELETE` actions, CHECK bodies, GIN methods, nor partial predicates, so anything in that list is yours to write into the revision by hand.
-3. **Roundtrip it**: `make migrate-roundtrip` upgrades, downgrades to the floor, and upgrades again. The floor is `DOWNGRADE_FLOOR` in the `Makefile`, where the person adding a migration reads it; CI's migration-drift job invokes that same target rather than carrying a copy of the value.
+3. **Roundtrip it**: `make migrate-roundtrip` upgrades, downgrades to the floor, and upgrades again. The floor is `DOWNGRADE_FLOOR` in the `Makefile`, where the person adding a migration reads it; CI's migration-drift job invokes that same target rather than carrying a copy of the value. It exercises the revisions above the floor, and runs against a scratch database `scripts/migrate_roundtrip.sh` creates and drops around it — never `DATABASE_URL`, because crossing the floor re-runs a data repair whose downgrade restores nothing. `tests/migrations/test_downgrade_floor.py` fails if the floor ever reaches the head, since a floor at the head downgrades across nothing.
 
-An irreversible migration (e.g. a one-time data repair) raises `NotImplementedError` in `downgrade()` and becomes the new floor; everything above the floor must stay reversible.
+Raise the floor whenever a migration lands whose `downgrade()` cannot undo its `upgrade()`. Raising `NotImplementedError` is one way a revision says so; the current floor says it another way, by leaving rows its upgrade deleted unrestored. The `Makefile` comment beside `DOWNGRADE_FLOOR` carries the criterion and this floor's reason — read it before lowering the value. Everything above the floor must stay reversible.
 
 Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
 ```python

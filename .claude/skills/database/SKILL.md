@@ -12,7 +12,7 @@ description: Database conventions for this project (PostgreSQL schema design + S
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times. In SQLAlchemy ORM, use `DateTime(timezone=True)` — it maps to `TIMESTAMPTZ` in PostgreSQL
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
 - **Scores and ratios**: `FLOAT`. Nothing here is financial, so `NUMERIC` has no site in this schema
-- **JSON**: `JSONB`. GIN only on a column a query filters (`rule_finding.wcag_criteria`, `rule_finding.classifications`); a payload column is `deferred()` and unindexed ([ADR 0008](../../../docs/adr/0008-defer-jsonb-by-access-pattern.md)), which is why `page_result.raw_json` and `node_finding.checks` carry no index
+- **JSON**: `JSONB`. Indexing and loading are separate calls. GIN goes on a column a query filters ([ADR 0014](../../../docs/adr/0014-wcag-criteria-as-jsonb-array.md)) — `rule_finding.wcag_criteria` and `rule_finding.classifications` carry one. Loading is [ADR 0008](../../../docs/adr/0008-defer-jsonb-by-access-pattern.md)'s call by access pattern: `deferred()` for a large column read only on a detail endpoint, which is why `page_result.raw_json` and `node_finding.checks` are deferred and unindexed. Served but not filtered is the third case and takes neither — `rule_finding.tags` and `node_finding.target`
 
 ### Do not use
 
@@ -22,7 +22,7 @@ description: Database conventions for this project (PostgreSQL schema design + S
 
 Models in `src/a11y_health/models/` inherit from `core.database.Base`. `Base` provides `id` (BIGINT IDENTITY PK). Mutable tables also inherit `TimestampMixin` for `created_at`/`updated_at`.
 
-Declare every constraint name as a module-level constant and give every `ForeignKey` a `name=`, including the ones autogenerate would name for you — the auto-generated `<table>_<col>_fkey` cannot be mapped in an `integrity.guard` call, and changing its `ON DELETE` later costs a rename migration first. `models/app.py` is the worked example:
+Declare a constraint name as a module-level constant when something has to refer to it. A `ForeignKey` earns a `name=` when an `integrity.guard` call maps its violation to a domain error: the auto-generated `<table>_<col>_fkey` cannot be mapped, and changing a named constraint's `ON DELETE` later costs a rename migration first. [ADR 0028](../../../docs/adr/0028-integrity-guard-constraint-identity-savepoint.md) names the three a guard maps — `fk_org_unit_parent_id`, `fk_app_org_unit_id`, `fk_score_snapshot_org_unit_id`, all `RESTRICT` parents, mapped at `services/org_unit.py`. Five FKs carry names in all: the two brand parents are named without being mapped, which the rule neither asks for nor forbids. The six `CASCADE` owned-child FKs are unnamed on purpose, nothing mapping them; do not add names to them or to a new one. Index names stay bare literals on the same test, which is why the example's `Index(...)` is not a constant. `models/app.py` is the worked example:
 
 ```python
 UQ_APP_SLUG = "uq_app_slug"
@@ -77,17 +77,17 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 ## Constraints
 
 - **PK**: every reference table gets one
-- **FK**: always specify `ON DELETE` action; always add an explicit index on the FK column (Postgres does not auto-index FKs). Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
-- **UNIQUE**: a uniqueness rule that holds only for some rows is a partial unique `Index`, not a `UniqueConstraint` — see `UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT` and `UQ_ORG_UNIT_SINGLE_ROOT`, both of which exist because the column is nullable
+- **FK**: always specify `ON DELETE` action; always leave the FK column indexed, since Postgres does not auto-index FKs — a dedicated single-column index unless a composite or partial one already leads with that column. Five of the eleven FK columns have none of their own for that reason, and two migrations dropped the redundant ones (`632bbe98aa6a`, `c31f27959a81`); do not put them back. Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
+- **UNIQUE**: a uniqueness rule that holds only for some rows is a partial unique `Index`, not a `UniqueConstraint` — see `UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT` and its twin `UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT`, whose predicates track `CK_SCORE_SNAPSHOT_OWNER`'s mutually exclusive owner columns, and `UQ_ORG_UNIT_SINGLE_ROOT`, whose predicate carries ADR 0026's at-most-one-parentless-org-unit rule. `NULLS NOT DISTINCT` has no site in this schema: the partial shape covers the nullable cases instead
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
-- **Naming**: explicitly name all constraints (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`, `fk_<table>_<col>`). Export constraint names as module-level constants (e.g., `UQ_APP_SLUG`, `FK_APP_ORG_UNIT_ID`) for the constraint→error mappings passed to `integrity.guard` (see the fastapi skill's Services section)
+- **Naming**: name CHECK, UNIQUE and `Index` constraints explicitly, to the pattern (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`, `fk_<table>_<col>`) — autogenerate's default for these is unreadable in a migration. FKs are the exception, named only where mapped (§ Model definition). Export the names a constraint→error mapping passes to `integrity.guard` as module-level constants (e.g., `UQ_APP_SLUG`, `FK_APP_ORG_UNIT_ID`); see the fastapi skill's Services section
 
 ## Indexes
 
-The repo uses three index kinds — plain B-tree (every FK column), composite, and GIN. A fourth kind is an ADR, not a judgment call at the model.
+Two access methods, B-tree and GIN, in four shapes: plain single-column, composite, partial, and GIN. Another access method (BRIN, hash) or a covering `postgresql_include` is an ADR, not a judgment call at the model; none has a site in this schema today.
 
 - **Composite**: equality columns first, range columns last; prefer one composite over two singletons when queries `AND` the columns (`ix_rule_finding_page_result_id_type`, `ix_page_result_scan_run_id_id`)
-- **Partial**, via `postgresql_where`, when the predicate is what makes the rule true — both sites are uniqueness over a nullable column:
+- **Partial**, via `postgresql_where`, when the predicate is what makes the rule true. Three sites: the two `score_snapshot` rollup-owner indexes, which are the backstop deciding rollup write races ([ADR 0015](../../../docs/adr/0015-score-snapshot-append-only.md), [ADR 0029](../../../docs/adr/0029-per-owner-advisory-lock-rollup-serialization.md)), and `UQ_ORG_UNIT_SINGLE_ROOT`. A fourth owner type takes a fourth index, copied from both twins rather than from one:
   ```python
   from sqlalchemy import text
 
@@ -100,7 +100,7 @@ The repo uses three index kinds — plain B-tree (every FK column), composite, a
   )
   ```
 - **GIN** on a JSONB column a query filters: `Index("ix_rule_finding_wcag_criteria", "wcag_criteria", postgresql_using="gin")`
-- **Every index is built non-concurrently.** `migrations/env.py` wraps each revision in one transaction and `CREATE INDEX CONCURRENTLY` cannot run inside one, so a new index on `rule_finding` or `page_result` holds a `SHARE` lock against ingest for the whole build. Adding one to a large table needs an autocommit escape hatch in `env.py` first; the existing indexes were all applied when the tables were small
+- **Every index is built non-concurrently.** `migrations/env.py` wraps the whole `run_migrations()` call in one transaction — one `BEGIN` for the entire run, not one per revision, so a failure mid-`upgrade head` rolls back every revision in it — and `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. A new index on `rule_finding` or `page_result` therefore holds a `SHARE` lock against ingest for the whole build. Adding one to a large table needs `transaction_per_migration=True` in `env.py` *and* an autocommit block for that revision, not the autocommit block alone; the existing indexes were all applied when the tables were small
 
 ## Relationships
 
@@ -108,7 +108,7 @@ Do not use `relationship()`. Use explicit FK columns only. This avoids lazy-load
 
 ## Deferred columns
 
-Use `deferred()` for large columns (e.g., JSONB payloads) that should not be loaded in default queries:
+Use `deferred()` for large columns (e.g., a JSONB document like Raw JSON) that should not be loaded in default queries:
 ```python
 from sqlalchemy.orm import deferred
 
@@ -126,6 +126,7 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
 - **Batch inserts** in ingest — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk
 - **Cursor/keyset pagination** for list endpoints, never `OFFSET` — implementation (helpers, composite cursors, `Page[T]`) is owned by the fastapi skill's Pagination section
 - **AsyncSession isn't concurrent-safe**: never `asyncio.gather` (or otherwise interleave) operations on a shared session — concurrent use deadlocks or corrupts state. One session per concurrent task
+- **Never check-then-insert.** A uniqueness or FK rule is enforced by the constraint and translated by `core/integrity.py`'s `guard()` ([ADR 0028](../../../docs/adr/0028-integrity-guard-constraint-identity-savepoint.md)), never by a SELECT before the INSERT. Postgres UPSERT (`on_conflict_do_update`, `on_conflict_do_nothing`) and `COPY` have no site in this schema today; the guarded flush is the answer here
 - **Short transactions**: never `await` HTTP or external I/O inside an open transaction. Locks held during I/O serialize unrelated requests and pin connections from the async pool. Do the I/O first, then open the transaction for the write
 
 ## After a model change
@@ -138,7 +139,9 @@ Every model edit — a new table, a new column, a changed type — finishes here
 
 Raise the floor whenever a migration lands whose `downgrade()` cannot undo its `upgrade()`. Raising `NotImplementedError` is one way a revision says so; the current floor says it another way, by leaving rows its upgrade deleted unrestored. The `Makefile` comment beside `DOWNGRADE_FLOOR` carries the criterion and this floor's reason — read it before lowering the value. Everything above the floor must stay reversible.
 
-Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` uses `run_async` with `create_async_engine`. Import all models so autogenerate detects them:
+## Migration setup and commands
+
+Migrations live in the `migrations/` directory (not `alembic/`). Setup: `env.py` builds the engine with `async_engine_from_config` and drives it from `run_async_migrations()`. Import all models so autogenerate detects them:
 ```python
 from a11y_health.core.database import Base
 from a11y_health.models import *  # noqa: F403
@@ -148,7 +151,7 @@ target_metadata = Base.metadata
 
 Commands:
 ```bash
-uv run alembic revision --autogenerate -m "add scan_run table"  # from model changes
+uv run alembic revision --autogenerate -m "add scan_run table"  # step 1 above; steps 2 and 3 still apply
 uv run alembic revision -m "seed brand data"                    # manual SQL
 uv run alembic upgrade head                                      # apply all pending
 uv run alembic downgrade -1                                      # roll back one

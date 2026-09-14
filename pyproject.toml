@@ -69,8 +69,8 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.deptry]
-# The scan covers every tree that imports the package (`make lint` names
-# them), so first-party detection cannot key on one root.
+# The scan covers every tree that imports the package (`lint-deps` in the
+# Makefile names them), so first-party detection cannot key on one root.
 known_first_party = ["a11y_health"]
 
 [tool.deptry.per_rule_ignores]

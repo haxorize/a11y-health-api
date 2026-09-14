@@ -6,14 +6,16 @@ substituting a word inside a wrapped paragraph pushes the overflow onto its own
 line instead of reflowing the block. The formatter never reflows prose, so the
 result survives format, lint, type check, and the whole suite.
 
-Four rules answer that, each with a floor or a guard keeping its own walk
+Five rules answer that, each with a floor or a guard keeping its own walk
 honest. A document soft-wraps instead, one line per paragraph (ADR 0040), so a
 later diff shows the sentence that changed rather than the reflow around it. A
 word scan holds code and documents alike to the American spelling (ADR 0041) —
-that rule is the one that reads both formats, while the one-line rule reads only
-markdown. The fourth reads one file: a `DOMAIN.md` definition is capped in words
-(ADR 0018), because the mechanism behind a term belongs to the record that owns
-it rather than to the glossary.
+that rule is the one that reads both formats, while the one-line rule reads
+only markdown. The last two each read a single file: a `DOMAIN.md` definition
+is capped in words (ADR 0018), because the mechanism behind a term belongs to
+the record that owns it rather than to the glossary, and `docs/architecture.md`
+is held to a word band and an em-dash cap (#148), the quantities its pare was
+measured in.
 
 The stranded rule is exact rather than a guess about raggedness: a line is
 stranded when it stopped short of the wrap width while the next line still held
@@ -1254,6 +1256,25 @@ def test_no_prose_paragraph_strands_a_line() -> None:
 
 ARCHITECTURE_WORD_BAND = (2250, 2750)
 ARCHITECTURE_DASH_CAP = 2
+
+# The document that restates both quantities in prose and can derive neither.
+# Same hazard as the word ceiling's guard: a skill telling an agent to pare to
+# a band this module has stopped enforcing is green exactly where the hole is.
+# Moving either number above reds here until the prose has followed.
+ARCHITECTURE_BUDGET_RESTATED_IN = (".claude/skills/code-documentation/SKILL.md",)
+
+
+def test_the_architecture_budget_is_stated_wherever_it_is_restated() -> None:
+    low, high = ARCHITECTURE_WORD_BAND
+    for name in ARCHITECTURE_BUDGET_RESTATED_IN:
+        text = _file_text(_REPO / name)
+        assert text is not None, f"{name} restates the architecture budget and is unreadable"
+        assert f"{low}-{high} word band" in text, (
+            f"{name} states the architecture word band and no longer says {low}-{high}"
+        )
+        assert f"at most {ARCHITECTURE_DASH_CAP} em dashes" in text, (
+            f"{name} states the architecture em-dash cap and no longer says {ARCHITECTURE_DASH_CAP}"
+        )
 
 
 def test_the_architecture_doc_stays_inside_its_stated_budget() -> None:

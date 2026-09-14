@@ -1,13 +1,13 @@
 ---
 name: testing
-description: Test conventions for this project. Use when writing tests, adding fixtures, or setting up test infrastructure.
+description: Test conventions for this project — layout, the six conftest fixtures, factories and arrange helpers, markers, and mocking. Use when writing or moving a test, adding a fixture, reaching for a factory, deciding where a new test file goes, or setting up test infrastructure.
 ---
 
 # Testing Conventions
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism** or a **topology guard**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty) and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either under a mirrored directory is what produced the mixed contract suite #133 had to split.
+Mirror the app structure — except for a **suite-wide mechanism** or a **topology guard**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either under a mirrored directory is what produced the mixed contract suite #133 had to split.
 
 ```
 tests/
@@ -23,9 +23,10 @@ tests/
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
   test_prose_shape.py      # the prose guards: code-prose wrap (the half W505 can't see),
                            # one-line markdown blocks (ADR 0040), American spelling (ADR 0041),
-                           # the DOMAIN.md definition word ceiling (ADR 0018)
+                           # the DOMAIN.md definition word ceiling (ADR 0018), and the
+                           # docs/architecture.md word band and em-dash cap (#148)
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
-  fixtures/                # sample axe JSON payloads and other static test data
+  fixtures/                # one sample Axe Payload and other static test data
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
     test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
@@ -34,9 +35,11 @@ tests/
                             # (test_scan_run_pages.py, test_scan_run_summary.py)
     test_rollup_deadlock.py # the #104 deadlock 409 through the full request stack; `integration`
   services/
-    test_<resource>.py      # direct service-layer tests, one per services/ module
-    test_finding_persistence.py   # what one payload leaves behind across the finding tables
-    test_rollup_serialization.py  # per-owner Rollup on two sessions (#101, ADR 0029); `integration`
+    test_<resource>.py      # direct service-layer tests, one per public services/ module. The
+                            # underscore-prefixed ones (_latest_snapshot, _org_subtree) have no
+                            # file: they are exercised through the module that consumes them
+    test_finding_persistence.py   # what one Axe Payload leaves behind across the finding tables
+    test_rollup_serialization.py  # per-Owner Rollup on two sessions (#101, ADR 0029); `integration`
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
   models/
@@ -44,13 +47,14 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # `no_server`: a client that fails the test if anything reaches the transport; `live_server`: the base URL of the app under uvicorn on an ephemeral port, its requests on real-commit sessions from the test engine (write through it with `committed_session_factory`), behind a fake proxy that stalls, redirects, or 413s a large POST on the `x-test-proxy` header; `socket_client`: the client `a11y` ships (`make_client`) against it; `forwarded`: each request that proxy handed the app since `socket_client` opened — TCP peer, request headers, response headers
+    conftest.py             # CLI-only fixtures: `no_server` (fails if anything reaches the transport), `live_server` (the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`), `socket_client` (the client `a11y` ships, against it), `forwarded` (what that proxy saw)
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py,
                             # test_brands.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
     test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect, a proxy's 413 on a large POST
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
+    test_downgrade_floor.py # the floor is a real revision and never the head; reads the Makefile
     test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)
 ```
 
@@ -58,7 +62,7 @@ tests/
 
 Six fixtures, layered:
 
-- **`engine`** (session scope) — creates a database of its own for the run (`TEST_DATABASE_URL`'s name plus the pid), creates every table in it, and drops the database at teardown. The template database is never connected to, so a second run — the pre-commit hook's, while you run `make test` — cannot drop the schema under this one. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test (raise it per session only to steer which backend is the victim, as `test_rollup_deadlock.py` does). The GUC is superuser-set: dev and CI connect as superuser, and because it rides the connection startup packet, a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter` — the escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`
+- **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test (raise it per session only to steer which backend is the victim, as `test_rollup_deadlock.py` does). The GUC is superuser-set: dev and CI connect as superuser, and because it rides the connection startup packet, a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter` — the escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB. The override yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why the override is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept

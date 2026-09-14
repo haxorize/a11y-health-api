@@ -1,6 +1,6 @@
 ---
 name: fastapi
-description: Project conventions for this FastAPI API. Use when creating endpoints, schemas, services, or configuring the app.
+description: Project conventions for this FastAPI API — app structure, endpoints, schemas, services, pagination, the Error Contract, and domain exceptions. Use when adding or changing an endpoint, schema, service, dependency, or exception class, when declaring error responses, when paginating a list operation, or when configuring the app.
 ---
 
 # FastAPI Project Conventions
@@ -18,9 +18,11 @@ src/a11y_health/
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
     existence.py      # the Existence Guard: get_by_pk/get_by_query + ENTITY_LABELS
-    integrity.py      # guard(): a named constraint violation becomes a domain error
+    integrity.py      # the Integrity Guard: guard() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
-    slug.py           # derive_slug()/rederive_slugs() — an App's Slug from its name
+    slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.
+                      # rederive_slugs() is migration-only — its one non-test caller is
+                      # the revision that backfilled them (ADR 0019)
   api/
     deps.py        # Annotated type aliases (DbSession, etc.)
     v1/
@@ -61,7 +63,7 @@ src/a11y_health/
       brand_id: Annotated[list[int] | None, Query()] = None,
   ) -> Page[AppRead]: ...
   ```
-- Paginated endpoints: see Pagination
+- Paginated endpoints: see [Pagination](#pagination)
 - Return Pydantic response models with explicit type annotations
 - Serialize ORM instances explicitly: `SchemaRead.model_validate(orm_instance)`
 - Use `async def` — this project uses async SQLAlchemy throughout
@@ -151,7 +153,7 @@ async def list_apps(
 
 Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id]`. Keyset columns must be NOT NULL.
 
-**Enforcement** — contract tests in `tests/core/test_pagination.py` sweep every served operation: accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). A forgotten declaration fails the suite, not review.
+**Enforcement** — contract tests in `tests/core/test_pagination.py` sweep every served operation. Accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). The sweep reaches sub-dependencies, so a shared dependency growing its own `cursor` or `limit` fails the rule above as well: two definitions of one wire parameter publish conflicting schemas. A forgotten declaration fails the suite, not review.
 
 Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) with `Page.from_cursor_page`.
 
@@ -167,13 +169,15 @@ Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts 
 
 ## Domain exceptions
 
-Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. **The message opens on a literal, never on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for:
+Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. `NotFoundError` is the shape, quoted as it stands in `core/exceptions.py`:
 ```python
 class NotFoundError(DomainError):
     def __init__(self, resource: str, resource_id: object) -> None:
         self.resource = resource
         self.resource_id = resource_id
-        super().__init__(f"Not found: {resource} {resource_id}")
+        super().__init__(f"{resource} {resource_id} not found")
 ```
 
 Follow this pattern for new exceptions — attributes enable structured logging and testing; `str(exc)` provides the HTTP response detail.
+
+**Open a new message on a literal rather than on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for. This is a rule for messages not yet written: five of the ten current subclasses open interpolated, `NotFoundError` above among them. Their text is the served body — `core/error_contract.py` sends `str(exc)` — so rewording one moves `openapi.json`, the UI's generated client, and three tests that pin the exact string (`tests/core/test_error_contract.py`, `tests/core/test_existence.py`). #184 owns that sweep; until it lands, match the file rather than the rule.

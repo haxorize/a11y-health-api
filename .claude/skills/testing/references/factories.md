@@ -26,12 +26,12 @@ For resources with required parent FK chains, add `make_<resource>_with_parents`
 scan_run = await make_scan_run_with_parents(db_session, slug="my-app", status=ScanRunStatus.PENDING)
 ```
 
-## In-memory payloads
+## In-memory Axe Payloads
 
-For building in-memory data structures (e.g., axe JSON payloads), use sync helpers that return plain dicts:
+For building in-memory data structures (an Axe Payload and the violations inside it), use sync helpers that return plain dicts:
 
 ```python
-def make_violation(rule_id: str, impact: str) -> dict[str, Any]:
+def make_violation(rule_id: str, impact: str, *, tags: list[str] | None = None) -> dict[str, Any]:
     return {"id": rule_id, "impact": impact, ...}
 
 def make_axe_payload(
@@ -40,10 +40,15 @@ def make_axe_payload(
     url: str = "https://example.com",
     violations: Any = None,
     incomplete: Any = None,
-    end_time: Any = None,  # untyped: tests hand it the values the boundary must reject; None omits the key
-    unmodeled: dict[str, Any] | None = None,  # keys the schema doesn't model, which Raw JSON must still carry
+    end_time: Any = None,
+    unmodeled: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {**(unmodeled or {}), "name": name, "testSubject": {"fileName": url}, "findings": {...}}
+    """`end_time` is untyped because several tests hand the boundary values it
+    must reject; `None` leaves the key out. `unmodeled` is for keys the schema
+    does not model, which the stored Raw JSON must still carry — merged first,
+    so it can never shadow a named argument."""
+    ...
+    return {**(unmodeled or {}), **payload}
 ```
 
 These don't touch the DB and don't need `async` or `flush()`.
@@ -66,7 +71,7 @@ async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
 
 Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored app. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one.
 
-`DEFAULT_SCORE_AGGREGATES` and `DEFAULT_SNAPSHOT_AT` are the one home of the snapshot defaults — the Score Aggregates and the observation time: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off them, and a test that has to build a raw `ScoreSnapshot` row `owned()` cannot express spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in beside `snapshot_at=DEFAULT_SNAPSHOT_AT` rather than restating the values.
+`DEFAULT_SCORE_AGGREGATES` and `DEFAULT_SNAPSHOT_AT` are the one home of the snapshot defaults — the Score Aggregates and the Observation Time: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off them, and a test that has to build a raw `ScoreSnapshot` row (one `owned()` cannot express) spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in beside `snapshot_at=DEFAULT_SNAPSHOT_AT` rather than restating the values.
 
 ## Query helpers
 

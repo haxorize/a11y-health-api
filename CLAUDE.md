@@ -42,7 +42,7 @@ Two CI checks stay out of the hook, both Alembic stages in the `migration-drift`
 
 ## Structure
 
-Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`. Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`.
+Source in `src/a11y_health/`. Tests in `tests/`. Config in `pyproject.toml`. Endpoints in `api/v1/endpoints/`, models in `models/`, schemas in `schemas/`, services in `services/`, the deep modules in `core/`, the onboarding CLI in `cli/`, and Alembic revisions in `migrations/` at the repo root.
 
 ## Subagent delegation
 

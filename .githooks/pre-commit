@@ -9,6 +9,16 @@ export UV_LOCKED=1
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+# Everything this hook creates is private to the user running it. Two things
+# below make that matter: the index copy, which is the staged tree verbatim,
+# and the .env copy further down, which is the one file in the throwaway
+# worktree that is not already committed and public within the repo. $TMPDIR is
+# per-user and mode 700 on macOS, but a Linux box with no TMPDIR set falls back
+# to /tmp at 1777, where the default umask would leave both world-readable.
+# Set here rather than per file so anything added later inherits it, `uv sync`'s
+# virtualenv included.
+umask 077
+
 # gitleaks reads the real staged diff rather than the working tree, so it runs
 # here, in the developer's repo, before anything else is built.
 echo "Scanning staged changes for secrets..."
@@ -108,6 +118,11 @@ git worktree add --detach --quiet "$WORKTREE" "$STAGED_COMMIT"
 # database than the developer's own `make test` does.
 if [ -f "$ROOT/.env" ]; then
   cp "$ROOT/.env" "$WORKTREE/.env"
+  # Belt and braces with the umask above: cp creates the destination from the
+  # umask, but this is the one file here worth stating a mode for outright, and
+  # a later edit that moves the copy out from under that umask should not
+  # silently widen it.
+  chmod 600 "$WORKTREE/.env"
 fi
 
 cd "$WORKTREE"

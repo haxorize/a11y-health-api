@@ -26,12 +26,10 @@ name: CI
 # against this repo's threat model and declined, and setup-uv publishes no
 # floating major tag that could drift underneath.
 #
-# Deliberately absent, so a search for either stops here rather than reading the
-# gap as an oversight: no `permissions:` block, because token scope comes from
-# the repository setting and fork pull requests get a read-only token either
-# way; and no Dependabot or Renovate config, because its main job would have
-# been keeping revision pins fresh and those were declined above. Both were
-# weighed against this repo's threat model and left out on purpose (#152).
+# Deliberately absent, so a search for it stops here rather than reading the gap
+# as an oversight: no Dependabot or Renovate config, because its main job would
+# have been keeping revision pins fresh and those were declined above. Weighed
+# against this repo's threat model and left out on purpose (#152).
 
 on:
   push:
@@ -39,6 +37,21 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+# Least privilege, declared once at the top so every job inherits it and a job
+# added later cannot quietly start from something wider. Read is all any of
+# these need: nothing here comments on a pull request, moves a tag, or
+# publishes anything.
+#
+# The reason this is not left to the repository setting is the `push` trigger
+# above. A fork pull request gets a read-only token whatever the setting says,
+# which is the case the old note here weighed — but a push to `main` gets the
+# repository default, commonly write, and this workflow runs three third-party
+# actions and two binaries fetched over the network, each inheriting whatever
+# the token carries. The checksums above are what make those fetches
+# trustworthy; this is what bounds them if one ever is not.
+permissions:
+  contents: read
 
 env:
   UV_PYTHON: "3.14"

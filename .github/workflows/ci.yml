@@ -124,12 +124,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # Names a database the service container never creates. Nothing in the
-      # suite may read the non-test setting, so a fixture that leaks to it fails
-      # to connect here rather than passing quietly against the test database —
-      # the leak tests/cli/conftest.py's live_server binding exists to prevent
-      # (ADR 0011). Locally the two settings differ only by name, which is why
-      # CI is the only place this can be caught.
+      # Names a database the service container never creates, so a fixture
+      # that leaks to the non-test setting fails to connect here rather than
+      # passing quietly against the test database — the leak
+      # tests/cli/conftest.py's live_server binding exists to prevent (ADR
+      # 0011). The invariant itself is no longer this value: it is
+      # tests/_non_test_database.py, which refuses the connection in every run
+      # including a developer's, where DATABASE_URL points at real data. This
+      # stays as the second line of defense, catching a leak that reaches
+      # Postgres by some route SQLAlchemy's events do not see.
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_must_not_be_read
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
     steps:

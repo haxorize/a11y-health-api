@@ -20,6 +20,7 @@ from tests._declaration_honesty import (
     instrument_rollup_raisers,
     stale_rollup_declaration_message,
 )
+from tests._non_test_database import install_non_test_database_guard
 from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -27,6 +28,10 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 declaration_honest_app = DeclarationHonestyShim(app)
 _honest_transport = ASGITransport(app=declaration_honest_app)
 instrument_rollup_raisers()
+# Armed at import so it covers collection-time connections too, not only ones
+# opened from inside a test. The invariant it holds, and why CI's env value was
+# not enough on its own, are tests/_non_test_database.py.
+install_non_test_database_guard()
 
 
 # The reverse direction of ADR 0033 (#121): an operation still declaring the

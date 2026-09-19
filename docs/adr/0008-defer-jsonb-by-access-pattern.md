@@ -3,7 +3,7 @@
 JSONB columns in this codebase are split into two groups, and the rule is access-pattern-driven, not type-driven:
 
 - **Deferred** (`deferred(mapped_column(JSONB, ...))`): `PageResult.raw_json` and `NodeFinding.checks`. Large payloads, only needed for drill-down detail views, never present in list responses.
-- **Not deferred**: `RuleFinding.classifications`, `RuleFinding.tags`, `RuleFinding.wcag_criteria`. Small payloads, present in every Rule Finding list response.
+- **Not deferred**: `RuleFinding.classifications`, `RuleFinding.tags`, `RuleFinding.wcag_criteria`, and `NodeFinding.target`. Small payloads, present in every Rule Finding or Node Finding list response.
 
 Considered and rejected:
 - **Defer every JSONB column for safety**: would require `undefer()` on every finding query, since classifications and tags are always rendered. Net-negative ergonomics with no real win.

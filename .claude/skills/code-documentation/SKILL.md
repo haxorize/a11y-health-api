@@ -1,6 +1,6 @@
 ---
 name: code-documentation
-description: This repo's prose regime — where comprehension lives (prose and `docs/architecture.md`, not blanket docstrings), when a docstring is written, and the six guards: the 80-column and bare-`#` rules over code prose, one line per paragraph over markdown (ADR 0040), American spelling over both (ADR 0041), the `DOMAIN.md` definition word ceiling (ADR 0018), and `docs/architecture.md`'s word band and em-dash cap. Use when writing or editing a docstring, a comment block, a module header, `DOMAIN.md`, `docs/architecture.md`, or any markdown document in this repo, when `W505` or `test_prose_shape.py` fails, or when reviewing a diff for restated types.
+description: This repo's prose regime — where comprehension lives (prose and `docs/architecture.md`, not blanket docstrings), when a docstring is written, and the six guards: the 80-column and bare-`#` rules over code prose, one line per paragraph over markdown (ADR 0040), American spelling over both (ADR 0041), the `DOMAIN.md` definition word ceiling (ADR 0018), and `docs/architecture.md`'s word band and em-dash cap. Use when writing or editing a docstring, a comment block, a module header, `DOMAIN.md`, `docs/architecture.md`, `docs/operating.md`, or any markdown document in this repo, when `W505` or `test_prose_shape.py` fails, or when reviewing a diff for restated types.
 ---
 
 # Code documentation

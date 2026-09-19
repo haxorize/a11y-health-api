@@ -12,7 +12,7 @@ description: Database conventions for this project (PostgreSQL schema design + S
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times. In SQLAlchemy ORM, use `DateTime(timezone=True)` — it maps to `TIMESTAMPTZ` in PostgreSQL
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
 - **Scores and ratios**: `FLOAT`. Nothing here is financial, so `NUMERIC` has no site in this schema
-- **JSON**: `JSONB`. Indexing and loading are separate calls. GIN goes on a column a query filters ([ADR 0014](../../../docs/adr/0014-wcag-criteria-as-jsonb-array.md)) — `rule_finding.wcag_criteria` and `rule_finding.classifications` carry one. Loading is [ADR 0008](../../../docs/adr/0008-defer-jsonb-by-access-pattern.md)'s call by access pattern: `deferred()` for a large column read only on a detail endpoint, which is why `page_result.raw_json` and `node_finding.checks` are deferred and unindexed. Served but not filtered is the third case and takes neither — `rule_finding.tags` and `node_finding.target`
+- **JSON**: `JSONB`. Indexing and loading are separate calls. GIN goes on a column a query filters — `rule_finding.wcag_criteria` ([ADR 0014](../../../docs/adr/0014-wcag-criteria-as-jsonb-array.md)) and `rule_finding.classifications` ([ADR 0031](../../../docs/adr/0031-typed-classification-compact-wire-shape.md)) each carry one. Loading is [ADR 0008](../../../docs/adr/0008-defer-jsonb-by-access-pattern.md)'s call by access pattern: `deferred()` for a large column read only on a detail endpoint, which is why `page_result.raw_json` and `node_finding.checks` are deferred and unindexed. Served but not filtered is the third case and takes neither — `rule_finding.tags` and `node_finding.target`
 
 ### Do not use
 
@@ -77,7 +77,7 @@ Re-export all ORM model classes in `models/__init__.py` with `__all__`. This ens
 ## Constraints
 
 - **PK**: every reference table gets one
-- **FK**: always specify `ON DELETE` action; always leave the FK column indexed, since Postgres does not auto-index FKs — a dedicated single-column index unless a composite or partial one already leads with that column. Five of the eleven FK columns have none of their own for that reason, and two migrations dropped the redundant ones (`632bbe98aa6a`, `c31f27959a81`); do not put them back. Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
+- **FK**: always specify `ON DELETE` action; always leave the FK column indexed, since Postgres does not auto-index FKs — a dedicated single-column index unless a composite index, a partial index, or a UNIQUE constraint already leads with that column. Five of the eleven FK columns have none of their own for that reason, and two migrations dropped the redundant ones (`632bbe98aa6a`, `c31f27959a81`); do not put them back. Use `RESTRICT` for parent/reference relationships and `CASCADE` for owned children that should be deleted with their parent
 - **UNIQUE**: a uniqueness rule that holds only for some rows is a partial unique `Index`, not a `UniqueConstraint` — see `UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT` and its twin `UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT`, whose predicates track `CK_SCORE_SNAPSHOT_OWNER`'s mutually exclusive owner columns, and `UQ_ORG_UNIT_SINGLE_ROOT`, whose predicate carries ADR 0026's at-most-one-parentless-org-unit rule. `NULLS NOT DISTINCT` has no site in this schema: the partial shape covers the nullable cases instead
 - **CHECK**: combine with `NOT NULL` since NULLs pass checks
 - **Naming**: name CHECK, UNIQUE and `Index` constraints explicitly, to the pattern (`ck_<table>_<col>_<desc>`, `uq_<table>_<col>`, `ix_<table>_<col>`, `fk_<table>_<col>`) — autogenerate's default for these is unreadable in a migration. FKs are the exception, named only where mapped (§ Model definition). Export the names a constraint→error mapping passes to `integrity.guard` as module-level constants (e.g., `UQ_APP_SLUG`, `FK_APP_ORG_UNIT_ID`); see the fastapi skill's Services section
@@ -100,7 +100,7 @@ Two access methods, B-tree and GIN, in four shapes: plain single-column, composi
   )
   ```
 - **GIN** on a JSONB column a query filters: `Index("ix_rule_finding_wcag_criteria", "wcag_criteria", postgresql_using="gin")`
-- **Every index is built non-concurrently.** `migrations/env.py` wraps the whole `run_migrations()` call in one transaction — one `BEGIN` for the entire run, not one per revision, so a failure mid-`upgrade head` rolls back every revision in it — and `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. A new index on `rule_finding` or `page_result` therefore holds a `SHARE` lock against ingest for the whole build. Adding one to a large table needs `transaction_per_migration=True` in `env.py` *and* an autocommit block for that revision, not the autocommit block alone; the existing indexes were all applied when the tables were small
+- **Every index is built non-concurrently.** `migrations/env.py` wraps the whole `run_migrations()` call in one transaction — one `BEGIN` for the entire run, not one per revision, so a failure mid-`upgrade head` rolls back every revision in it — and `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. A new index on `rule_finding` or `page_result` therefore holds a `SHARE` lock against Page Result creation for the whole build. Adding one to a large table needs `transaction_per_migration=True` in `env.py` *and* an autocommit block for that revision, not the autocommit block alone; the existing indexes were all applied when the tables were small
 
 ## Relationships
 
@@ -123,7 +123,7 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
   ```python
   apps = (await session.execute(select(App).where(App.id.in_(app_ids)))).scalars().all()
   ```
-- **Batch inserts** in ingest — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk
+- **Batch inserts** at Page Result creation — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk
 - **Cursor/keyset pagination** for list endpoints, never `OFFSET` — implementation (helpers, composite cursors, `Page[T]`) is owned by the fastapi skill's Pagination section
 - **AsyncSession isn't concurrent-safe**: never `asyncio.gather` (or otherwise interleave) operations on a shared session — concurrent use deadlocks or corrupts state. One session per concurrent task
 - **Never check-then-insert.** A uniqueness or FK rule is enforced by the constraint and translated by `core/integrity.py`'s `guard()` ([ADR 0028](../../../docs/adr/0028-integrity-guard-constraint-identity-savepoint.md)), never by a SELECT before the INSERT. Postgres UPSERT (`on_conflict_do_update`, `on_conflict_do_nothing`) and `COPY` have no site in this schema today; the guarded flush is the answer here

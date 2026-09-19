@@ -2,7 +2,7 @@
 
 Written for an engineer new to this service: the cross-cutting behavior no single file carries.
 
-`DOMAIN.md`, the glossary, defines the domain terms bolded here (**Scan Run**, **Page Health**, **Score Snapshot**, **Axe Boundary**, and the rest); read it first if a word is unfamiliar. `docs/adr/` is the decision log, linked below wherever a choice is non-obvious.
+`DOMAIN.md`, the glossary, defines the domain terms bolded here (**Scan Run**, **Page Health**, **Score Snapshot**, **Axe Boundary**, and the rest); read it first if a word is unfamiliar. `docs/adr/` is the decision log, linked below wherever a choice is non-obvious. [`docs/operating.md`](operating.md) is the operating companion: how a change is checked, the CLI, tracing a request, inspecting the data.
 
 ---
 
@@ -183,5 +183,3 @@ The API is the source of truth for the contract the UI consumes. The full cross-
 - **`make openapi` writes a deterministic `openapi.json`**, committed alongside code so contract changes show up in PR diffs.
 - **`make openapi-check` fails the CI lint job if `openapi.json` is stale**, so a contract change cannot merge without its regenerated spec.
 - **Each endpoint's operation id is its route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Two endpoint functions may therefore not share a name across routers: FastAPI warns and writes the duplicate, which is an invalid OpenAPI document and breaks UI codegen.
-
----

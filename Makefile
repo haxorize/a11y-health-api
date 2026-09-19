@@ -47,11 +47,11 @@ test:
 coverage:
 	uv run pytest --cov=a11y_health --cov-report=term-missing
 
-# The project's one lint set, so the hook and CI cannot drift from each other or
-# from a developer's `make lint`: the hook runs this target, and CI runs the
-# subtargets separately only to keep one red step per tool in its UI. A check
-# added here has to be added to CI's enumeration too, which is the cost of that
-# UI.
+# The project's one lint set: the hook and a developer's `make lint` both run
+# this target, and CI runs the subtargets separately only to keep one red step
+# per tool in its UI. That enumeration in ci.yml is a second copy of the
+# membership below and nothing checks the two agree — a check added here has to
+# be added there too, which is the cost of that UI.
 lint: lint-style lint-format lint-types lint-deps
 
 lint-style:
@@ -97,7 +97,12 @@ openapi:
 # report on the re-run and an unstaged regeneration sitting in their tree.
 openapi-check:
 	@tmp=$$(mktemp); \
-	uv run python scripts/export_openapi.py "$$tmp" >/dev/null; \
+	if ! uv run python scripts/export_openapi.py "$$tmp" >/dev/null; then \
+		rm -f "$$tmp"; \
+		echo ""; \
+		echo "the OpenAPI export failed — see the traceback above; openapi.json was not read"; \
+		exit 1; \
+	fi; \
 	if diff -q openapi.json "$$tmp" >/dev/null; then \
 		rm -f "$$tmp"; \
 	else \
@@ -112,3 +117,4 @@ clean:
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache .ruff_cache htmlcov cov_out
 	rm -f .coverage
+	rm -f ./*.log

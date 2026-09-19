@@ -169,15 +169,14 @@ Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts 
 
 ## Domain exceptions
 
-Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. `NotFoundError` is the shape, quoted as it stands in `core/exceptions.py`:
+Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. `DuplicateSlugError` is the shape, quoted as it stands in `core/exceptions.py`:
 ```python
-class NotFoundError(DomainError):
-    def __init__(self, resource: str, resource_id: object) -> None:
-        self.resource = resource
-        self.resource_id = resource_id
-        super().__init__(f"{resource} {resource_id} not found")
+class DuplicateSlugError(DomainError):
+    def __init__(self, slug: str) -> None:
+        self.slug = slug
+        super().__init__(f"App with slug '{slug}' already exists")
 ```
 
 Follow this pattern for new exceptions — attributes enable structured logging and testing; `str(exc)` provides the HTTP response detail.
 
-**Open a new message on a literal rather than on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for. This is a rule for messages not yet written: five of the ten current subclasses open interpolated, `NotFoundError` above among them. Their text is the served body — `core/error_contract.py` sends `str(exc)` — so rewording one moves `openapi.json`, the UI's generated client, and three tests that pin the exact string (`tests/core/test_error_contract.py`, `tests/core/test_existence.py`). #184 owns that sweep; until it lands, match the file rather than the rule.
+**Open a new message on a literal rather than on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for. This is a rule for messages not yet written: five of the ten current subclasses open interpolated, `NotFoundError` among them. Their text is the served body — `core/error_contract.py` sends `str(exc)` — so rewording one moves `openapi.json`, the UI's generated client, and three tests that pin the exact string (`tests/core/test_error_contract.py`, `tests/core/test_existence.py`). #184 owns that sweep; until it lands, **when rewording an existing message** match the file rather than the rule — a message written new follows the rule.

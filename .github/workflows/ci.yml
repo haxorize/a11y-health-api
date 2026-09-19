@@ -112,6 +112,9 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
+          # Vestigial: the suite connects to a11y_health_test_<pid>, created
+          # through the `postgres` maintenance database (tests/conftest.py).
+          # The container needs some value; nothing connects to this one.
           POSTGRES_DB: a11y_health_test
         ports:
           - 5432:5432
@@ -191,10 +194,10 @@ jobs:
           # file as "nothing generated", this cannot, and a silent exit 0 here
           # would disable drift detection permanently with nothing going red.
           if [ ! -f "$migration" ]; then
-            echo "::error::expected $migration; alembic wrote no file at the path this check derives (see file_template in alembic.ini)"
+            echo "::error::alembic wrote no file at the path this check derives (see file_template in alembic.ini); expected $migration"
             exit 1
           fi
-          if grep -q "pass" "$migration" && ! grep -qE "op\." "$migration"; then
+          if grep -qE "^[[:space:]]*pass[[:space:]]*$" "$migration" && ! grep -qE "op\." "$migration"; then
             echo "Empty migration — models and migrations are in sync."
             exit 0
           fi

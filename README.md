@@ -17,19 +17,23 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 # Install dependencies
 make install
 
-# After editing a dependency bound: uv.lock is asserted on every uv call, so
-# `make install` refuses rather than resolving. This is the way to record it.
-make lock
-
 # Copy environment config
 cp .env.example .env
 
 # Enable pre-commit hooks
 git config core.hooksPath .githooks
 
+# Let `git blame` see through the docs-wide whitespace reflow
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Apply migrations and seed the root org unit and brands
+make migrate
+
 # Run the development server
 make dev
 ```
+
+`uv.lock` is asserted on every `uv` call, so after editing a dependency bound `make install` refuses rather than resolving — `make lock` is how a moved bound is recorded.
 
 The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
 

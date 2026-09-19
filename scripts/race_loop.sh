@@ -27,6 +27,10 @@ case "$max_runs" in
   "" | *[!0-9]*) echo "race_loop: max_runs must be a positive integer, got '$max_runs'" >&2; exit 2 ;;
 esac
 [ "$max_runs" -gt 0 ] || { echo "race_loop: max_runs must be greater than 0" >&2; exit 2; }
+if [ -d "$out_file" ]; then echo "race_loop: out_file '$out_file' is a directory" >&2; exit 2; fi
+# Truncate up front: an all-green hunt must not leave the last hunt's red log
+# sitting at the path for someone to read as this run's evidence.
+: > "$out_file"
 
 # A flake hunt against a stale lock measures a dependency set CI never runs; the
 # Makefile's export holds the reasoning. This script calls uv directly, so it
@@ -44,10 +48,10 @@ for i in $(seq 1 "$max_runs"); do
   else
     rc=$?
   fi
-  tail=$(echo "$out" | tail -1)
+  tail=$(printf '%s\n' "$out" | tail -1)
   if [ "$rc" -ne 0 ]; then
     echo "RED on run $i ($tail)"
-    echo "$out" > "$out_file"
+    printf '%s\n' "$out" > "$out_file"
     exit 1
   fi
   if [ $((i % 10)) -eq 0 ]; then

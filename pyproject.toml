@@ -15,6 +15,8 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.0.52",
     "uvicorn[standard]>=0.52.4",
+    # The CLI's client, and the suite's too: tests rely on this entry rather
+    # than a dev-group copy, so it stays even if the CLI stops importing it.
     "httpx>=0.28.1",
     "starlette>=1.6.0",
 ]
@@ -32,7 +34,6 @@ packages = ["src/a11y_health"]
 [dependency-groups]
 dev = [
     "deptry>=0.25.1",
-    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",

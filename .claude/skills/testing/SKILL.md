@@ -22,6 +22,9 @@ tests/
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
+  test_lint_parity.py      # CI's lint steps and `make lint`'s prerequisites are one list
+  _non_test_database.py    # refuses any connection the suite opens to DATABASE_URL's database
+  test_non_test_database.py  # its own suite: the rule, and that conftest armed it
   test_prose_shape.py      # the six prose guards: code-prose wrap (the half W505 can't see), one-line
                            # markdown blocks (ADR 0040), American spelling (ADR 0041), the DOMAIN.md
                            # definition word ceiling (ADR 0018), the docs/architecture.md word band and
@@ -46,7 +49,9 @@ tests/
   models/
     test_<model>.py         # model-level tests (defaults, constraints as declared)
   core/
-    test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
+    test_<module>.py        # one per core module that has one. error_body.py and exceptions.py
+                            # have none — both are reached only through consumers, error_body
+                            # through test_error_contract.py and cli/test_client.py's error decode
   cli/
     conftest.py             # CLI-only fixtures (no_server, live_server, socket_client, forwarded) — see references/cli-and-migration-tests.md
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py,
@@ -153,29 +158,12 @@ An integration file is marked whole, not per function — three carry it (`tests
 pytestmark = pytest.mark.integration
 ```
 
-## Mocking
-
-Use the `mocker` fixture from `pytest-mock` rather than raw `unittest.mock` — it auto-cleans patches per test.
-
-`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (a sessionmaker rebinding, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — and the way around that is in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md).
-
-```python
-async def test_cli_uploads_scan(mocker) -> None:
-    post = mocker.patch("httpx.AsyncClient.post", new_callable=mocker.AsyncMock)
-    post.return_value.status_code = 201
-    await run_ingest(...)
-    post.assert_awaited_once()
-```
-
-- Mock at the seam closest to the boundary, not deep into your own code. For anything leaving the process, that seam is the transport: hand `httpx.MockTransport(handler)` to the client under test, the way `tests/cli/test_client.py` does, and the handler decodes a real request and returns a real response — so the code's own error decode, redirect, and timeout paths run rather than being stubbed past. Patch `httpx.AsyncClient.post` instead only when the assertion is about the call itself
-- For async callables use `new_callable=mocker.AsyncMock` and assert with `assert_awaited_once`/`assert_awaited_with`
-- Don't mock the database — the `db_session` rollback fixture is the canonical isolation mechanism
-
 ## References
 
 - [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
 - [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
 - [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md) — open before writing a CLI test, a migration-body test, or a session-scoped fixture that swaps an attribute
+- [references/mocking.md](references/mocking.md) — open before mocking: `mocker` over raw `unittest.mock`, `monkeypatch` for a swap that asserts nothing, and the transport as the seam for anything leaving the process
 
 ## Anti-patterns
 

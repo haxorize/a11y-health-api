@@ -15,7 +15,8 @@ export UV_LOCKED := 1
 # downgrade() raises NotImplementedError, so it is downgraded *to* and never
 # crossed. Raise this floor whenever a migration lands whose downgrade cannot
 # undo its upgrade; everything above it must stay reversible, and
-# test_downgrade_floor.py fails if the floor ever reaches the head, since a
+# test_downgrade_floor.py fails if the floor ever resolves to the head — the
+# spellings `head`, `heads` and an abbreviated revision id included — since a
 # floor at the head downgrades across nothing and the stage proves nothing.
 #
 # It sat at the head (8b3a1162eb95) until the roundtrip got its own scratch

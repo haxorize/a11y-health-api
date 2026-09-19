@@ -2,11 +2,12 @@
 set -euo pipefail
 
 # The roundtrip runs against a scratch database created and dropped around it,
-# never against DATABASE_URL. Crossing the downgrade floor re-runs a data-repair
-# DELETE whose downgrade restores nothing, so the same three alembic commands
-# aimed at a developer's own seeded database remove rollup snapshots without a
-# word — and `make migrate-roundtrip` is step 3 of every model change, so that
-# is the documented path, not a misuse of it.
+# never against DATABASE_URL. Its last command upgrades back to head, and the
+# head's upgrade() re-runs a data-repair DELETE its own downgrade() does not
+# restore — so the same three alembic commands aimed at a developer's seeded
+# database remove rollup snapshots without a word, and `make migrate-roundtrip`
+# is step 3 of every model change, so that is the documented path, not a misuse
+# of it. The floor itself is downgraded *to* and never crossed.
 #
 # Connection comes from the PG* variables psql and libpq already read, so CI's
 # service container works by setting them on the job and a developer needs

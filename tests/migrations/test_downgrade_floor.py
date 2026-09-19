@@ -1,12 +1,13 @@
 """The downgrade floor is a real revision, and it is never the head.
 
 `make migrate-roundtrip` upgrades, downgrades to `DOWNGRADE_FLOOR`, and
-upgrades again. A floor equal to the head makes the downgrade a no-op, so the
-stage becomes a bare `upgrade head` — which the test job already does — while
-CI still reports a green `Migration roundtrip` and three documents still
-describe it as proof that the revisions above the floor reverse. The floor sat
-at the head for exactly that reason once, so this reads the value rather than
-trusting it.
+upgrades again. A floor that *resolves* to the head makes the downgrade a
+no-op, so the stage becomes a bare `upgrade head` — which the test job already
+does — while CI still reports a green `Migration roundtrip` and three documents
+still describe it as proof that the revisions above the floor reverse. The
+floor sat at the head for exactly that reason once, so this reads the value
+rather than trusting it, and resolves it before comparing: `head`, `heads` and
+an abbreviated revision id all name the head and all match the Makefile regex.
 
 Neither check needs a database: both read the Makefile and the revision files.
 """
@@ -42,10 +43,25 @@ def test_the_downgrade_floor_names_a_revision_that_exists() -> None:
 
 def test_the_downgrade_floor_is_below_the_head() -> None:
     floor = _downgrade_floor()
-    heads = _script_directory().get_heads()
+    script = _script_directory()
+    heads = script.get_heads()
     assert len(heads) == 1, f"expected a single head, found {heads}"
-    assert floor != heads[0], (
-        f"DOWNGRADE_FLOOR is {floor}, which is the head. The roundtrip then downgrades "
-        f"across no revisions and proves nothing. Lower the floor to the deepest revision "
-        f"whose downgrade cannot undo its upgrade; the Makefile comment carries the rule."
+
+    # Resolved, not compared as a string. `head`, `heads` and an abbreviated
+    # revision id all match the Makefile's `\w+` and all name the head, so a
+    # raw comparison passes three spellings of the very failure this catches.
+    # The None guard has to precede the `.revision` read: `base` resolves to
+    # None rather than raising, and is a legal `alembic downgrade` target.
+    resolved = script.get_revision(floor)
+    assert resolved is not None, f"DOWNGRADE_FLOOR is {floor}, which names no revision to downgrade to."
+
+    # Counts what the downgrade leg actually crosses: iterate_revisions spans
+    # head down to the floor exclusive, so an empty span is a floor that
+    # resolves to the head however it was spelled.
+    crossed = [rev.revision for rev in script.iterate_revisions(heads[0], resolved.revision)]
+    assert crossed, (
+        f"DOWNGRADE_FLOOR is {floor}, which resolves to {resolved.revision} — the head. "
+        f"The roundtrip then downgrades across no revisions and proves nothing. Set the "
+        f"floor to the deepest revision the roundtrip can reach: the shallowest one whose "
+        f"downgrade() cannot undo its upgrade(). The Makefile comment carries the rule."
     )

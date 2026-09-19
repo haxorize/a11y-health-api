@@ -4,10 +4,8 @@
 upgrades again. A floor that *resolves* to the head makes the downgrade a
 no-op, so the stage becomes a bare `upgrade head` — which the test job already
 does — while CI still reports a green `Migration roundtrip` and three documents
-still describe it as proof that the revisions above the floor reverse. The
-floor sat at the head for exactly that reason once, so this reads the value
-rather than trusting it, and resolves it before comparing: `head`, `heads` and
-an abbreviated revision id all name the head and all match the Makefile regex.
+still describe it as proof that the revisions above the floor reverse. This
+reads the value rather than trusting it, and resolves it before comparing.
 
 Neither check needs a database: both read the Makefile and the revision files.
 """
@@ -63,5 +61,5 @@ def test_the_downgrade_floor_is_below_the_head() -> None:
         f"DOWNGRADE_FLOOR is {floor}, which resolves to {resolved.revision} — the head. "
         f"The roundtrip then downgrades across no revisions and proves nothing. Set the "
         f"floor to the deepest revision the roundtrip can reach: the shallowest one whose "
-        f"downgrade() cannot undo its upgrade(). The Makefile comment carries the rule."
+        f"downgrade() cannot restore its parent's schema. The Makefile comment carries the rule."
     )

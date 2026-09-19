@@ -20,7 +20,7 @@ from tests._declaration_honesty import (
     instrument_rollup_raisers,
     stale_rollup_declaration_message,
 )
-from tests._non_test_database import install_non_test_database_guard
+from tests._non_test_database import allow_maintenance_engine, install_non_test_database_guard
 from tests.factories import SessionFactory
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -84,13 +84,6 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         session.exitstatus = 1
 
 
-# TEST_DATABASE_URL names the *template*; each run gets its own database from
-# it, suffixed with the run's pid. The context manager below drops and recreates
-# that database, so two runs sharing one name would drop each other's schema —
-# and the pre-commit hook made that ordinary rather than rare, since it runs the
-# suite on every commit while the developer may be running `make test` in
-# another terminal. The worktree isolates every file and would not have isolated
-# this one shared thing.
 @asynccontextmanager
 async def _admin_connection(admin_url: str) -> AsyncIterator[AsyncConnection]:
     """A maintenance connection, in AUTOCOMMIT.
@@ -100,6 +93,7 @@ async def _admin_connection(admin_url: str) -> AsyncIterator[AsyncConnection]:
     deployment has.
     """
     admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    allow_maintenance_engine(admin)
     try:
         async with admin.connect() as conn:
             yield conn
@@ -119,16 +113,24 @@ async def _drop(conn: AsyncConnection, name: str) -> None:
     await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
 
 
+def per_run_test_database_name() -> str:
+    # Suffixed with the pid because `_per_run_test_database` drops and recreates
+    # it, so two runs sharing one name would drop each other's schema — and the
+    # pre-commit hook runs the suite on every commit while the developer may be
+    # running `make test` in another terminal.
+    return f"{make_url(settings.TEST_DATABASE_URL).database}_{os.getpid()}"
+
+
 @asynccontextmanager
-async def _scratch_database() -> AsyncIterator[str]:
+async def _per_run_test_database() -> AsyncIterator[str]:
     """Yields the URL of a database that exists for the block and not after.
 
     One seam for the whole lifecycle, so a caller never handles the admin URL
     or the bare name — the two values that, loose, let a caller aim the drop at
-    something else. The engine fixture is the only caller.
+    something else.
     """
     template = make_url(settings.TEST_DATABASE_URL)
-    name = f"{template.database}_{os.getpid()}"
+    name = per_run_test_database_name()
     # The identifier cannot be a bound parameter the way the datname filter in
     # _drop is. Double-quoting neutralizes every metacharacter except a quote,
     # which would escape it — so the quote is what this refuses, once, covering
@@ -148,7 +150,7 @@ async def _scratch_database() -> AsyncIterator[str]:
 
 @pytest.fixture(scope="session")
 async def engine() -> AsyncIterator[AsyncEngine]:
-    async with _scratch_database() as run_url:
+    async with _per_run_test_database() as run_url:
         eng = create_async_engine(
             run_url,
             echo=settings.DEBUG,

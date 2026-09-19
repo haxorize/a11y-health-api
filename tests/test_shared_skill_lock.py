@@ -17,6 +17,7 @@ question, and `scripts/setup.sh` is where that is asked.
 """
 
 import hashlib
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,9 +34,13 @@ def skill_hash(directory: Path) -> str:
     # sort -z` sorts them. A symlinked file is read through, matching its `-L`
     # and the `cp -R` the sync itself does; a symlinked *directory* is not
     # recursed into here, where `find -L` descends it.
+    #
+    # Walked through git rather than the disk, so a stray `.DS_Store` or an
+    # editor swap file beside the copy is not read as an edit to it. A tracked
+    # file's contents are still read from the working tree.
     digest = hashlib.sha256()
     files = sorted(
-        (p for p in directory.rglob("*") if p.is_file()),
+        (p for p in _tracked_files(directory) if p.is_file()),
         key=lambda p: f"./{p.relative_to(directory)}".encode(),
     )
     for path in files:
@@ -44,6 +49,16 @@ def skill_hash(directory: Path) -> str:
         digest.update(str(len(content)).encode() + b"\0")
         digest.update(content)
     return digest.hexdigest()
+
+
+def _tracked_files(directory: Path) -> list[Path]:
+    listed = subprocess.run(
+        ["git", "-C", str(directory), "ls-files", "-z", "--", "."],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [directory / name for name in listed.split("\0") if name]
 
 
 def locked_skills() -> list[tuple[str, str]]:

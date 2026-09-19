@@ -33,11 +33,12 @@ function takes it as an argument for that reason: a `description:` is prose a
 person reads, so the spelling rule scans it, while it is one YAML line no editor
 can reflow, so the one-line rule never sees it.
 
-Neither the width nor the walked roots is written into the rules here. Both are
-read from the linter's own settings, so a rule cannot drift out of step with the
-check it pairs with and leave a band of lines that neither one reaches. The
-numbers the coverage guards assert are drift alarms on that derivation, not the
-derivation itself.
+The rules that pair with the linter write neither the width nor the walked
+roots here. Both are read from the linter's own settings, so a rule cannot
+drift out of step with the check it pairs with and leave a band of lines that
+neither one reaches. The numbers the coverage guards assert are drift alarms on
+that derivation, not the derivation itself. The three fixed-target rules have
+no setting to read, so they name their files and globs outright.
 
 See `.claude/skills/code-documentation/SKILL.md` ("Shape the guards check")
 for the rewrap rule a failure here asks for.
@@ -1258,14 +1259,22 @@ def test_no_prose_paragraph_strands_a_line() -> None:
 ARCHITECTURE_WORD_BAND = (2250, 2750)
 ARCHITECTURE_DASH_CAP = 2
 
-# The skills repo's `lint-skills.sh` fails a SKILL.md body past this, because it
-# is the 5,000-token re-attach bound Claude Code keeps per skill after
-# auto-compaction, at 3 bytes per token — so what a re-attach drops is the tail,
-# which here is § Anti-patterns. That linter takes no path argument and globs
-# its own tree, so it cannot be aimed at this repo, and `make lint`, the hook
-# and CI all measure nothing: the testing skill went 426 bytes over and no check
-# said so. Bytes, not characters, because the bound is on what gets read.
+# The skills repo's `lint-skills.sh` fails a SKILL.md body past this, because
+# it is the 5,000-token re-attach bound Claude Code keeps per skill after
+# auto-compaction, at 3 bytes per token, so what a re-attach drops is the tail.
+# That linter takes no path argument and globs its own tree, so it cannot be
+# aimed at this repo. Bytes, not characters, because the bound is on what gets
+# read.
 SKILL_BODY_BYTES = 15000
+
+# The documents that restate the bound in prose and cannot derive it. Same
+# hazard as the word ceiling's guard: a skill telling an agent to pare to a
+# bound this module has stopped enforcing is green exactly where the hole is.
+RE_ATTACH_BOUND_RESTATED_IN = (
+    "CLAUDE.md",
+    ".claude/skills/code-documentation/SKILL.md",
+    ".claude/skills/testing/SKILL.md",
+)
 
 # The documents that restate both quantities in prose and can derive neither.
 # Same hazard as the word ceiling's guard: a skill telling an agent to pare to
@@ -1289,11 +1298,23 @@ def test_the_architecture_budget_is_stated_wherever_it_is_restated() -> None:
         assert str(low) in text and str(high) in text, (
             f"{name} states the architecture word band and no longer says both {low} and {high}"
         )
-        dash_lines = [line for line in text.splitlines() if "em dash" in line]
-        assert any(str(ARCHITECTURE_DASH_CAP) in line for line in dash_lines), (
+        # The cap is bound to the words it counts, since the band's numbers
+        # share the line and any digit anywhere on it would otherwise pass.
+        cap = re.compile(rf"\b{ARCHITECTURE_DASH_CAP}\b[^.\n]{{0,20}}em dash")
+        assert cap.search(text), (
             f"{name} states the architecture em-dash cap and no longer says "
             f"{ARCHITECTURE_DASH_CAP} on a line mentioning em dashes"
         )
+
+
+def test_the_re_attach_bound_is_stated_wherever_it_is_restated() -> None:
+    # Either spelling of the number, next to the unit, so rewording the sentence
+    # around it does not red this and a changed number does.
+    figure = re.compile(rf"\b(?:{SKILL_BODY_BYTES:,}|{SKILL_BODY_BYTES})[- ]bytes?\b")
+    for name in RE_ATTACH_BOUND_RESTATED_IN:
+        text = _file_text(_REPO / name)
+        assert text is not None, f"{name} restates the re-attach bound and is unreadable"
+        assert figure.search(text), f"{name} states the re-attach bound and no longer says {SKILL_BODY_BYTES:,} bytes"
 
 
 def test_every_skill_body_stays_inside_the_re_attach_bound() -> None:
@@ -1308,10 +1329,17 @@ def test_every_skill_body_stays_inside_the_re_attach_bound() -> None:
     for path in bodies:
         size = path.stat().st_size
         if size > SKILL_BODY_BYTES:
-            over.append(f"{path.relative_to(_REPO)}: {size} bytes, {size - SKILL_BODY_BYTES} over")
+            # There is no tier below a reference, so it splits rather than
+            # moving detail into itself.
+            fix = (
+                "split it at a heading into a second references/ file"
+                if path.parent.name == "references"
+                else "move detail into a references/ file and link it"
+            )
+            over.append(f"{path.relative_to(_REPO)}: {size} bytes, {size - SKILL_BODY_BYTES} over; {fix}")
     assert not over, (
-        f"Skill prose past the {SKILL_BODY_BYTES}-byte re-attach bound, so a re-attach drops the tail. "
-        f"Move detail into a references/ file and link it:\n" + "\n".join(over)
+        f"Skill prose past the {SKILL_BODY_BYTES}-byte re-attach bound, so a re-attach drops the tail:\n"
+        + "\n".join(over)
     )
 
 

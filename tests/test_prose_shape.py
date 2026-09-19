@@ -1296,8 +1296,15 @@ def test_the_architecture_budget_is_stated_wherever_it_is_restated() -> None:
 
 
 def test_every_skill_body_stays_inside_the_re_attach_bound() -> None:
+    bodies = _tracked(".claude/skills/*/SKILL.md") + _tracked(".claude/skills/*/references/*.md")
+    # An empty offender list cannot tell a tree inside the bound from a glob
+    # that has stopped matching — a skills directory moved or renamed leaves
+    # both looking identical from here. The floor goes on the walk rather than
+    # on the result, since every skill being under the cap is the normal case.
+    assert len(bodies) > 6, f"the skill-body walk returned only {len(bodies)} files"
+
     over = []
-    for path in _tracked(".claude/skills/*/SKILL.md") + _tracked(".claude/skills/*/references/*.md"):
+    for path in bodies:
         size = path.stat().st_size
         if size > SKILL_BODY_BYTES:
             over.append(f"{path.relative_to(_REPO)}: {size} bytes, {size - SKILL_BODY_BYTES} over")

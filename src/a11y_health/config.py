@@ -1,11 +1,14 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The API's identity, not settings: each reaches the committed openapi.json
+# (info.title, info.version, every path), so no .env or shell may vary them.
+PROJECT_NAME = "Accessibility Health API"
+VERSION = "0.1.0"
+API_V1_PREFIX = "/api/v1"
+
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Accessibility Health API"
-    VERSION: str = "0.1.0"
-    API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]

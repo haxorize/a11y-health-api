@@ -13,7 +13,7 @@ class AppCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def name_must_be_derivable(cls, name: str) -> str:
-        derive_slug(name)  # raises ValueError → framework 422 (request-shape, ADR 0009)
+        derive_slug(name)  # raises ValueError → framework 422 (request-shape, ADR 0022)
         return name
 
 

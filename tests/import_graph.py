@@ -6,16 +6,14 @@ which private modules are reached from outside their package
 (`test_sibling_imports`), whether an endpoint reaches the Existence Guard
 (`test_existence`), whether any src caller from-imports a rollup raiser
 (`test_declaration_honesty`), whether every module is reached from an entry
-point (`test_reachability`). The rules differ; the reading does not, and a
-reader that quietly missed an import spelling would weaken every rule sharing
-it at once.
+point (`test_reachability`), which modules import the classification vocabulary
+(`test_classification`). The rules differ; the reading does not, and a reader
+that quietly missed an import spelling would weaken every rule sharing it at
+once.
 
-Four of them share the tree walk in `package_sources`, and two of those share
-`source_paths_importing` on top of it. `test_sibling_imports` reads a single
-module rather than a tree, so it composes `imported_modules` directly.
-`test_reachability` takes the widest surface — the walk, `imported_modules`,
-`resolved_modules`, and the descent pin — because its closure has to read
-every module, not test each one.
+The tree walk is `package_sources`, and `source_paths_importing` is that walk
+with the rule left to the caller, for a guard that only needs the offending
+paths.
 
 Named publicly because a consumer sits in a sibling test package
 (`tests/core/test_existence.py`), which a private name would shut out — see
@@ -138,8 +136,7 @@ def package_sources(package: ModuleType) -> list[Module]:
 
 def source_paths_importing(package: ModuleType, matches: Callable[[set[str]], bool]) -> list[str]:
     """Paths under `package`, relative and sorted, of the modules whose import
-    set satisfies `matches` — the walk two of the topology guards share, with
-    the rule left to the caller.
+    set satisfies `matches` — the walk with the rule left to the caller.
 
     Resolving relative spellings needs the whole tree read first, which is why
     this walks rather than testing one file at a time.

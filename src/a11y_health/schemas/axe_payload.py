@@ -113,9 +113,10 @@ class AxePayload(BaseModel):
             # wire verbatim, and the file or request that carried the value is
             # already named by whoever reports it.
             raise ValueError("must be an ISO 8601 timestamp") from exc
-        # An offset-less endTime is otherwise uncomparable against the UTC
-        # mtime fallback and against sibling scans (import orders scans by
-        # scanned_at) — assume UTC.
+        # An offset-less endTime is otherwise uncomparable against the UTC mtime
+        # fallback and against sibling scans (the CLI compares their scanned_at
+        # to pick the newest name, and the server pages Scan Runs by it) —
+        # assume UTC.
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 

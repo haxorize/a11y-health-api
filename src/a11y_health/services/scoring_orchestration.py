@@ -28,9 +28,9 @@ async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> Non
     await on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)
 
 
-# The one deletion handler: a scan run's or the whole app's snapshots are gone,
-# and the app's latest Score Snapshot may have moved — same rollup pair either
-# way.
+# The shared tail of completion and both deletions (a scan run, the whole app):
+# whichever way the app's latest Score Snapshot moved, the same rollup pair
+# fires.
 async def on_app_latest_snapshot_changed(session: AsyncSession, org_unit_id: int, brand_id: int) -> None:
     await owner.rollup(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
     await owner.rollup(session, ScoreSnapshotOwnerType.BRAND, brand_id)

@@ -13,7 +13,7 @@ Pick by task:
 - `a11y ingest <dir>` uploads a single scan to an existing app. Errors with
   a pointer to `import` if the app isn't registered.
 
-Other admin mutations (app move/rename/delete, org-unit reparent/delete) stay on
+Other admin mutations (app move/delete, org-unit reparent/delete) stay on
 Swagger `/docs`.
 
 The work splits by concern, over the shared error base in `_errors`: `_scan`

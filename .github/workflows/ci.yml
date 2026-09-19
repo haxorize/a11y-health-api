@@ -168,6 +168,16 @@ jobs:
         # the target keeps it one value with one home, readable where the person
         # adding a migration works.
         run: make migrate-roundtrip
+      - name: Migrate the service container's database
+        # A step of its own because nothing else leaves this database at head.
+        # The roundtrip above builds and drops its own scratch database and
+        # exports DATABASE_URL for it in a child process, so the job's own
+        # a11y_health stays empty; autogenerate below refuses to run against a
+        # database behind head, and it refuses identically whether models have
+        # drifted or not, so the drift check would detect nothing while looking
+        # red on every run. Separate from the drift step so a failure here
+        # cannot be read as drift.
+        run: uv run alembic upgrade head
       - name: Check for model/migration drift
         # --rev-id fixes the generated path, so the check names the file it is
         # about instead of searching the directory for whatever is newest.

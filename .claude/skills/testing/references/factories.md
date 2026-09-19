@@ -1,6 +1,6 @@
 # Test factories
 
-Open this before adding or changing a helper in `tests/factories.py`. A test that only *calls* existing helpers needs the call shapes in `SKILL.md` instead — this file is about writing the helper.
+Open this before adding or changing a helper in `tests/factories.py`. A test that only *calls* existing helpers needs their signatures in `tests/factories.py` instead — this file is about writing the helper.
 
 Everything here is arrange-side. What a test asserts is the other half of the rule, and `SKILL.md` ("Arrange with a factory, compute the expectation yourself") owns it: a factory may reuse a production helper freely, an assertion may not.
 

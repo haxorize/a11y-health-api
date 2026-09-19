@@ -7,7 +7,7 @@ description: Test conventions for this project — layout, the six conftest fixt
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism** or a **topology guard**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either under a mirrored directory is what produced the mixed contract suite #133 had to split.
+Mirror the app structure — except for a **suite-wide mechanism**, a **topology guard**, or a **test of something outside `src/`**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either of those two under a mirrored directory is what produced the mixed contract suite #133 had to split. A test of something outside `src/` — a script under `scripts/`, the way `test_staged_worktree.py` drives `scripts/staged_worktree.sh` — has no package to mirror at all.
 
 ```
 tests/
@@ -22,7 +22,7 @@ tests/
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
-  test_workflow_parity.py  # CI's lint steps vs `make lint`, and the three uv setup steps agreeing
+  test_workflow_parity.py  # CI's lint steps vs `make lint`
   test_staged_worktree.py  # ADR 0046's two claims, over a scratch repo: the checkout is the
                            # staged tree, and neither the working tree nor the index moves
   _non_test_database.py    # refuses any connection the suite opens to DATABASE_URL's database
@@ -30,7 +30,8 @@ tests/
   test_prose_shape.py      # the six prose guards: code-prose wrap (the half W505 can't see), one-line
                            # markdown blocks (ADR 0040), American spelling (ADR 0041), the DOMAIN.md
                            # definition word ceiling (ADR 0018), the docs/architecture.md word band and
-                           # em-dash cap (#148), and the 15,000-byte bound on every skill body
+                           # em-dash cap (#148), and the 15,000-byte bound on every skill body and
+                           # reference
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # one sample Axe Payload (humana.com-home.json)
   api/

@@ -1,11 +1,11 @@
 # CLI tests, migration-body tests, and the two session-scope gotchas
 
-Detail moved out of `SKILL.md` when its body reached the 15,000-byte cap. Open this before writing a CLI test, a migration-body test, or a session-scoped fixture that has to swap an attribute.
+Open this before writing a CLI test, a migration-body test, or a session-scoped fixture that has to swap an attribute.
 
 ## The `cli/conftest.py` fixtures
 
 - **`no_server`** — fails the test if anything reaches the transport. The default for a CLI test that should never leave the process.
-- **`live_server`** — the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`. It binds production's sessionmaker to the test engine for the server's lifetime, which is why CI names a `DATABASE_URL` nothing may read: unbound, a leak reaches the dev database and passes quietly.
+- **`live_server`** — the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`. It binds production's sessionmaker to the test engine for the server's lifetime, and unbound, a leak would reach the non-test database named by `DATABASE_URL`. `install_non_test_database_guard()` (`tests/_non_test_database.py`, armed in `tests/conftest.py`) refuses that connection in every run, and CI's unreadable `DATABASE_URL` is the second line of defense.
 - **`socket_client`** — the client `a11y` ships, pointed at that server, over the production `AsyncHTTPTransport`.
 - **`forwarded`** — what the proxy in front of `live_server` actually saw.
 
@@ -15,7 +15,7 @@ Detail moved out of `SKILL.md` when its body reached the 15,000-byte cap. Open t
 
 Run a shipped `upgrade()`/`downgrade()` bound to `db_session` through `harness.py`. Restore the pre-migration schema via the shipped `downgrade()` — hand-written DDL only when the needed downgrade is irreversible, and then with the reason stated in place. `test_rederive_app_slugs.py` is the worked example of driving an `upgrade()`; `test_single_root_org_unit_index.py` is the one for restoring through a `downgrade()`.
 
-`test_downgrade_floor.py` is the odd one out in this directory: it needs no database, reads `DOWNGRADE_FLOOR` out of the `Makefile`, resolves it through alembic, and fails if it resolves to the head — `head`, `heads` and an abbreviated revision id included.
+`test_downgrade_floor.py` is the odd one out in this directory: it needs no database, reads `DOWNGRADE_FLOOR` out of the `Makefile`, resolves it through alembic, and fails if it resolves to the head, however the value is spelled.
 
 ## `deadlock_timeout` is superuser-set
 

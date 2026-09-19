@@ -22,10 +22,10 @@ tests/
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
-  test_prose_shape.py      # the prose guards: code-prose wrap (the half W505 can't see),
-                           # one-line markdown blocks (ADR 0040), American spelling (ADR 0041),
-                           # the DOMAIN.md definition word ceiling (ADR 0018), and the
-                           # docs/architecture.md word band and em-dash cap (#148)
+  test_prose_shape.py      # the six prose guards: code-prose wrap (the half W505 can't see), one-line
+                           # markdown blocks (ADR 0040), American spelling (ADR 0041), the DOMAIN.md
+                           # definition word ceiling (ADR 0018), the docs/architecture.md word band and
+                           # em-dash cap (#148), and the 15,000-byte bound on every skill body
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # one sample Axe Payload (humana.com-home.json)
   api/
@@ -56,7 +56,7 @@ tests/
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
     test_downgrade_floor.py # the floor is a real revision and never the head; reads the Makefile
-    test_<revision>.py      # migration-body tests — see references/cli-and-migration-tests.md
+    test_<revision>.py      # migration bodies through harness.py — see references/cli-and-migration-tests.md
 ```
 
 ## Fixtures (from conftest.py)

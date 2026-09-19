@@ -6,16 +6,17 @@ substituting a word inside a wrapped paragraph pushes the overflow onto its own
 line instead of reflowing the block. The formatter never reflows prose, so the
 result survives format, lint, type check, and the whole suite.
 
-Five rules answer that, each with a floor or a guard keeping its own walk
-honest. A document soft-wraps instead, one line per paragraph (ADR 0040), so a
-later diff shows the sentence that changed rather than the reflow around it. A
-word scan holds code and documents alike to the American spelling (ADR 0041) —
-that rule is the one that reads both formats, while the one-line rule reads
-only markdown. The last two each read a single file: a `DOMAIN.md` definition
-is capped in words (ADR 0018), because the mechanism behind a term belongs to
-the record that owns it rather than to the glossary, and `docs/architecture.md`
-is held to a word band and an em-dash cap (#148), the quantities its pare was
-measured in.
+Six rules answer that, each with a floor or a guard keeping its own walk honest.
+A document soft-wraps instead, one line per paragraph (ADR 0040), so a later
+diff shows the sentence that changed rather than the reflow around it. A word
+scan holds code and documents alike to the American spelling (ADR 0041) — that
+rule is the one that reads both formats, while the one-line rule reads only
+markdown. Three each read a fixed target: a `DOMAIN.md` definition is capped in
+words (ADR 0018), because the mechanism behind a term belongs to the record that
+owns it rather than to the glossary; `docs/architecture.md` is held to a word
+band and an em-dash cap (#148), the quantities its pare was measured in; and
+every skill body and reference is held under the 15,000-byte re-attach bound,
+since what a re-attach drops is the tail.
 
 The stranded rule is exact rather than a guess about raggedness: a line is
 stranded when it stopped short of the wrap width while the next line still held

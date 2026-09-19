@@ -12,7 +12,7 @@ Mirror the app structure — except for a **suite-wide mechanism** or a **topolo
 ```
 tests/
   __init__.py              # one in every test directory except fixtures/, which holds data
-  conftest.py              # shared fixtures (client, db_session, db_client, committed_session_factory)
+  conftest.py              # shared fixtures (engine, client, db_session, db_client, committed_session_factory, axe_payload)
   test_config.py           # top-level Settings/config tests
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
@@ -20,13 +20,14 @@ tests/
   test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
+  test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
   test_prose_shape.py      # the prose guards: code-prose wrap (the half W505 can't see),
                            # one-line markdown blocks (ADR 0040), American spelling (ADR 0041),
                            # the DOMAIN.md definition word ceiling (ADR 0018), and the
                            # docs/architecture.md word band and em-dash cap (#148)
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
-  fixtures/                # one sample Axe Payload and other static test data
+  fixtures/                # one sample Axe Payload (humana.com-home.json)
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
     test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
@@ -47,22 +48,22 @@ tests/
   core/
     test_<module>.py        # one file per core module (database, existence, integrity, pagination, ...)
   cli/
-    conftest.py             # CLI-only fixtures: `no_server` (fails if anything reaches the transport), `live_server` (the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`), `socket_client` (the client `a11y` ships, against it), `forwarded` (what that proxy saw)
+    conftest.py             # CLI-only fixtures (no_server, live_server, socket_client, forwarded) — see references/cli-and-migration-tests.md
     test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py,
                             # test_brands.py)
     test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
-    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport): one ingest, one import, a read timeout, a redirect, a proxy's 413 on a large POST
+    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport)
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
     test_downgrade_floor.py # the floor is a real revision and never the head; reads the Makefile
-    test_<revision>.py      # migration-body tests: run a shipped upgrade()/downgrade() bound to db_session; restore pre-migration schema via the shipped downgrade — hand-written DDL only when the needed downgrade is irreversible, with the reason stated in place (harness.py; upgrade usage: test_rederive_app_slugs.py; downgrade restore: test_single_root_org_unit_index.py)
+    test_<revision>.py      # migration-body tests — see references/cli-and-migration-tests.md
 ```
 
 ## Fixtures (from conftest.py)
 
 Six fixtures, layered:
 
-- **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test (raise it per session only to steer which backend is the victim, as `test_rollup_deadlock.py` does). The GUC is superuser-set: dev and CI connect as superuser, and because it rides the connection startup packet, a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter` — the escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`
+- **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test. Its superuser requirement and the one sanctioned per-session exception are in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md)
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB. The override yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why the override is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
@@ -156,7 +157,7 @@ pytestmark = pytest.mark.integration
 
 Use the `mocker` fixture from `pytest-mock` rather than raw `unittest.mock` — it auto-cleans patches per test.
 
-`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (a sessionmaker rebinding, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — so it swaps inside `pytest.MonkeyPatch.context()` around its yield, the way `tests/cli/conftest.py`'s `live_server` binds the sessionmaker for the server's lifetime.
+`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (a sessionmaker rebinding, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — and the way around that is in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md).
 
 ```python
 async def test_cli_uploads_scan(mocker) -> None:
@@ -174,6 +175,7 @@ async def test_cli_uploads_scan(mocker) -> None:
 
 - [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
 - [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
+- [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md) — open before writing a CLI test, a migration-body test, or a session-scoped fixture that swaps an attribute
 
 ## Anti-patterns
 

@@ -2,10 +2,7 @@
 
 The record says the pre-commit run measures the commit being made and not the
 working tree around it, and that the design cannot lose the developer's work.
-Both were untestable while the logic lived inline in `.githooks/pre-commit`:
-checking either meant making real commits here and reading what happened, which
-is not a check anyone runs. `scripts/staged_worktree.sh` is that half of the
-hook extracted, and this drives it over a repository built per test.
+This drives `scripts/staged_worktree.sh` over a repository built per test.
 
 Every test here shells out to git. Nothing touches this repo — `tmp_path` is
 the whole world each one sees.
@@ -40,6 +37,8 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "init", "--quiet")
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test")
+    # A developer's global commit.gpgsign would otherwise prompt or fail here.
+    _git(repo, "config", "commit.gpgsign", "false")
 
     (repo / "tracked.txt").write_text("committed\n")
     (repo / "untouched.txt").write_text("untouched\n")
@@ -160,3 +159,20 @@ def test_a_missing_index_is_refused_rather_than_producing_an_empty_checkout(repo
 
     assert result.returncode != 0
     assert "no index at" in result.stderr
+
+
+def test_an_existing_worktree_path_is_refused_and_left_intact(repo: Path, tmp_path: Path) -> None:
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "keep.txt").write_text("keep\n")
+
+    result = subprocess.run(
+        [str(_SCRIPT), ".git/index", str(tmp_path / "copy"), str(occupied)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "already exists" in result.stderr
+    assert (occupied / "keep.txt").read_text() == "keep\n"

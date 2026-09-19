@@ -11,14 +11,12 @@ set -euo pipefail
 # stale-run sweep it already owns. Nothing here touches the caller's working
 # tree or their real index; that is the property ADR 0046 rests on, and
 # tests/test_staged_worktree.py is what holds it.
-#
-# Extracted from .githooks/pre-commit so it can be driven against a scratch
-# repository. Inline, the hook's two behavioral claims could only be checked by
-# making commits in this repo and reading what happened.
 
 SOURCE_INDEX="${1:?usage: staged_worktree.sh <source-index> <index-copy> <worktree>}"
 INDEX_COPY="${2:?usage: staged_worktree.sh <source-index> <index-copy> <worktree>}"
 WORKTREE="${3:?usage: staged_worktree.sh <source-index> <index-copy> <worktree>}"
+
+trap 'echo "staged_worktree: failed at line $LINENO" >&2' ERR
 
 # Resolved before anything unsets GIT_DIR: `git commit` hands a hook a path
 # relative to the repository root, and every git call below runs with a
@@ -42,7 +40,16 @@ cd "$ROOT"
 # Through a copy, never in place. The caller's index is the tree they are about
 # to commit, and `git write-tree` on it would write index extensions back into
 # the real file while `git commit` holds it.
-rm -rf "$WORKTREE" "$INDEX_COPY"
+#
+# Both paths are refused if they exist rather than cleared: they are arguments,
+# and an `rm -rf` on one would delete whatever a caller mistyped. The hook
+# sweeps its own stale paths before calling.
+for path in "$WORKTREE" "$INDEX_COPY"; do
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    echo "staged_worktree: $path already exists" >&2
+    exit 2
+  fi
+done
 (umask 077 && : >"$INDEX_COPY")
 cp "$SOURCE_INDEX" "$INDEX_COPY"
 

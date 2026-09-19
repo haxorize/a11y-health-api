@@ -28,8 +28,8 @@ gitleaks git --pre-commit --staged --redact --no-banner
 # worktree, so what they measure is the commit being made and nothing else.
 # This design cannot lose the developer's work: their index is read through a
 # copy and their working tree is not touched at all. It does write a temp
-# index, an unreachable commit object, and a .git/worktrees entry, all
-# reclaimed by cleanup() below.
+# index and a .git/worktrees entry, which cleanup() below reclaims, and an
+# unreachable commit object, which waits for `git gc`.
 #
 # Why the index and not the working tree, and the alternatives rejected before
 # it, are docs/adr/0046-per-commit-checks-run-against-a-checkout-of-the-index.md.
@@ -53,11 +53,14 @@ for stale in "$PREFIX"-wt.* "$PREFIX"-index.*; do
   [ -e "$stale" ] || continue
   pid="${stale##*.}"
   case "$pid" in "" | *[!0-9]*) continue ;; esac
-  # Ownership and self before liveness: `kill -0` cannot tell another user's
-  # live process (EPERM) from a dead one (ESRCH), so under a shared /tmp it
-  # would feed a live checkout to the rm below; and after a pid wrap onto a
-  # SIGKILLed run's number it succeeds against this very shell, leaving that
-  # directory unswept for the `worktree add` below to die on.
+  # Symlinks, ownership and self before liveness: `kill -0` cannot tell
+  # another user's live process (EPERM) from a dead one (ESRCH), so under a
+  # shared /tmp it would feed a live checkout to the rm below; `-O` follows a
+  # link, so a planted one aimed at a file of ours would pass it and then fail
+  # the rm; and after a pid wrap onto a SIGKILLed run's number `kill -0`
+  # succeeds against this very shell, leaving a path that
+  # scripts/staged_worktree.sh refuses to reuse.
+  [ -L "$stale" ] && continue
   [ -O "$stale" ] || continue
   if [ "$pid" != "$$" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
   rm -rf "$stale"
@@ -89,17 +92,12 @@ trap 'exit 143' TERM
 # is a file in a linked worktree.
 SOURCE_INDEX="${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}"
 
-# Before the script runs, and not only inside it: cleanup() below calls git
+# Before the script runs, and not only inside it: cleanup() above calls git
 # against $ROOT after this point, and the inherited GIT_DIR would aim it at the
 # worktree this hook is about to cd into.
 unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
 
-# The checkout itself is scripts/staged_worktree.sh, which reads the index
-# through a copy and writes nothing the caller owns. It is a script rather than
-# lines here so ADR 0046's two behavioral claims -- that the run measures the
-# commit and not the tree, and that it cannot lose the developer's work -- can
-# be driven against a scratch repository instead of by making commits in this
-# one. tests/test_staged_worktree.py is that check.
+# The checkout itself; ADR 0046 records why it is a script.
 "$ROOT/scripts/staged_worktree.sh" "$SOURCE_INDEX" "$STAGED_INDEX" "$WORKTREE"
 
 # .env is gitignored, so it is absent from the index and from the checkout.

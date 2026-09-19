@@ -95,17 +95,20 @@ jobs:
           echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
       - name: Scan history for secrets
         run: gitleaks git --no-banner --redact
-      # Anchored here and aliased by the other two jobs, so this pin and its
-      # inputs have one home. A plain alias, not a merge key (`<<:`): GitHub
-      # supports the first and not the second.
+      # Written out in each of the three jobs rather than anchored here and
+      # aliased, which is what this was until #152. The alias gave the pin one
+      # home and charged an invisible constraint for it: an alias must follow
+      # its anchor in document order, so `lint` had to stay first in the
+      # `jobs:` map, and moving it below either other job made the alias
+      # unresolvable. That is a load error — no run is created at all, so no
+      # job runs and the `actionlint` step above cannot report it, on a
+      # trunk-only repo with `main` unprotected. Reordering jobs reads as
+      # cosmetic, which is what made the trap worth removing rather than
+      # documenting.
       #
-      # An alias must follow its anchor in document order, so this job has to
-      # stay first in the `jobs:` map. Job order carries no meaning to Actions
-      # and reordering reads as cosmetic, but moving `lint` below either other
-      # job makes the alias unresolvable — a load error, which means no job
-      # runs at all and the `actionlint` step above cannot report it.
-      - &setup_uv
-        uses: astral-sh/setup-uv@v10.0.1
+      # What the alias bought is bought instead by tests/test_workflow_parity.py,
+      # which fails when the three copies stop agreeing.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.UV_PYTHON }}
           prune-cache: true # see the header note
@@ -150,7 +153,10 @@ jobs:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
     steps:
       - uses: actions/checkout@v7
-      - *setup_uv
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ env.UV_PYTHON }}
+          prune-cache: true # see the header note
       - run: uv run pytest
 
   migration-drift:
@@ -180,7 +186,10 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v7
-      - *setup_uv
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ env.UV_PYTHON }}
+          prune-cache: true # see the header note
       - name: Migration roundtrip
         # The floor this downgrades to is DOWNGRADE_FLOOR in the Makefile, which
         # is also where the reason for its current value is written. Invoking

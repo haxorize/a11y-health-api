@@ -6,7 +6,7 @@ A REST API for accessibility health analysis, built with FastAPI, async SQLAlche
 
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/) package manager
-- PostgreSQL 15 (`brew install postgresql@15`) — the version CI and the sibling UI's e2e job run; `CLAUDE.md` § Prerequisites has the reason
+- PostgreSQL 15 (`brew install postgresql@15`, then its `bin/` on PATH, since the formula is keg-only and links no `psql` or `createdb`) — the version CI and the sibling UI's e2e job run; `CLAUDE.md` § Prerequisites has the reason
 - `make` — the pre-commit hook runs `make lint`, `make openapi-check` and `make test`
 - [gitleaks](https://github.com/gitleaks/gitleaks) on PATH (`brew install gitleaks`) — the pre-commit hook's first stage
 - `python3` on PATH — the JSON parser the agent-side hooks read their tool input with. It is a requirement separate from the Python above, because uv manages the project interpreter without putting a `python3` on PATH, and these hooks are wired from outside this repo (see `## Hooks wired from outside this repo` in `CLAUDE.md`). Without it they fail open: `rename-safety.sh` and `review-receipt.sh` allow every command instead of guarding, announcing it on stderr rather than failing.
@@ -26,6 +26,9 @@ git config core.hooksPath .githooks
 # Let `git blame` see through the docs-wide whitespace reflow
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 
+# Create the database DATABASE_URL names (a fresh Postgres has none)
+createdb a11y_health
+
 # Apply migrations and seed the root org unit and brands
 make migrate
 
@@ -33,7 +36,7 @@ make migrate
 make dev
 ```
 
-`uv.lock` is asserted on every `uv` call, so after editing a dependency bound `make install` refuses rather than resolving — `make lock` is how a moved bound is recorded.
+`uv.lock` is asserted on every `uv` call the `Makefile`, the pre-commit hook, the scripts under `scripts/` and CI make, because each exports `UV_LOCKED`; a bare `uv run` from your own shell is not asserted. So after editing a dependency bound `make install` refuses rather than resolving, and `make lock` is how a moved bound is recorded.
 
 The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
 

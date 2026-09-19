@@ -11,7 +11,7 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 ## Prerequisites
 
-Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the 4 settings an operator sets; `src/a11y_health/config.py` declares 3 more (`PROJECT_NAME`, `VERSION`, `API_V1_PREFIX`) that it does not list.
+Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the 4 settings an operator sets, which are all of `Settings`; `PROJECT_NAME`, `VERSION` and `API_V1_PREFIX` are module constants in `src/a11y_health/config.py`, because each reaches the committed `openapi.json`.
 
 Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives.
 
@@ -27,7 +27,7 @@ uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run ty check                  # type check
 uv run deptry src migrations scripts  # unused / missing / transitive dependencies (same paths as the hook and CI)
-make lock                        # re-resolve uv.lock after editing a dependency bound (every other uv call asserts it has not drifted)
+make lock                        # re-resolve uv.lock after editing a dependency bound (make, the hook, the scripts and CI export UV_LOCKED, so their uv calls assert it has not drifted; a bare `uv run` above does not)
 uv run uvicorn a11y_health.main:app --reload  # dev server
 uv run a11y --help               # onboarding CLI: import/ingest + org-unit/brand lookups (see cli/__init__.py docstring)
 gh run view --log-failed         # a red CI run's failing step output, without opening the browser
@@ -35,7 +35,7 @@ gh run view --log-failed         # a red CI run's failing step output, without o
 
 Run: `make dev` (:8000) — up when `curl -s localhost:8000/api/v1/health` returns `{"status":"healthy"}` (Postgres from § Prerequisites has to answer `pg_isready` first). `make migrate` seeds the state — root org unit 1 `Humana Inc.` and brands 1–5 (`Humana`, `CenterWell`, `Go365`, `CarePlus`, `Reliance`). The brands are API-read-only: there is no `POST`, `PATCH` or `DELETE /brands`. The root org unit is **not** — `POST`, `PATCH` and `DELETE /org-units` are all live, nothing special-cases id 1, and a freshly seeded root has no dependents, so `DELETE /api/v1/org-units/1` deletes it and returns 204. For a scratch database instead, the recipe is the `verify` skill.
 
-Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, 317 lines under `docs/` blame to that commit instead of to whatever last changed their words.
+Wire two things per clone, because neither travels in the repo: `git config core.hooksPath .githooks` for the checks below, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` looks through the whitespace-only reflow that touched a third of the docs tree. Without the second, every line under `docs/` the reflow touched and no later commit has rewritten blames to that commit instead of to whatever last changed its words. No count is given here, because each docs edit shrinks it.
 
 `.githooks/pre-commit` (wired via `core.hooksPath`) is the list of per-commit checks — read the file rather than a summary of it. It ends with the full suite, and two consequences are worth planning around: a commit costs the suite plus a secret scan, a checkout of the index, a dependency sync into it, the full lint stage (`ruff check`, `ruff format --check`, `ty`, `deptry`), and a second full import of the application for the OpenAPI stage — measurably more than `make test` alone, so budget against the hook and not against the suite — and **every commit in a multi-commit split has to pass on its own**, so a split that leaves an intermediate commit broken can't be made. The hook enforces that second one rather than assuming it, by running the checks against a checkout of the index; ADR 0046 records the design and what it replaced.
 
@@ -74,7 +74,7 @@ See `docs/adr/` for recorded architectural decisions and their rationale. Consul
 
 ## Code documentation
 
-Comprehension lives in prose, not blanket docstrings (ADR 0018): `docs/architecture.md` carries the behavioral and structural story and `docs/operating.md` the operating one, split by 0018's 2026-09-13 amendment. The rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds six of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018), the word band and em-dash cap on `docs/architecture.md` (#148's criterion, which no ADR carries), and the 15,000-byte re-attach bound on every skill body and reference (the skills repo's figure, which no ADR or criterion carries) — each with a floor or a guard holding its own walk honest.
+Comprehension lives in prose, not blanket docstrings (ADR 0018): `docs/architecture.md` carries the behavioral and structural story and `docs/operating.md` the operating one, split by 0018's 2026-09-13 amendment. The rules and the guards that check them are the `code-documentation` skill. `tests/test_prose_shape.py` holds six of those rules — the short-line shape over code prose, one line per paragraph over markdown (ADR 0040), the American spelling over both (ADR 0041), the 100-word ceiling on a `DOMAIN.md` definition (ADR 0018), the word band and em-dash cap on `docs/architecture.md` (#148's criterion, recorded in ADR 0018's 2026-09-19 amendment), and the 15,000-byte re-attach bound on every skill body and reference (the skills repo's figure, which no ADR or criterion carries) — each with a floor or a guard holding its own walk honest.
 
 ## Review lenses
 

@@ -2,7 +2,7 @@
 
 Written for an engineer new to this service: the cross-cutting behavior no single file carries.
 
-`DOMAIN.md`, the glossary, defines the domain terms bolded here (**Scan Run**, **Page Health**, **Score Snapshot**, **Axe Boundary**, and the rest); read it first if a word is unfamiliar. `docs/adr/` is the decision log, linked below wherever a choice is non-obvious. [`docs/operating.md`](operating.md) is the operating companion: how a change is checked, the CLI, tracing a request, inspecting the data.
+`DOMAIN.md`, the glossary, defines the domain terms bolded here (**Scan Run**, **Page Health**, **Score Snapshot**, **Axe Boundary**, and the rest); read it first if a word is unfamiliar. `docs/adr/` is the decision log, linked below wherever a choice is non-obvious. [`docs/operating.md`](operating.md) is the operating companion: how a change is checked, the CLI, the same three calls without the CLI, tracing a request, inspecting the data.
 
 ---
 

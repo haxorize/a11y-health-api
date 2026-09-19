@@ -8,7 +8,7 @@ Three gates, in the order a change meets them, each recorded where it runs rathe
 
 - **The pre-commit hook** (`.githooks/pre-commit`, wired per clone with `git config core.hooksPath .githooks`) scans the staged changes for secrets, then runs lint, the OpenAPI staleness check, and the full suite against a checkout of the index in a throwaway worktree. Why it measures the index rather than the working tree, and the alternatives rejected before it, are [ADR 0046](adr/0046-per-commit-checks-run-against-a-checkout-of-the-index.md).
 - **CI** (`.github/workflows/ci.yml`) runs the same lint targets, plus the two Alembic stages the hook cannot: a migration roundtrip and a model/migration drift check, both of which need a live Postgres.
-- **The downgrade floor** (`DOWNGRADE_FLOOR` in the `Makefile`) is the revision `make migrate-roundtrip` downgrades to. The comment beside it carries the criterion for raising it and the reason for its current value; read that before lowering it.
+- **The downgrade floor** (`DOWNGRADE_FLOOR` in the `Makefile`) is the revision `make migrate-roundtrip` downgrades to. The comment beside it carries the criterion for raising it and the reason for its current value; read that before lowering it. A `make migrate-roundtrip` run killed hard (SIGKILL, a closed terminal) leaves its scratch database behind: `psql -d postgres -Atc "select datname from pg_database where datname like 'a11y_health_roundtrip_%'"` lists them, and `psql -d postgres -c 'DROP DATABASE a11y_health_roundtrip_<pid> WITH (FORCE);'` drops one.
 
 ## Getting scan data in: the CLI
 
@@ -49,7 +49,7 @@ curl -X POST "$B/apps/1/scan-runs" -H 'content-type: application/json' \
   -d '{"scanned_at": "2026-03-30T00:00:00Z"}'
 # → 201 {"id":1,"app_id":1,"status":"pending","scanned_at":"2026-03-30T00:00:00Z",…}
 
-# 2. POST each page's axe export, unwrapped — the raw document, not a wrapper.
+# 2. POST each page's Axe Payload as the body itself, not inside a wrapper.
 curl -X POST "$B/scan-runs/1/pages" -H 'content-type: application/json' \
   --data-binary @tests/fixtures/humana.com-home.json
 # → 201 {"id":1,"scan_run_id":1,"url":"https://www.humana.com/","page_health":null,…}
@@ -60,11 +60,11 @@ curl -X PATCH "$B/scan-runs/1" -H 'content-type: application/json' \
 # → 200 {"id":1,"status":"completed",…}
 ```
 
-**`page_health` is `null` in step 2 and set after step 3.** Scoring runs on the transition to Completed, not per page, and the same transition fires the Org Unit Rollup and the Brand Rollup. Reading a page back before completing the run is how that null gets misread as a scoring bug.
+**`page_health` is `null` in step 2 and set after step 3**, because scoring runs on completion, not per page. Reading a page back before completing the run is how that null gets misread as a scoring bug. The order the three calls must come in, what completion triggers, and the 409s that refuse any other order are [the scan-run lifecycle](architecture.md#3-the-scan-run-lifecycle)'s to state.
 
-Step 2 is where a bad payload stops: every JSON document crosses the **Axe Boundary** first, and one whose violations carry no `cat.*` tag is refused `400 {"code": "invalid_axe_payload"}` — `Invalid axe payload: findings → violations → 0: No category tag found` — rather than being stored half-understood. The order is enforced at both ends too: completing a run with no pages is `409 empty_scan_run`, and posting a page to a run already completed is `409 scan_run_completed`.
+Step 2 is where an **Axe Payload** the **Axe Boundary** refuses stops. One whose violations carry no `cat.*` tag, for instance, comes back `400 {"code": "invalid_axe_payload"}` with the message `Invalid axe payload: findings → violations → 0: No category tag found`, rather than being stored half-understood.
 
-Read it back with `GET /scan-runs/1/summary` for the run's own aggregates, `GET /scan-runs/1/pages` for per-page health, and `GET /scores/latest?owner_type=app|org_unit|brand` for the three snapshots the completion wrote.
+Read it back with `GET /scan-runs/1/summary` for the **Scan Run Summary**, `GET /scan-runs/1/pages` for per-page health, and `GET /scores/latest?owner_type=app|org_unit|brand` for the three snapshots the completion wrote.
 
 ## Tracing a request
 

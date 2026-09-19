@@ -18,4 +18,4 @@ The API is the source of truth and the contract is `a11y-health-api/openapi.json
 
 - `make openapi-check` passes in the API and `openapi.json` is committed beside the code.
 - `pnpm typecheck` and `pnpm test` pass in the UI with the regenerated `src/client/` committed.
-- From the workspace root, `scripts/sync-skills.sh --check` is clean — a root-touching change is the moment a shared-skill copy is most likely to have drifted. In a single-repo session with no root checked out, this check cannot run: name it in the summary as the root session's step, the same way the other repo's half is named.
+- From the workspace root, `scripts/sync-skills.sh --check` is clean against each subrepo's `skills-sync.lock` — a root-touching change is the moment a shared-skill copy is most likely to have drifted. In a single-repo session with no root checked out, this check cannot run: name it in the summary as the root session's step, the same way the other repo's half is named.

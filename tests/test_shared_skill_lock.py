@@ -30,8 +30,9 @@ def skill_hash(directory: Path) -> str:
     # Byte-for-byte what sync-skills.sh's skill_hash() computes: every file
     # under the directory as `path NUL size NUL content`, paths relative and
     # `./`-prefixed the way `find .` emits them, sorted bytewise as `LC_ALL=C
-    # sort -z` sorts them. Symlinks are read through, matching its `-L` and the
-    # `cp -R` the sync itself does.
+    # sort -z` sorts them. A symlinked file is read through, matching its `-L`
+    # and the `cp -R` the sync itself does; a symlinked *directory* is not
+    # recursed into here, where `find -L` descends it.
     digest = hashlib.sha256()
     files = sorted(
         (p for p in directory.rglob("*") if p.is_file()),
@@ -46,6 +47,8 @@ def skill_hash(directory: Path) -> str:
 
 
 def locked_skills() -> list[tuple[str, str]]:
+    # `(name, recorded_hash)`, the reverse of the lock's own `<sha256>  <name>`
+    # column order, so the pairs feed parametrize's ("name", "recorded") ids.
     entries = []
     for line in _LOCK.read_text().splitlines():
         if not line.strip():

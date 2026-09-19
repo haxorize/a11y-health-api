@@ -80,8 +80,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 
 # TEST_DATABASE_URL names the *template*; each run gets its own database from
-# it, suffixed with the run's pid. The engine below drops and recreates every
-# table, so two runs sharing one database drop each other's schema mid-test —
+# it, suffixed with the run's pid. The engine below recreates that database
+# from scratch, so two runs sharing one name would drop each other's schema —
 # and the pre-commit hook made that ordinary rather than rare, since it runs the
 # suite on every commit while the developer may be running `make test` in
 # another terminal. The worktree isolates every file and would not have isolated
@@ -101,19 +101,26 @@ async def _recreate_database(admin_url: str, name: str) -> None:
     admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
         async with admin.connect() as conn:
-            # A previous run killed mid-suite leaves its database behind with
-            # nothing holding it; a pid collision after a wrap would otherwise
-            # fail the DROP rather than reclaim it.
+            # A previous run killed mid-suite can leave a backend still
+            # attached to its database: a connection whose process died
+            # without being reaped, or a concurrent run on a collided pid.
+            # DROP DATABASE fails while one is open, so terminate first.
             await conn.execute(
                 text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
                 {"name": name},
             )
+            # The identifier cannot be a bound parameter the way the
+            # datname filter above is. Double-quoting neutralizes every
+            # metacharacter except a quote, which would escape it.
+            assert '"' not in name, f"TEST_DATABASE_URL names an unusable database: {name!r}"
             await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
             await conn.execute(text(f'CREATE DATABASE "{name}"'))
     finally:
         await admin.dispose()
 
 
+# The AUTOCOMMIT engine and the terminate select are _recreate_database's,
+# minus the CREATE; that function carries the reasoning for both.
 async def _drop_database(admin_url: str, name: str) -> None:
     admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:

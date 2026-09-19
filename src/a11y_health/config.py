@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
 
     DATABASE_URL: str = "postgresql+asyncpg://localhost:5432/a11y_health"
+    # A template, not the database the suite connects to: each pytest run builds
+    # and drops `<name>_<pid>` from it, through the `postgres` maintenance
+    # database the same host and credentials must reach too (tests/conftest.py).
     TEST_DATABASE_URL: str = "postgresql+asyncpg://localhost:5432/a11y_health_test"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)

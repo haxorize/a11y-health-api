@@ -1257,11 +1257,23 @@ def test_no_prose_paragraph_strands_a_line() -> None:
 ARCHITECTURE_WORD_BAND = (2250, 2750)
 ARCHITECTURE_DASH_CAP = 2
 
-# The document that restates both quantities in prose and can derive neither.
+# The skills repo's `lint-skills.sh` fails a SKILL.md body past this, because it
+# is the 5,000-token re-attach bound Claude Code keeps per skill after
+# auto-compaction, at 3 bytes per token — so what a re-attach drops is the tail,
+# which here is § Anti-patterns. That linter takes no path argument and globs
+# its own tree, so it cannot be aimed at this repo, and `make lint`, the hook
+# and CI all measure nothing: the testing skill went 426 bytes over and no check
+# said so. Bytes, not characters, because the bound is on what gets read.
+SKILL_BODY_BYTES = 15000
+
+# The documents that restate both quantities in prose and can derive neither.
 # Same hazard as the word ceiling's guard: a skill telling an agent to pare to
 # a band this module has stopped enforcing is green exactly where the hole is.
 # Moving either number above reds here until the prose has followed.
-ARCHITECTURE_BUDGET_RESTATED_IN = (".claude/skills/code-documentation/SKILL.md",)
+ARCHITECTURE_BUDGET_RESTATED_IN = (
+    ".claude/skills/code-documentation/SKILL.md",
+    "docs/adr/0018-documentation-strategy-prose-over-docstrings.md",
+)
 
 
 def test_the_architecture_budget_is_stated_wherever_it_is_restated() -> None:
@@ -1269,12 +1281,30 @@ def test_the_architecture_budget_is_stated_wherever_it_is_restated() -> None:
     for name in ARCHITECTURE_BUDGET_RESTATED_IN:
         text = _file_text(_REPO / name)
         assert text is not None, f"{name} restates the architecture budget and is unreadable"
-        assert f"{low}-{high} word band" in text, (
-            f"{name} states the architecture word band and no longer says {low}-{high}"
+        # Bound to the numbers, not to the sentence that carries them. Keyed on
+        # a phrase, rewording "a 2250-2750 word band" to "a band of 2250 to
+        # 2750 words" red this with a message saying the numbers had changed,
+        # which would have been false.
+        assert str(low) in text and str(high) in text, (
+            f"{name} states the architecture word band and no longer says both {low} and {high}"
         )
-        assert f"at most {ARCHITECTURE_DASH_CAP} em dashes" in text, (
-            f"{name} states the architecture em-dash cap and no longer says {ARCHITECTURE_DASH_CAP}"
+        dash_lines = [line for line in text.splitlines() if "em dash" in line]
+        assert any(str(ARCHITECTURE_DASH_CAP) in line for line in dash_lines), (
+            f"{name} states the architecture em-dash cap and no longer says "
+            f"{ARCHITECTURE_DASH_CAP} on a line mentioning em dashes"
         )
+
+
+def test_every_skill_body_stays_inside_the_re_attach_bound() -> None:
+    over = []
+    for path in _tracked(".claude/skills/*/SKILL.md") + _tracked(".claude/skills/*/references/*.md"):
+        size = path.stat().st_size
+        if size > SKILL_BODY_BYTES:
+            over.append(f"{path.relative_to(_REPO)}: {size} bytes, {size - SKILL_BODY_BYTES} over")
+    assert not over, (
+        f"Skill prose past the {SKILL_BODY_BYTES}-byte re-attach bound, so a re-attach drops the tail. "
+        f"Move detail into a references/ file and link it:\n" + "\n".join(over)
+    )
 
 
 def test_the_architecture_doc_stays_inside_its_stated_budget() -> None:

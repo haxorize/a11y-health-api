@@ -37,9 +37,10 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
-    # Declared for tests/test_lint_parity.py, which reads .github/workflows/ci.yml.
-    # It arrives transitively through uvicorn[standard] anyway; a test that imports
-    # it should say so rather than ride a runtime extra that could be dropped.
+    # Declared for tests/test_workflow_parity.py, which reads
+    # .github/workflows/ci.yml. It arrives transitively through uvicorn[standard]
+    # anyway; a test that imports it should say so rather than ride a runtime
+    # extra that could be dropped.
     "pyyaml>=6.0.3",
     "ruff>=0.16.5",
     "ty>=0.0.75",

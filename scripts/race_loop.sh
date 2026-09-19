@@ -28,9 +28,9 @@ case "$max_runs" in
 esac
 [ "$max_runs" -gt 0 ] || { echo "race_loop: max_runs must be greater than 0" >&2; exit 2; }
 if [ -d "$out_file" ]; then echo "race_loop: out_file '$out_file' is a directory" >&2; exit 2; fi
-# Truncate up front: an all-green hunt must not leave the last hunt's red log
-# sitting at the path for someone to read as this run's evidence.
-: > "$out_file"
+# Refused rather than truncated: an all-green hunt must not leave the last red
+# log for someone to read as this run's evidence, and a rerun must not wipe it.
+if [ -s "$out_file" ]; then echo "race_loop: out_file '$out_file' already holds a log; move it first" >&2; exit 2; fi
 
 # A flake hunt against a stale lock measures a dependency set CI never runs; the
 # Makefile's export holds the reasoning. This script calls uv directly, so it

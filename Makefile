@@ -14,16 +14,12 @@ export UV_LOCKED := 1
 # b362121027a0 is the deepest revision the roundtrip can reach: its own
 # downgrade() raises NotImplementedError, so it is downgraded *to* and never
 # crossed. Raise this floor whenever a migration lands whose downgrade cannot
-# undo its upgrade; everything above it must stay reversible, and
-# test_downgrade_floor.py fails if the floor ever resolves to the head — the
-# spellings `head`, `heads` and an abbreviated revision id included — since a
-# floor at the head downgrades across nothing and the stage proves nothing.
+# restore its parent's schema; everything above it must stay schema-reversible,
+# and test_downgrade_floor.py fails if the floor ever resolves to the head.
 #
-# It sat at the head (8b3a1162eb95) until the roundtrip got its own scratch
-# database: that revision's upgrade() re-runs the #97 dedupe DELETE over
-# score_snapshot and its downgrade() restores none of those rows, so crossing
-# it in a database holding real data destroys rollup snapshots. Isolating the
-# target is what made the floor safe to lower rather than raising it forever.
+# 8b3a1162eb95 sits above the floor although its downgrade() restores none of
+# the rows its upgrade() deletes: it loses rows but not schema, and the
+# roundtrip runs against an empty scratch database.
 DOWNGRADE_FLOOR := b362121027a0
 
 install:
@@ -50,10 +46,10 @@ coverage:
 # The project's one lint set: the hook and a developer's `make lint` both run
 # this target, and CI runs the subtargets separately only to keep one red step
 # per tool in its UI. That enumeration in ci.yml is a second copy of the
-# membership below, so a check added here has to be added there too — but the
-# two no longer drift in silence: tests/test_lint_parity.py compares them and
-# names the side that is missing one. `openapi-check` is outside the
-# comparison, being neither a prerequisite here nor part of the lint set.
+# membership below, so a check added here has to be added there too;
+# tests/test_workflow_parity.py compares them and names the side that is
+# missing one. `openapi-check` is outside the comparison, being neither a
+# prerequisite here nor part of the lint set.
 lint: lint-style lint-format lint-types lint-deps
 
 lint-style:
@@ -85,8 +81,7 @@ migrate-create:
 migrate-downgrade:
 	uv run alembic downgrade -1
 
-# The scratch database it creates and drops is the script's own, minted per run.
-# Never DATABASE_URL, and never a name from here: see the script.
+# Runs against a scratch database the script mints per run, never DATABASE_URL.
 migrate-roundtrip:
 	./scripts/migrate_roundtrip.sh $(DOWNGRADE_FLOOR)
 
@@ -119,4 +114,3 @@ clean:
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache .ruff_cache htmlcov cov_out
 	rm -f .coverage
-	rm -f ./*.log

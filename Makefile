@@ -25,9 +25,6 @@ export UV_LOCKED := 1
 # target is what made the floor safe to lower rather than raising it forever.
 DOWNGRADE_FLOOR := b362121027a0
 
-# Created and dropped around the roundtrip. Never DATABASE_URL: see the script.
-ROUNDTRIP_DB := a11y_health_roundtrip
-
 install:
 	uv sync
 
@@ -85,8 +82,10 @@ migrate-create:
 migrate-downgrade:
 	uv run alembic downgrade -1
 
+# The scratch database it creates and drops is the script's own, minted per run.
+# Never DATABASE_URL, and never a name from here: see the script.
 migrate-roundtrip:
-	./scripts/migrate_roundtrip.sh $(DOWNGRADE_FLOOR) $(ROUNDTRIP_DB)
+	./scripts/migrate_roundtrip.sh $(DOWNGRADE_FLOOR)
 
 openapi:
 	uv run python scripts/export_openapi.py

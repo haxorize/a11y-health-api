@@ -11,7 +11,9 @@ from a11y_health.core.database import Base
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Doubled because the option store is a ConfigParser, where `%` starts an
+# interpolation, and a percent-encoded password is a URL full of them.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

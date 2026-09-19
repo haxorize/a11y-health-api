@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Loop pytest suites until a run goes red; save that run's full output.
 #
 # Built while chasing a rare deadline miss in the rollup race suites

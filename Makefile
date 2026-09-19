@@ -50,8 +50,10 @@ coverage:
 # The project's one lint set: the hook and a developer's `make lint` both run
 # this target, and CI runs the subtargets separately only to keep one red step
 # per tool in its UI. That enumeration in ci.yml is a second copy of the
-# membership below and nothing checks the two agree — a check added here has to
-# be added there too, which is the cost of that UI.
+# membership below, so a check added here has to be added there too — but the
+# two no longer drift in silence: tests/test_lint_parity.py compares them and
+# names the side that is missing one. `openapi-check` is outside the
+# comparison, being neither a prerequisite here nor part of the lint set.
 lint: lint-style lint-format lint-types lint-deps
 
 lint-style:

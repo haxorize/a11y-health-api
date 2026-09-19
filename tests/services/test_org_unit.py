@@ -264,3 +264,46 @@ async def test_reparent_triggers_rollup(db_session: AsyncSession) -> None:
 
     snapshot = await latest_ou_snapshot(db_session, branch_b.id)
     assert snapshot.score == approx(0.6)
+
+
+async def test_reparent_rolls_up_old_parent(db_session: AsyncSession) -> None:
+    # The old parent is a sibling of the new one, not its ancestor, so only the
+    # old-parent rollup can recompute it.
+    root = await make_org_unit(db_session, name="Humana")
+    branch_a = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    branch_b = await make_org_unit(db_session, name="Pharmacy", parent_id=root.id)
+    leaf = await make_org_unit(db_session, name="Primary Care", parent_id=branch_a.id)
+
+    app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=branch_a.id)
+    await make_score_snapshot(
+        db_session,
+        app_id=app_a.id,
+        score=0.4,
+        total_pages=2,
+        total_violations=3,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
+    )
+    await make_score_snapshot(
+        db_session,
+        org_unit_id=leaf.id,
+        score=0.8,
+        total_pages=5,
+        total_violations=1,
+        pages_with_violations=1,
+        pages_with_critical_violations=0,
+    )
+    await make_score_snapshot(
+        db_session,
+        org_unit_id=branch_a.id,
+        score=0.6,
+        total_pages=7,
+        total_violations=4,
+        pages_with_violations=2,
+        pages_with_critical_violations=0,
+    )
+
+    await org_unit_service.update_org_unit(db_session, leaf.id, OrgUnitUpdate(parent_id=branch_b.id))
+
+    assert (await latest_ou_snapshot(db_session, branch_a.id)).score == approx(0.4)
+    assert (await latest_ou_snapshot(db_session, branch_b.id)).score == approx(0.8)

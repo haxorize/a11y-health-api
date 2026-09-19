@@ -43,7 +43,7 @@ async def on_app_reassigned(session: AsyncSession, old_org_unit_id: int, new_org
 
 async def on_org_unit_reparented(
     session: AsyncSession,
-    org_unit_id: int,
+    *,
     old_parent_id: int | None,
     new_parent_id: int | None,
 ) -> None:

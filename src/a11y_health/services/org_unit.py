@@ -79,7 +79,9 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
             setattr(org_unit, field, value)
     await session.refresh(org_unit)
     if "parent_id" in updates and org_unit.parent_id != old_parent_id:
-        await scoring_orchestration.on_org_unit_reparented(session, org_unit_id, old_parent_id, org_unit.parent_id)
+        await scoring_orchestration.on_org_unit_reparented(
+            session, old_parent_id=old_parent_id, new_parent_id=org_unit.parent_id
+        )
     return org_unit
 
 

@@ -313,7 +313,7 @@ class TestOnOrgUnitReparented:
         child_ou.parent_id = branch_b.id
         await db_session.flush()
 
-        await on_org_unit_reparented(db_session, child_ou.id, branch_a.id, branch_b.id)
+        await on_org_unit_reparented(db_session, old_parent_id=branch_a.id, new_parent_id=branch_b.id)
 
         assert (await latest_ou_snapshot(db_session, branch_b.id)).score == approx((1.0 + 0.8) / 2)
         assert (await latest_ou_snapshot(db_session, branch_a.id)).score == approx(0.4)
@@ -345,7 +345,7 @@ class TestOnOrgUnitReparented:
         # old_parent_id=None can no longer arise through the org-unit service
         # (single-root invariant), but the orchestration seam stays defensive;
         # exercise the skip directly.
-        await on_org_unit_reparented(db_session, orphan.id, None, new_parent.id)
+        await on_org_unit_reparented(db_session, old_parent_id=None, new_parent_id=new_parent.id)
 
         assert (await latest_ou_snapshot(db_session, new_parent.id)).score == approx(0.6)
 
@@ -370,7 +370,7 @@ class TestOnOrgUnitReparented:
         child_ou.parent_id = branch_b.id
         await db_session.flush()
 
-        await on_org_unit_reparented(db_session, child_ou.id, branch_a.id, branch_b.id)
+        await on_org_unit_reparented(db_session, old_parent_id=branch_a.id, new_parent_id=branch_b.id)
 
         result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.brand_id == brand.id))
         assert result.scalar_one_or_none() is None

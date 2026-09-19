@@ -1,7 +1,7 @@
 import json
 import os
 from collections.abc import AsyncIterator, Sequence
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
 
 from a11y_health.config import settings
 from a11y_health.core.database import Base, get_db
@@ -85,78 +85,86 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 
 # TEST_DATABASE_URL names the *template*; each run gets its own database from
-# it, suffixed with the run's pid. The engine below recreates that database
-# from scratch, so two runs sharing one name would drop each other's schema —
+# it, suffixed with the run's pid. The context manager below drops and recreates
+# that database, so two runs sharing one name would drop each other's schema —
 # and the pre-commit hook made that ordinary rather than rare, since it runs the
 # suite on every commit while the developer may be running `make test` in
 # another terminal. The worktree isolates every file and would not have isolated
 # this one shared thing.
-def _run_database_urls() -> tuple[str, str, str]:
+@asynccontextmanager
+async def _admin_connection(admin_url: str) -> AsyncIterator[AsyncConnection]:
+    """A maintenance connection, in AUTOCOMMIT.
+
+    CREATE DATABASE cannot run from inside the database being created, nor
+    inside a transaction; `postgres` is the maintenance database every
+    deployment has.
+    """
+    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            yield conn
+    finally:
+        await admin.dispose()
+
+
+async def _drop(conn: AsyncConnection, name: str) -> None:
+    # A previous run killed mid-suite can leave a backend still attached to its
+    # database: a connection whose process died without being reaped, or a
+    # concurrent run on a collided pid. DROP DATABASE fails while one is open,
+    # so terminate first.
+    await conn.execute(
+        text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
+        {"name": name},
+    )
+    await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+
+
+@asynccontextmanager
+async def _scratch_database() -> AsyncIterator[str]:
+    """Yields the URL of a database that exists for the block and not after.
+
+    One seam for the whole lifecycle, so a caller never handles the admin URL
+    or the bare name — the two values that, loose, let a caller aim the drop at
+    something else. The engine fixture is the only caller.
+    """
     template = make_url(settings.TEST_DATABASE_URL)
     name = f"{template.database}_{os.getpid()}"
-    run_url = template.set(database=name).render_as_string(hide_password=False)
-    # Maintenance connection: CREATE DATABASE cannot run from inside the
-    # database being created, and `postgres` is the one every deployment has.
+    # The identifier cannot be a bound parameter the way the datname filter in
+    # _drop is. Double-quoting neutralizes every metacharacter except a quote,
+    # which would escape it — so the quote is what this refuses, once, covering
+    # both the CREATE below and every DROP.
+    assert '"' not in name, f"TEST_DATABASE_URL names an unusable database: {name!r}"
     admin_url = template.set(database="postgres").render_as_string(hide_password=False)
-    return run_url, admin_url, name
 
-
-async def _recreate_database(admin_url: str, name: str) -> None:
-    # AUTOCOMMIT because CREATE/DROP DATABASE cannot run inside a transaction.
-    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    async with _admin_connection(admin_url) as conn:
+        await _drop(conn, name)
+        await conn.execute(text(f'CREATE DATABASE "{name}"'))
     try:
-        async with admin.connect() as conn:
-            # A previous run killed mid-suite can leave a backend still
-            # attached to its database: a connection whose process died
-            # without being reaped, or a concurrent run on a collided pid.
-            # DROP DATABASE fails while one is open, so terminate first.
-            await conn.execute(
-                text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
-                {"name": name},
-            )
-            # The identifier cannot be a bound parameter the way the
-            # datname filter above is. Double-quoting neutralizes every
-            # metacharacter except a quote, which would escape it.
-            assert '"' not in name, f"TEST_DATABASE_URL names an unusable database: {name!r}"
-            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
-            await conn.execute(text(f'CREATE DATABASE "{name}"'))
+        yield template.set(database=name).render_as_string(hide_password=False)
     finally:
-        await admin.dispose()
-
-
-# The AUTOCOMMIT engine and the terminate select are _recreate_database's,
-# minus the CREATE; that function carries the reasoning for both.
-async def _drop_database(admin_url: str, name: str) -> None:
-    admin = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with admin.connect() as conn:
-            await conn.execute(
-                text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :name"),
-                {"name": name},
-            )
-            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
-    finally:
-        await admin.dispose()
+        async with _admin_connection(admin_url) as conn:
+            await _drop(conn, name)
 
 
 @pytest.fixture(scope="session")
 async def engine() -> AsyncIterator[AsyncEngine]:
-    run_url, admin_url, name = _run_database_urls()
-    await _recreate_database(admin_url, name)
-    eng = create_async_engine(
-        run_url,
-        echo=settings.DEBUG,
-        # Deadlock tests would otherwise idle out the 1s default before
-        # detection fires. PGC_SUSET — dev and CI connect as superuser (#112).
-        connect_args={"server_settings": {"deadlock_timeout": "50ms"}},
-    )
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    try:
-        yield eng
-    finally:
-        await eng.dispose()
-        await _drop_database(admin_url, name)
+    async with _scratch_database() as run_url:
+        eng = create_async_engine(
+            run_url,
+            echo=settings.DEBUG,
+            # Deadlock tests would otherwise idle out the 1s default before
+            # detection fires. PGC_SUSET — dev and CI connect as superuser
+            # (#112).
+            connect_args={"server_settings": {"deadlock_timeout": "50ms"}},
+        )
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        try:
+            yield eng
+        finally:
+            # Before the context manager's drop: DROP DATABASE fails while a
+            # backend is attached, and this pool holds them.
+            await eng.dispose()
 
 
 @pytest.fixture

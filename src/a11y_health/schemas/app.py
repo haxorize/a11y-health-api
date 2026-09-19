@@ -4,8 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from a11y_health.core.slug import derive_slug
 
-__all__ = ["AppCreate", "AppRead", "AppUpdate"]
-
 
 class AppCreate(BaseModel):
     name: str = Field(max_length=255)

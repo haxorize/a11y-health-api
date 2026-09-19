@@ -2,8 +2,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-__all__ = ["ScoreAggregatesRead", "ScoreSnapshotRead"]
-
 
 # The wire form of Score Aggregates (DOMAIN.md): the same fields as
 # `services.owner.ScoreAggregates`, which a test pins — a field joining one

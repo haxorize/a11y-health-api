@@ -5,8 +5,6 @@ from pydantic import BaseModel, ConfigDict
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.schemas.score_snapshot import ScoreAggregatesRead
 
-__all__ = ["ScanRunCreate", "ScanRunRead", "ScanRunStatusUpdate", "ScanRunSummaryRead"]
-
 
 class ScanRunCreate(BaseModel):
     scanned_at: datetime

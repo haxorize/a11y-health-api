@@ -4,8 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 from a11y_health.models.enums import PageHealth
 
-__all__ = ["PageMetricsRead", "PageResultRead"]
-
 
 class PageMetricsRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

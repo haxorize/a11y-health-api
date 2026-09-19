@@ -2,8 +2,6 @@ from pydantic import BaseModel
 
 from a11y_health.models.enums import Impact, PageHealth
 
-__all__ = ["ScoringVocabularyRead"]
-
 
 class ScoringVocabularyRead(BaseModel):
     page_health_ordering: list[PageHealth]

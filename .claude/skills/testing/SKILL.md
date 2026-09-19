@@ -22,7 +22,9 @@ tests/
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
   test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
-  test_lint_parity.py      # CI's lint steps and `make lint`'s prerequisites are one list
+  test_workflow_parity.py  # CI's lint steps vs `make lint`, and the three uv setup steps agreeing
+  test_staged_worktree.py  # ADR 0046's two claims, over a scratch repo: the checkout is the
+                           # staged tree, and neither the working tree nor the index moves
   _non_test_database.py    # refuses any connection the suite opens to DATABASE_URL's database
   test_non_test_database.py  # its own suite: the rule, and that conftest armed it
   test_prose_shape.py      # the six prose guards: code-prose wrap (the half W505 can't see), one-line

@@ -84,29 +84,23 @@ trap 'exit 143' TERM
 # The index git is about to commit is not always .git/index: `git commit -a`
 # builds the tree in .git/index.lock and `git commit <paths>` in a
 # next-index-<pid>.lock beside it, holding it while this hook runs. Reading
-# whichever one git named, through a copy, gets the tree that will actually be
-# committed and never writes the real file. `--git-path` rather than a literal
-# .git/index for the fallback, because .git is a file in a linked worktree.
-rm -rf "$WORKTREE" "$STAGED_INDEX"
-(umask 077 && : >"$STAGED_INDEX")
-cp "${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}" "$STAGED_INDEX"
+# whichever one git named gets the tree that will actually be committed.
+# `--git-path` rather than a literal .git/index for the fallback, because .git
+# is a file in a linked worktree.
+SOURCE_INDEX="${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}"
 
-# git exports GIT_INDEX_FILE to a hook in all three commit shapes — relative to
-# the repo root for a plain `git commit`, absolute for the other two. Inherited
-# by a command that runs in the new worktree the relative form resolves against
-# the wrong directory, where .git is a file, and `worktree add` dies with
-# "index file open failed: Not a directory".
+# Before the script runs, and not only inside it: cleanup() below calls git
+# against $ROOT after this point, and the inherited GIT_DIR would aim it at the
+# worktree this hook is about to cd into.
 unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
 
-STAGED_TREE="$(GIT_INDEX_FILE="$STAGED_INDEX" git write-tree)"
-# A commit rather than the bare tree: `worktree add` takes a commit-ish, and
-# checking one out seeds the new worktree with the staged content — which is
-# what `make openapi-check` regenerates against, so a staged-but-stale spec is
-# still caught. The object is unreachable once the worktree is gone, and
-# `git gc` reclaims it after `gc.pruneExpire` — two weeks by default.
-STAGED_COMMIT="$(git commit-tree "$STAGED_TREE" -m 'pre-commit: staged tree')"
-
-git worktree add --detach --quiet "$WORKTREE" "$STAGED_COMMIT"
+# The checkout itself is scripts/staged_worktree.sh, which reads the index
+# through a copy and writes nothing the caller owns. It is a script rather than
+# lines here so ADR 0046's two behavioral claims -- that the run measures the
+# commit and not the tree, and that it cannot lose the developer's work -- can
+# be driven against a scratch repository instead of by making commits in this
+# one. tests/test_staged_worktree.py is that check.
+"$ROOT/scripts/staged_worktree.sh" "$SOURCE_INDEX" "$STAGED_INDEX" "$WORKTREE"
 
 # .env is gitignored, so it is absent from the index and from the checkout.
 # Copied rather than left out, and this is the one deliberate exception to

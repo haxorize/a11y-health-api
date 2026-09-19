@@ -20,9 +20,9 @@ name: CI
 #   back to true: the pruned cache is the cheaper one to keep, and stating it
 #   means a later default flip is inert. See astral-sh/setup-uv#967.
 #
-# actions/checkout@v7 and astral-sh/setup-uv@v10.0.1 are the refs this workflow
-# stands on, recorded so a report measured against it can tell whether it was
-# measured against these. Neither is pinned to a revision: that was weighed
+# actions/checkout@v7 and astral-sh/setup-uv@v10.0.1 (pinned once, in
+# .github/actions/setup-uv) are the refs this workflow stands on, recorded so a
+# report measured against it can tell whether it was measured against these. Neither is pinned to a revision: that was weighed
 # against this repo's threat model and declined, and setup-uv publishes no
 # floating major tag that could drift underneath.
 #
@@ -45,11 +45,11 @@ on:
 #
 # The reason this is not left to the repository setting is the `push` trigger
 # above. A fork pull request gets a read-only token whatever the setting says,
-# which is the case the old note here weighed — but a push to `main` gets the
-# repository default, commonly write, and this workflow runs three third-party
-# actions and two binaries fetched over the network, each inheriting whatever
-# the token carries. The checksums above are what make those fetches
-# trustworthy; this is what bounds them if one ever is not.
+# but a push to `main` gets the repository default, commonly write, and this
+# workflow runs third-party actions and two binaries fetched over the network,
+# each inheriting whatever the token carries. The sha256 checks below cover the
+# two binaries only; the actions and the postgres image are tag-pinned, and this
+# is what bounds all of them if one is ever compromised.
 permissions:
   contents: read
 
@@ -95,23 +95,9 @@ jobs:
           echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
       - name: Scan history for secrets
         run: gitleaks git --no-banner --redact
-      # Written out in each of the three jobs rather than anchored here and
-      # aliased, which is what this was until #152. The alias gave the pin one
-      # home and charged an invisible constraint for it: an alias must follow
-      # its anchor in document order, so `lint` had to stay first in the
-      # `jobs:` map, and moving it below either other job made the alias
-      # unresolvable. That is a load error — no run is created at all, so no
-      # job runs and the `actionlint` step above cannot report it, on a
-      # trunk-only repo with `main` unprotected. Reordering jobs reads as
-      # cosmetic, which is what made the trap worth removing rather than
-      # documenting.
-      #
-      # What the alias bought is bought instead by tests/test_workflow_parity.py,
-      # which fails when the three copies stop agreeing.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ env.UV_PYTHON }}
-          prune-cache: true # see the header note
       # One step per tool so a red step names the tool, but the commands are the
       # Makefile's, which is also what the pre-commit hook runs as `make lint`.
       - run: make lint-style
@@ -153,10 +139,9 @@ jobs:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/a11y_health_test
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ env.UV_PYTHON }}
-          prune-cache: true # see the header note
       - run: uv run pytest
 
   migration-drift:
@@ -186,10 +171,9 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ env.UV_PYTHON }}
-          prune-cache: true # see the header note
       - name: Migration roundtrip
         # The floor this downgrades to is DOWNGRADE_FLOOR in the Makefile, which
         # is also where the reason for its current value is written. Invoking

@@ -1,0 +1,15 @@
+name: Set up uv
+description: The one setup-uv pin every job in ci.yml steps through.
+
+inputs:
+  python-version:
+    description: The interpreter uv provisions; ci.yml passes its UV_PYTHON.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v10.0.1
+      with:
+        python-version: ${{ inputs.python-version }}
+        prune-cache: true # see ci.yml's header note

@@ -1,26 +1,15 @@
-"""Where the workflow says a thing twice, the two copies still agree.
-
-Two of those today: CI's per-tool lint steps against `make lint`'s membership,
-and the uv setup step, which each of the three jobs writes out in full.
+"""CI's per-tool lint steps and `make lint`'s membership still agree.
 
 `make lint` is what a developer and the pre-commit hook run. CI runs the same
 tools as separate steps so a red step names the tool rather than the target,
-which means the membership is written twice — and until this module the
-Makefile's own comment said so and left it there: "nothing checks the two
-agree". A check added to one and not the other is then a check the hook runs
-and CI does not, or the reverse, with nothing going red either way.
+which means the membership is written twice. A check added to one and not the
+other is then a check the hook runs and CI does not, or the reverse, with
+nothing going red either way.
 
 `make openapi-check` is deliberately outside this. CI runs it in the same job
 for the same one-red-step-per-tool reason, but it is not a `make lint`
 prerequisite and the hook invokes it separately, so it belongs to neither list.
 The comparison is over the `lint-` prefixed targets alone.
-
-The setup step was a YAML anchor in `lint` aliased by the other two jobs until
-#152, which gave it one home at the price of an invisible ordering constraint:
-an alias must follow its anchor, so moving `lint` below either other job made
-the workflow unloadable, and an unloadable workflow creates no run for
-`actionlint` to report from. Three copies plus this check trade that for a
-failure mode that is merely red.
 """
 
 import re
@@ -81,31 +70,3 @@ def test_every_named_target_is_declared_phony() -> None:
     declared = set(phony.group("targets").split())
     missing = sorted(target for target in _make_lint_prerequisites() | {"lint"} if target not in declared)
     assert not missing, f"lint targets missing from .PHONY: {missing}"
-
-
-def _setup_uv_steps() -> list[dict]:
-    workflow = yaml.safe_load(_WORKFLOW.read_text())
-    return [
-        step
-        for job in workflow["jobs"].values()
-        for step in job["steps"]
-        if "astral-sh/setup-uv" in str(step.get("uses", ""))
-    ]
-
-
-def test_every_job_sets_up_uv() -> None:
-    # The floor. Every job here runs `uv`, so a job that lost its setup step
-    # would fail on the first command rather than here — but a *reader* of the
-    # agreement check below needs to know it compared three things and not one.
-    workflow = yaml.safe_load(_WORKFLOW.read_text())
-    assert len(_setup_uv_steps()) == len(workflow["jobs"]) == 3
-
-
-def test_the_three_uv_setup_steps_are_identical() -> None:
-    steps = _setup_uv_steps()
-    first, *rest = steps
-    mismatched = [step for step in rest if step != first]
-    assert not mismatched, (
-        "the uv setup step differs between jobs; it is written out per job and nothing else holds "
-        f"the copies together.\n  first: {first}\n  differing: {mismatched}"
-    )

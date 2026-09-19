@@ -37,6 +37,35 @@ An **App**'s name and **Slug** are immutable after creation ([ADR 0010](adr/0010
 | `UnderivableAppNameError` | a name with no usable slug |
 | `ApiError` | a coded error body from the API |
 
+## The same three calls, without the CLI
+
+The CLI is a client, not a privileged one: a Scan Run is three public calls, and this is the recipe to reach for when driving the API directly — a UI, a scanner in someone else's language, or a bug that needs the middle call in isolation. It assumes an **App** already exists; `POST /apps` takes `{"name", "brand_id", "org_unit_id"}` and derives the **Slug** itself.
+
+```bash
+B=localhost:8000/api/v1
+
+# 1. Create the Scan Run. It starts Pending.
+curl -X POST "$B/apps/1/scan-runs" -H 'content-type: application/json' \
+  -d '{"scanned_at": "2026-03-30T00:00:00Z"}'
+# → 201 {"id":1,"app_id":1,"status":"pending","scanned_at":"2026-03-30T00:00:00Z",…}
+
+# 2. POST each page's axe export, unwrapped — the raw document, not a wrapper.
+curl -X POST "$B/scan-runs/1/pages" -H 'content-type: application/json' \
+  --data-binary @tests/fixtures/humana.com-home.json
+# → 201 {"id":1,"scan_run_id":1,"url":"https://www.humana.com/","page_health":null,…}
+
+# 3. PATCH to Completed. This is what scores.
+curl -X PATCH "$B/scan-runs/1" -H 'content-type: application/json' \
+  -d '{"status": "completed"}'
+# → 200 {"id":1,"status":"completed",…}
+```
+
+**`page_health` is `null` in step 2 and set after step 3.** Scoring runs on the transition to Completed, not per page, and the same transition fires the Org Unit Rollup and the Brand Rollup. Reading a page back before completing the run is how that null gets misread as a scoring bug.
+
+Step 2 is where a bad payload stops: every JSON document crosses the **Axe Boundary** first, and one whose violations carry no `cat.*` tag is refused `400 {"code": "invalid_axe_payload"}` — `Invalid axe payload: findings → violations → 0: No category tag found` — rather than being stored half-understood. The order is enforced at both ends too: completing a run with no pages is `409 empty_scan_run`, and posting a page to a run already completed is `409 scan_run_completed`.
+
+Read it back with `GET /scan-runs/1/summary` for the run's own aggregates, `GET /scan-runs/1/pages` for per-page health, and `GET /scores/latest?owner_type=app|org_unit|brand` for the three snapshots the completion wrote.
+
 ## Tracing a request
 
 Endpoint (`api/v1/endpoints/`), then service (`services/`), then model. A failing request surfaces as a JSON `{"code": …, "message": …}` body, the **Error Contract**'s `ErrorBody`. Map the code back through the [`ERROR_MODES` table](architecture.md#how-errors-become-http-status-codes), then grep for where that exception is raised.

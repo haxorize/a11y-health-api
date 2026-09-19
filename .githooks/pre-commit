@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Covers a `uv` call added directly to this file later; the make targets below
-# carry it through the Makefile's own export, which holds the reasoning.
+# Covers the `uv sync` below and any `uv` call added directly to this file; the
+# make targets carry it through the Makefile's own export, which holds the
+# reasoning.
 export UV_LOCKED=1
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -15,10 +16,12 @@ gitleaks git --pre-commit --staged --redact --no-banner
 
 # Every check below runs against a checkout of the index in a throwaway
 # worktree, so what they measure is the commit being made and nothing else.
-# This design cannot lose work because it never writes here: the developer's
-# index is read through a copy and their worktree is not touched at all.
+# This design cannot lose the developer's work: their index is read through a
+# copy and their working tree is not touched at all. It does write a temp
+# index, an unreachable commit object, and a .git/worktrees entry, all
+# reclaimed by cleanup() below.
 #
-# Why the index and not the working tree, and the two designs rejected before
+# Why the index and not the working tree, and the alternatives rejected before
 # it, are docs/adr/0046-per-commit-checks-run-against-a-checkout-of-the-index.md.
 
 # Both temp paths end in this run's PID. $TMPDIR is shared across a user's
@@ -40,7 +43,13 @@ for stale in "$PREFIX"-wt.* "$PREFIX"-index.*; do
   [ -e "$stale" ] || continue
   pid="${stale##*.}"
   case "$pid" in "" | *[!0-9]*) continue ;; esac
-  kill -0 "$pid" 2>/dev/null && continue
+  # Ownership and self before liveness: `kill -0` cannot tell another user's
+  # live process (EPERM) from a dead one (ESRCH), so under a shared /tmp it
+  # would feed a live checkout to the rm below; and after a pid wrap onto a
+  # SIGKILLed run's number it succeeds against this very shell, leaving that
+  # directory unswept for the `worktree add` below to die on.
+  [ -O "$stale" ] || continue
+  if [ "$pid" != "$$" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
   rm -rf "$stale"
 done
 # Guarded for the same reason as the one in cleanup(): pruning is housekeeping,
@@ -53,8 +62,8 @@ git worktree prune || true
 # below reclaims both. The sweep above is the backstop for a SIGKILL, which no
 # trap can catch.
 cleanup() {
-  # rm before prune, not `git worktree remove`: the OpenAPI stage regenerates
-  # in there, and `remove` refuses a dirty worktree.
+  # rm before prune, not `git worktree remove`: `uv sync` puts a .venv in there
+  # and the suite leaves __pycache__, and `remove` refuses a dirty one.
   rm -rf "$WORKTREE" "$STAGED_INDEX"
   git -C "$ROOT" worktree prune || true
 }
@@ -84,7 +93,7 @@ STAGED_TREE="$(GIT_INDEX_FILE="$STAGED_INDEX" git write-tree)"
 # checking one out seeds the new worktree with the staged content — which is
 # what `make openapi-check` regenerates against, so a staged-but-stale spec is
 # still caught. The object is unreachable once the worktree is gone, and
-# `git gc` takes it.
+# `git gc` reclaims it after `gc.pruneExpire` — two weeks by default.
 STAGED_COMMIT="$(git commit-tree "$STAGED_TREE" -m 'pre-commit: staged tree')"
 
 git worktree add --detach --quiet "$WORKTREE" "$STAGED_COMMIT"

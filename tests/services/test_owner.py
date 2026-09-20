@@ -1187,7 +1187,7 @@ class TestRollupSnapshotUniqueness:
         org_unit = await make_org_unit(db_session)
         app = await make_app(db_session, name="Race App", slug="race-app", org_unit_id=org_unit.id)
         await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
-        # The winner's row, which landed between our dedupe check and our write.
+        # The winner's row landed between our dedupe check and our write.
         await make_score_snapshot(db_session, org_unit_id=org_unit.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
         _bypass_dedupe_check_to_lose_the_race(mocker)
         with pytest.raises(ConcurrentRollupError, match="Org unit.*updated by another request"):

@@ -35,9 +35,9 @@ async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -
     assert finding["node_finding_count"] == 1
 
 
-# The transport slot for `total`: the count semantics are owned by the paginate
-# and service suites; this asserts the value crosses the wire, with total ≠
-# len(items) so an accidental echo of the loaded rows can't pass.
+# This asserts that `total` crosses the wire; the count semantics are owned by
+# the paginate and service suites. total ≠ len(items), so an accidental echo of
+# the loaded rows can't pass.
 async def test_list_findings_total_counts_beyond_the_page(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)

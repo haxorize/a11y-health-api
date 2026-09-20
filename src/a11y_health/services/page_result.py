@@ -67,7 +67,7 @@ async def _persist_findings(
 def _assert_scan_run_pending(scan_run: ScanRun) -> None:
     # Private to its one consumer. A second consumer promotes this to the
     # scan-run service rather than copying it — the copy is how two checks
-    # drift.
+    # diverge.
     if scan_run.status == ScanRunStatus.COMPLETED:
         raise ScanRunCompletedError(scan_run.id)
 

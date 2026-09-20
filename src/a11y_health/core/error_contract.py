@@ -59,7 +59,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {mode.code: mode.status for mode in ERRO
 # The vendor extension under which a declaration carries its own code set, and
 # the published key downstream clients read off the OpenAPI document. Public
 # because every reader sits outside src: the suite's declaration guards read
-# back what `error_responses()` wrote here. The lockstep that earns the name is
+# back what `error_responses()` wrote here. The lockstep this name keeps is
 # with Declaration Honesty, which used to come from the two sides sharing a
 # file; this name is what carries it now that they don't (ADR 0033).
 ERROR_CODES_KEY: Final = "x-error-codes"

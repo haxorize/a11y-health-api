@@ -246,10 +246,10 @@ async def test_filter_options_classifications_scoped_to_the_run(db_session: Asyn
 async def test_filter_options_omit_valid_but_off_vocabulary_classification(
     db_session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # A stored entry can validate as a Classification without naming any token
-    # (e.g. a raw-backfilled WCAG 3.0). The filter can't query what it can't
-    # name, so it earns no option instead of failing the enumeration — with a
-    # warning, like the tolerant read's invalid-entry drop.
+    # A stored entry that validates as a Classification without naming any
+    # token (e.g. a raw-backfilled WCAG 3.0) gets no option, with a warning,
+    # instead of failing the enumeration; the why is `classification_options`'
+    # docstring (models/classification.py).
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(

@@ -70,8 +70,8 @@ async def test_list_org_units_filtered_by_several_parents(db_client: AsyncClient
 async def test_list_org_units_filtered_by_unknown_parent_is_empty(
     db_client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    # A filter, not a scope: an unknown parent narrows to nothing rather than
-    # 404ing, matching the apps listing's org_unit_id filter.
+    # parent_id is a filter, so an unknown parent narrows to nothing rather
+    # than 404ing, matching the apps listing's org_unit_id filter.
     await make_org_unit(db_session, name="Humana")
 
     response = await db_client.get("/api/v1/org-units", params={"parent_id": 999999})

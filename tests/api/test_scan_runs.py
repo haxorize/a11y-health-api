@@ -49,9 +49,9 @@ async def test_list_scan_runs(db_client: AsyncClient, db_session: AsyncSession) 
     assert all(r["app_id"] == sr1.app_id for r in data["items"])
 
 
-# The transport slot for `total` (mirrors the findings pin): count semantics are
-# owned by the paginate suite; this asserts the value crosses the wire, with
-# total ≠ len(items) so an accidental echo of the loaded rows can't pass.
+# Like the findings pin, this asserts that `total` crosses the wire; the count
+# semantics are owned by the paginate suite. total ≠ len(items), so an
+# accidental echo of the loaded rows can't pass.
 async def test_list_scan_runs_total_counts_beyond_the_page(db_client: AsyncClient, db_session: AsyncSession) -> None:
     sr1 = await make_scan_run_with_parents(db_session)
     for _ in range(2):

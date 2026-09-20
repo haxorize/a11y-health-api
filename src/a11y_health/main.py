@@ -21,10 +21,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _operation_id(route: APIRoute) -> str:
-    # Drives generated SDK method names; keep stable. Operation ID is the route
-    # function name, so two endpoint functions sharing a name across routers
-    # will collide in openapi.json and break UI codegen — keep route function
-    # names unique repo-wide.
+    # The operation id is the route function name, and that name becomes the
+    # UI's generated method name, so renaming a route function renames the
+    # method. Keep the names unique repo-wide: two endpoint functions sharing
+    # one across routers write a duplicate id into openapi.json and break UI
+    # codegen (docs/architecture.md § 5).
     return route.name
 
 

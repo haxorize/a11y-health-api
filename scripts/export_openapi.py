@@ -1,6 +1,5 @@
-"""Writes to `openapi.json` at the repo root unless given a path. The path
-argument is what `make openapi-check` generates through, so the check can read a
-spec without overwriting the one it is checking.
+"""The optional path argument is what `make openapi-check` generates through,
+so the check can read a spec without overwriting the one it is checking.
 """
 
 import json

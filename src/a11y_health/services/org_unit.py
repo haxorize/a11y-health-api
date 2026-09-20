@@ -85,6 +85,9 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
     return org_unit
 
 
+# Ancestors come back nearest parent first and the Root Org Unit (DOMAIN.md)
+# last, with the unit itself excluded. The order is the route's contract, not
+# an accident of the query.
 async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit]:
     await get_org_unit(session, org_unit_id)
     depth = literal(0).label("depth")

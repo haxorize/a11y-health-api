@@ -1,4 +1,4 @@
-"""Cursor Pagination (keyset) shared by every list endpoint.
+"""Cursor Pagination (keyset) shared by every unbounded list endpoint.
 
 The module owns both halves of pagination. `PageParams` is the one
 request-facing declaration — endpoints consume it instead of hand-rolling
@@ -101,7 +101,8 @@ class TotalledCursorPage[T](CursorPage[T]):
 
 # The pagination response envelope: one page of a listing as served, not the
 # domain's Page Result or Page Health. `CursorPage` is its service-layer twin,
-# and `from_cursor_page` converts one into the other.
+# which `from_cursor_page` converts into this; a page carrying a total goes
+# through `TotalledPage` instead.
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None

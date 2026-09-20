@@ -133,7 +133,7 @@ async def test_list_apps_filter_by_org_unit_id_with_descendants(db_session: Asyn
     assert slugs == {"root-app", "child-app", "grandchild-app"}
 
 
-# Reds if direct_only stops deciding the descendant expansion.
+# Reds if direct_only stops gating the descendant expansion.
 async def test_list_apps_direct_only_serves_apps_placed_on_the_unit_itself(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)

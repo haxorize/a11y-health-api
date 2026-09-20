@@ -13,8 +13,8 @@ from a11y_health.core.error_contract import register_error_handlers
 
 
 # The startup probe: an unreachable database fails the boot rather than the
-# first request. It is single-shot on purpose, with no retry and no timeout;
-# retrying is left to whatever restarts the process.
+# first request. It is single-shot on purpose: retrying is left to whatever
+# restarts the process.
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with engine.connect() as conn:
@@ -26,9 +26,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def _operation_id(route: APIRoute) -> str:
     # The operation id is the route function name, and that name becomes the
     # UI's generated method name, so renaming a route function renames the
-    # method. Keep the names unique repo-wide: two endpoint functions sharing
-    # one across routers write a duplicate id into openapi.json and break UI
-    # codegen (docs/architecture.md § 5).
+    # method: keep the names stable. Keep them unique repo-wide too: two
+    # endpoint functions sharing one across routers write a duplicate id into
+    # openapi.json and break UI codegen (docs/architecture.md, "The OpenAPI
+    # contract pipeline").
     return route.name
 
 

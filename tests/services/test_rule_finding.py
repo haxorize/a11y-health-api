@@ -247,7 +247,7 @@ async def test_filter_options_omit_valid_but_off_vocabulary_classification(
     db_session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
     # A stored entry that validates as a Classification without naming any
-    # token (e.g. a raw-backfilled WCAG 3.0) gets no option, with a warning,
+    # token (e.g. a raw-backfilled WCAG 3.0) earns no option, with a warning,
     # instead of failing the enumeration; the why is `classification_options`'
     # docstring (models/classification.py).
     scan_run = await make_scan_run_with_parents(db_session)

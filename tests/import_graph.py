@@ -12,7 +12,7 @@ that quietly missed an import spelling would weaken every rule sharing it at
 once.
 
 The tree walk is `package_sources`, and `source_paths_importing` is that walk
-with the rule left to the caller, for a guard that only needs the offending
+with the rule left to the caller, for the guards that only need the offending
 paths.
 
 Named publicly because a consumer sits in a sibling test package

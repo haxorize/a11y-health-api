@@ -34,8 +34,9 @@ _CATEGORY_LOOKUP = {c.value: c for c in Category}
 
 def extract_category(tags: list[str]) -> Category:
     """Raises `ValueError` when no `cat.*` category tag is present, or when its
-    value is not a known Category. `AxeRule` turns either into a rejected Axe
-    Payload, the 400 `invalid_axe_payload`."""
+    value is not a known Category. `AxeRule`'s validator lets either through,
+    and `parse_axe_payload` turns it into a rejected Axe Payload, the 400
+    `invalid_axe_payload`."""
     for tag in tags:
         m = _CAT_TAG.match(tag)
         if m:

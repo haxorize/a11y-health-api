@@ -1,11 +1,11 @@
 """The CLI over a real socket: `AsyncHTTPTransport`, the adapter production
-runs, against the app served by uvicorn on an ephemeral port. The other CLI
-suites run in-process: over `ASGITransport` against the real app, or over
-`MockTransport` for a response no server produces on cue, which is all of
-`test_client.py`. This one covers the failures only a served socket produces.
-The refused connection, a socket with no server behind it, is
-`test_terminal.py`'s. The server and the fake proxy in front of it are
-`live_server` in conftest."""
+runs, against the app served by uvicorn on an ephemeral port. Every other CLI
+test but one runs in-process: over `ASGITransport` against the real app, or over
+`MockTransport` for a response no server produces on cue, as every test in
+`test_client.py` does. This suite covers the failures only a served socket
+produces. The one exception is the refused connection, a socket with no server
+behind it, which is `test_terminal.py`'s. The server and the fake proxy in front
+of it are `live_server` in conftest."""
 
 from pathlib import Path
 

@@ -4,7 +4,9 @@ package that owns it.
 [ADR 0038](../docs/adr/0038-package-private-underscore-enforced-repo-wide.md) is
 the record this rests on: the package as the unit, a private package gating
 everything under it, both import spellings, and the tests, migrations, and
-scripts that sit outside the walk.
+scripts that sit outside the walk. Inside one flat package the rule permits
+every sibling, so which modules should reach a private sibling is
+`test_sibling_imports.py`'s question.
 
 `_crossings` is the detector and carries its own tests, so the repo-wide
 assertion below can't pass by quietly finding nothing.

@@ -7,10 +7,11 @@ line instead of reflowing the block. The formatter never reflows prose, so the
 result survives format, lint, type check, and the whole suite.
 
 Six rules answer that, each with a floor or a guard keeping its own walk honest.
-A document soft-wraps instead, one line per paragraph (ADR 0040), so a later
-diff shows the sentence that changed rather than the reflow around it. A word
-scan holds code and documents alike to the American spelling (ADR 0041) — that
-rule is the one that reads both formats, while the one-line rule reads only
+The first is `stranded_line`'s, over comments and docstrings: the short line
+itself. A document soft-wraps instead, one line per paragraph (ADR 0040), so a
+later diff shows the sentence that changed rather than the reflow around it. A
+word scan holds code and documents alike to the American spelling (ADR 0041) —
+that rule is the one that reads both formats, while the one-line rule reads only
 markdown. Three each read a fixed target: a `DOMAIN.md` definition is capped in
 words (ADR 0018), because the mechanism behind a term belongs to the record that
 owns it rather than to the glossary; `docs/architecture.md` is held to a word
@@ -116,7 +117,9 @@ def _prose_on_line(line: str) -> str:
 
 def stranded_line(paragraph: list[str]) -> int | None:
     """Index of the first line that stopped short while the next line still had
-    a word that would have fit, or None when the paragraph is well wrapped.
+    a word that would have fit, or None when the paragraph is well wrapped. A
+    paragraph's last line is exempt: that is where prose ends, not where it was
+    abandoned.
 
     `paragraph` is the raw source lines, prefix and indent included — the width
     being judged is the one a reader sees, which is why a docstring's opening

@@ -239,9 +239,9 @@ async def list_scores(
 # instead.
 #
 # The wire echoes these fields as `schemas.score_snapshot.ScoreAggregatesRead`,
-# and a test pins the two together; the field order here follows the model
-# column order and the wire, so a positional construction carrying either
-# order is right.
+# and a test pins the wire's fields as a subset of these; the field order here
+# follows the model column order and the wire, so a positional construction
+# carrying either order is right.
 class ScoreAggregates(NamedTuple):
     score: float
     total_violations: int
@@ -280,11 +280,10 @@ def owned(
     scan_run_id: int | None = None,
     snapshot_at: datetime,
 ) -> ScoreSnapshot:
-    """Builds an unsaved Score Snapshot owned by exactly one App, Org Unit, or
-    Brand. Exactly-one-owner is structural — the spec picks the column, and the
-    database check constraint stays as the backstop. Raises `ValueError` when a
-    Scan Run is linked to a non-App owner: only App snapshots come from
-    scans."""
+    """The Score Snapshot comes back unsaved. Exactly-one-owner is structural —
+    the spec picks the column, and the database check constraint stays as the
+    backstop. Raises `ValueError` when a Scan Run is linked to a non-App owner:
+    only App snapshots come from scans."""
     if scan_run_id is not None and owner_type is not ScoreSnapshotOwnerType.APP:
         raise ValueError("scan_run_id requires an APP owner")
     return ScoreSnapshot(

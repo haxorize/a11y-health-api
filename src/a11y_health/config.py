@@ -8,11 +8,11 @@ VERSION = "0.1.0"
 API_V1_PREFIX = "/api/v1"
 
 
+# Each attribute name is the environment-variable name, matched exactly
+# (`case_sensitive`). .env.example and README.md spell all four the same way,
+# and ci.yml the two database URLs. A rename here does not fail: the variable
+# goes unread and the field silently falls back to its default.
 class Settings(BaseSettings):
-    # Each attribute name is the environment-variable name, matched exactly
-    # (`case_sensitive`), and .env.example, README.md and ci.yml spell it the
-    # same way. A rename here does not fail: the variable goes unread and the
-    # field silently falls back to its default.
     DEBUG: bool = False
 
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]

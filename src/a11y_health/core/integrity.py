@@ -1,4 +1,5 @@
-"""Guarded flush: translate recognized constraint violations into domain errors.
+"""Integrity Guard (DOMAIN.md): turn a recognized constraint violation into
+its domain error, with the transaction still usable.
 
 See docs/architecture.md "How errors become HTTP status codes" for how domain
 errors reach the wire, and ADR 0028 for the decisions behind this module.
@@ -23,36 +24,32 @@ async def guard(
     mapped domain error with the surrounding transaction still usable. Any
     other violation re-raises unchanged.
 
-    The mutation must happen inside the `async with` block, not before it:
-    `begin_nested()` flushes pending state *before* emitting SAVEPOINT
-    (`SessionTransaction._take_snapshot`), so a write pending at entry would
-    fail outside the savepoint and poison the whole transaction. A violation
-    raised by that entry pre-flush is never classified — it re-raises raw, so
-    misuse fails loudly instead of surfacing a mapped error the savepoint
-    can't back.
+    Mutate inside the `async with` block, never before it: a write pending
+    at entry fails outside the savepoint, poisons the transaction, and
+    re-raises raw rather than mapped.
 
-    Mapping values are single-use: `raise ... from` mutates the instance it
-    raises (`__cause__`, `__traceback__`), so build the mapping per call —
-    never hoist one to module level, where a raised instance would carry state
-    across requests.
+    Build the mapping per call, never at module level: a raised value carries
+    its traceback into whatever raises it next.
+
+    ADR 0028 records the mechanism behind both. The transaction guarantee was
+    once silently dead; the diagnosis is
+    docs/solutions/begin-nested-flushes-pending-state-before-savepoint.md.
     """
-    engaged = False
-    try:
-        async with session.begin_nested():
-            engaged = True
+    # Entered outside the try, so a violation raised by the entry pre-flush
+    # is never classified.
+    async with session.begin_nested():
+        try:
             yield
             await session.flush()
-    except IntegrityError as exc:
-        if not engaged:
+        except IntegrityError as exc:
+            # asyncpg parses the violated constraint's name out of the
+            # server error. Matching that identity exactly — never a rendered
+            # message, which appends bound row values — means data containing
+            # a constraint's name cannot misclassify an unrelated violation,
+            # and one constraint name embedded in another cannot collide.
+            # Absent attribute (non-constraint failure) → re-raise.
+            cause = exc.orig.__cause__ if exc.orig is not None else None
+            violated = getattr(cause, "constraint_name", None)
+            if isinstance(violated, str) and violated in constraint_errors:
+                raise constraint_errors[violated] from exc
             raise
-        # asyncpg parses the violated constraint's name out of the server
-        # error. Matching that identity exactly — never a rendered message,
-        # which appends bound row values — means data containing a constraint's
-        # name cannot misclassify an unrelated violation, and one constraint
-        # name embedded in another cannot collide. Absent attribute
-        # (non-constraint failure) → re-raise.
-        cause = exc.orig.__cause__ if exc.orig is not None else None
-        violated = getattr(cause, "constraint_name", None)
-        if isinstance(violated, str) and violated in constraint_errors:
-            raise constraint_errors[violated] from exc
-        raise

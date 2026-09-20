@@ -280,7 +280,8 @@ def owned(
     scan_run_id: int | None = None,
     snapshot_at: datetime,
 ) -> ScoreSnapshot:
-    """Exactly-one-owner is structural — the spec picks the column, and the
+    """Builds an unsaved Score Snapshot owned by exactly one App, Org Unit, or
+    Brand. Exactly-one-owner is structural — the spec picks the column, and the
     database check constraint stays as the backstop. Raises `ValueError` when a
     Scan Run is linked to a non-App owner: only App snapshots come from
     scans."""

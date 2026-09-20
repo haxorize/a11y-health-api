@@ -1,4 +1,4 @@
-"""Keyset (cursor) pagination shared by every list endpoint.
+"""Cursor Pagination (keyset) shared by every list endpoint.
 
 The module owns both halves of pagination. `PageParams` is the one
 request-facing declaration — endpoints consume it instead of hand-rolling
@@ -46,10 +46,10 @@ class UnsupportedKeysetTypeError(Exception):
         super().__init__(f"Unsupported keyset column type: {python_type.__name__}")
 
 
-# Request-facing vocabulary for listings that let the client choose paging
-# direction. Most listings bake their direction per-operation instead (ADR
-# 0017); an endpoint exposes this only when both directions have real
-# consumers.
+# Sort Order (DOMAIN.md): the request-facing vocabulary for listings that let
+# the client choose paging direction. Most listings bake their direction
+# per-operation instead (ADR 0017); an endpoint exposes this only when both
+# directions have real consumers.
 class SortOrder(enum.StrEnum):
     ASC = "asc"
     DESC = "desc"
@@ -99,6 +99,9 @@ class TotalledCursorPage[T](CursorPage[T]):
     total: int
 
 
+# The pagination response envelope: one page of a listing as served, not the
+# domain's Page Result or Page Health. `CursorPage` is its service-layer twin,
+# and `from_cursor_page` converts one into the other.
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None

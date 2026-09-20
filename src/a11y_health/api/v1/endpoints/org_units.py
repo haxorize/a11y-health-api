@@ -53,6 +53,8 @@ async def list_org_unit_scores(
     return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 
 
+# Ancestors arrive nearest parent first and root last, with the unit itself
+# excluded.
 @router.get("/{org_unit_id}/ancestors", responses=error_responses(ErrorCode.NOT_FOUND))
 async def get_ancestors(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
     ancestors = await org_unit_service.get_ancestors(db, org_unit_id)

@@ -18,6 +18,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from a11y_health.config import settings
 
 
+# The Postgres enum labels are the members' values, not their names. The
+# migrations created each enum type with these labels, so every `Enum` column
+# passes this as `values_callable`; without it SQLAlchemy persists the member
+# names, which the existing types reject at insert.
 def enum_values(e: type[enum.Enum]) -> list[str]:
     return [m.value for m in e]
 

@@ -53,6 +53,8 @@ class ScoreSnapshot(TimestampMixin, Base):
     brand_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("brand.id", ondelete="RESTRICT", name=FK_SCORE_SNAPSHOT_BRAND_ID), nullable=True
     )
+    # A 0–1 fraction, not a percentage: a perfect App scores 1.0, and the UI
+    # presents it as a 0–100 integer (DOMAIN.md, Score).
     score: Mapped[float] = mapped_column(Float, nullable=False)
     total_violations: Mapped[int] = mapped_column(Integer, nullable=False)
     pages_with_violations: Mapped[int] = mapped_column(Integer, nullable=False)

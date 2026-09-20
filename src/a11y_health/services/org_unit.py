@@ -97,6 +97,9 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
     return list(result.scalars().all())
 
 
+# The Dependents Guard (DOMAIN.md): an Org Unit with child Org Units, Apps, or
+# Score Snapshots refuses deletion. The RESTRICT foreign keys decide it, and
+# `integrity.guard` turns the violation into `HasDependentsError`.
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
     # One instance for all three dependent FKs: guard raises at most once per

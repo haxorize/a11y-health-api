@@ -12,6 +12,9 @@ from a11y_health.core.database import engine
 from a11y_health.core.error_contract import register_error_handlers
 
 
+# The startup probe: an unreachable database fails the boot rather than the
+# first request. It is single-shot on purpose, with no retry and no timeout;
+# retrying is left to whatever restarts the process.
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with engine.connect() as conn:

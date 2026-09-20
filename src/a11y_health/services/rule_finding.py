@@ -94,6 +94,8 @@ def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
     return (1, (), criterion)
 
 
+# Filter Options (DOMAIN.md): the distinct values present across one Scan Run's
+# Rule Findings, per filter dimension.
 async def list_filter_options(session: AsyncSession, scan_run_id: int) -> FindingFilterOptionsRead:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 

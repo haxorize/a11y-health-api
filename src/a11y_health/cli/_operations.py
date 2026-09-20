@@ -128,6 +128,10 @@ async def ingest(
     directory: Path,
     on_progress: ProgressCallback = _noop,
 ) -> IngestResult:
+    """Uploads one scan directory to an App that must already exist, and raises
+    `AppNotFoundError` when the server has none for the scan's slug.
+    `import_app` is the onboarding path: it creates the App when it is
+    missing."""
     scan = load_scan(directory)
     on_progress(f"Found {len(scan.files)} JSON files in {directory}")
 

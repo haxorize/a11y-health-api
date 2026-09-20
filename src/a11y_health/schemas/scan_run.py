@@ -14,6 +14,9 @@ class ScanRunStatusUpdate(BaseModel):
     status: ScanRunStatus
 
 
+# A Scan Run's summary is a Score Snapshot narrowed to its aggregates (ADR
+# 0030), so a new field belongs on `ScoreAggregatesRead`. The empty subclass is
+# deliberate: it keeps the summary a named schema of its own in openapi.json.
 class ScanRunSummaryRead(ScoreAggregatesRead):
     pass
 

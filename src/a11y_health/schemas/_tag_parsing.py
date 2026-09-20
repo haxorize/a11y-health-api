@@ -6,7 +6,8 @@ package: `axe_payload.py` is the only importer. Classifications are not here,
 because naming one takes no tag syntax at all, only the closed vocabulary in
 `models/classification.py`, which screens the same list itself. Unknown
 WCAG-shaped tags are dropped rather than rejected, since the axe tag set is
-open-ended.
+open-ended. The category tag is the deliberate exception: `extract_category`
+rejects a rule without a known one.
 
 See `DOMAIN.md` for Category and WCAG Criteria.
 """
@@ -32,6 +33,9 @@ _CATEGORY_LOOKUP = {c.value: c for c in Category}
 
 
 def extract_category(tags: list[str]) -> Category:
+    """Raises `ValueError` when no `cat.*` category tag is present, or when its
+    value is not a known Category. `AxeRule` turns either into a rejected Axe
+    Payload, the 400 `invalid_axe_payload`."""
     for tag in tags:
         m = _CAT_TAG.match(tag)
         if m:

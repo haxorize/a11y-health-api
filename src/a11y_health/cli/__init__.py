@@ -16,9 +16,9 @@ Pick by task:
 Other admin mutations (app move/delete, org-unit reparent/delete) stay on
 Swagger `/docs`.
 
-The work splits into five concern modules over the shared error base in
-`_errors`, and ADR 0043 records the split. This module is the package's public
-face: the console entry point and that base type.
+The work splits into five concern modules, `_errors` being the shared error
+base under the other four, and ADR 0043 records the split. This module is the
+package's public face: the console entry point and that base type.
 """
 
 from a11y_health.cli._errors import CliError

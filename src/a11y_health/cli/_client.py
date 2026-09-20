@@ -3,8 +3,9 @@
 This module owns every request, the failures only a server answer can produce,
 and the API prefix. It never reads a directory and never prints; give it a
 client and it gives you back what the server said. Each function here is one
-call, and sequencing them belongs to `_operations`; ADR 0043 records the
-package's split.
+call, and sequencing them belongs to `_operations`. This module and `_scan`
+never import each other, and no import-graph test holds that line: ADR 0043
+records why it is load-bearing, with the rest of the package's split.
 
 There is deliberately no port abstraction over the transport. `httpx`'s own
 transport *is* the seam, and it already has two real adapters, not one:

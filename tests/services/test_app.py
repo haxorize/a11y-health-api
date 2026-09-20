@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,9 +170,10 @@ async def test_list_apps_direct_only_without_org_unit_id_is_ignored(db_session: 
     assert {a.slug for a in page.items} == {"root-app", "leaf-app"}
 
 
-# Reds if the subtree expansion round-trips again: the CTE is embedded in
-# the page statement, so a filtered listing is one statement, not two.
-async def test_list_apps_org_unit_filter_is_one_statement(db_session: AsyncSession) -> None:
+# Reds if the subtree expansion round-trips again, or is lost: the recursive
+# CTE rides inside every statement that reads apps, and no statement reads
+# org units on its own. A count query beside the page statement stays green.
+async def test_list_apps_org_unit_filter_embeds_the_subtree_expansion(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Humana")
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     await make_app(db_session, slug="child-app", org_unit_id=child.id)
@@ -189,7 +192,10 @@ async def test_list_apps_org_unit_filter_is_one_statement(db_session: AsyncSessi
         event.remove(connection, "before_cursor_execute", record)
 
     assert [a.slug for a in page.items] == ["child-app"]
-    assert len(statements) == 1
+    reading_apps = [s for s in statements if re.search(r"\bFROM app\b", s)]
+    assert reading_apps
+    assert all("WITH RECURSIVE" in s for s in reading_apps)
+    assert [s for s in statements if s not in reading_apps and "org_unit" in s] == []
 
 
 async def test_list_apps_filter_by_leaf_org_unit(db_session: AsyncSession) -> None:

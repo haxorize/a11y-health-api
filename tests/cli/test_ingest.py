@@ -42,7 +42,7 @@ async def test_ingest_creates_completed_scan_run_for_existing_app(
 
     resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}/pages")
     assert resp.status_code == 200
-    assert len(resp.json()) == 2
+    assert len(resp.json()["items"]) == 2
 
 
 async def test_ingest_missing_or_empty_name_hard_fails(no_server: AsyncClient, tmp_path: Path) -> None:
@@ -102,7 +102,7 @@ async def test_ingest_same_slug_variants_resolve_one_app(
     assert result.app_slug == "foo-com"
 
     resp = await db_client.get(f"/api/v1/scan-runs/{result.scan_run_id}/pages")
-    assert len(resp.json()) == 2
+    assert len(resp.json()["items"]) == 2
 
 
 async def test_ingest_missing_app_fails_with_import_pointer(db_client: AsyncClient, tmp_path: Path) -> None:

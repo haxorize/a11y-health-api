@@ -144,4 +144,6 @@ async def test_update_scan_run_invalid_transition(db_client: AsyncClient, db_ses
         f"/api/v1/scan-runs/{scan_run.id}",
         json={"status": ScanRunStatus.PENDING.value},
     )
-    assert response.status_code == 409
+    assert_error(
+        response, 409, "invalid_status_transition", message_contains="cannot transition from completed to pending"
+    )

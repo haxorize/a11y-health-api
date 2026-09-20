@@ -130,6 +130,7 @@ async def test_total_scoped_to_the_run(db_session: AsyncSession) -> None:
 
     result = await rule_finding_service.list_findings(db_session, scan_run.id)
 
+    assert [f.page_result_id for f in result.items] == [page_result.id]
     assert result.total == 1
 
 

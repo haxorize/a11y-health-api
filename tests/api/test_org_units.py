@@ -154,7 +154,7 @@ async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session
         f"/api/v1/org-units/{root.id}",
         json={"parent_id": child.id},
     )
-    assert response.status_code == 409
+    assert_error(response, 409, "circular_reference", message_contains="circular reference")
 
 
 async def test_reparent_to_parentless_returns_409(db_client: AsyncClient, db_session: AsyncSession) -> None:

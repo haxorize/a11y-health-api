@@ -2,7 +2,7 @@ from httpx import AsyncClient
 from pytest import approx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.factories import make_scan_run_with_parents, make_score_snapshot
+from tests.factories import assert_error, make_scan_run_with_parents, make_score_snapshot
 
 
 async def test_get_scan_run_summary(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -38,9 +38,11 @@ async def test_get_scan_run_summary_pending_returns_404(
 ) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/summary")
-    assert response.status_code == 404
+    assert_error(response, 404, "not_found", message_contains=f"scan run summary {scan_run.id}")
 
 
 async def test_get_scan_run_summary_not_found(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/scan-runs/999999/summary")
-    assert response.status_code == 404
+    # "scan run 999999", never "scan run summary 999999": the Scan Run's own
+    # guard answers, not the summary lookup falling through.
+    assert_error(response, 404, "not_found", message_contains="scan run 999999")

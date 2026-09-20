@@ -1,12 +1,10 @@
 """The API surface this tool speaks to — one function per request it makes.
 
-Charter: every request, the failures only a server answer can produce, and the
-API prefix. It never reads a directory and never prints; give it a client and it
-gives you back what the server said.
-
-Each function here is one call. Sequencing them — and anything that needs a
-directory read first — belongs to `_operations`, which is what keeps this module
-and `_scan` peers rather than a chain.
+This module owns every request, the failures only a server answer can produce,
+and the API prefix. It never reads a directory and never prints; give it a
+client and it gives you back what the server said. Each function here is one
+call, and sequencing them belongs to `_operations`; ADR 0043 records the
+package's split.
 
 There is deliberately no port abstraction over the transport. `httpx`'s own
 transport *is* the seam, and it already has two real adapters, not one:

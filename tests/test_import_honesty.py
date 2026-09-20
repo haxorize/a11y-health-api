@@ -1,18 +1,10 @@
 """A privately named source module or package is reached only from within the
 package that owns it.
 
-The underscore is a scope claim, and this is what makes it true: `_foo` may be
-reached from its own package — its siblings, and that package's `__init__`,
-which *is* the package — and nowhere else. A private *package* gates everything
-under it, so a public module cannot serve as a way in. Relative imports resolve
-to the same absolute names before the rule is applied, so neither spelling is a
-loophole.
-
-The walk covers the installed package, so tests, migrations, and scripts sit
-outside the rule — which is what lets a private module's own suite import it
-directly. Inside one flat package the rule permits every sibling, so which
-modules *should* reach a private sibling is `test_sibling_imports.py`'s
-question, and only for the modules it names.
+[ADR 0038](../docs/adr/0038-package-private-underscore-enforced-repo-wide.md) is
+the record this rests on: the package as the unit, a private package gating
+everything under it, both import spellings, and the tests, migrations, and
+scripts that sit outside the walk.
 
 `_crossings` is the detector and carries its own tests, so the repo-wide
 assertion below can't pass by quietly finding nothing.

@@ -1,7 +1,7 @@
 """Scan loading and App-name resolution — the CLI's read side.
 
-Charter: everything between a directory on the operator's disk and the facts
-the client needs before it can talk to the API — directory walking, JSON
+This module owns everything between a directory on the operator's disk and the
+facts the client needs before it can talk to the API — directory walking, JSON
 loading, the axe boundary crossing for every file, and resolving the App name
 that identifies the target App. Nothing here knows the API exists.
 

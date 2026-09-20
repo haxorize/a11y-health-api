@@ -397,15 +397,11 @@ def write_scan_file(
     url: str = "https://example.com/a",
     end_time: Any = "2026-03-30T11:55:52-0400",
 ) -> None:
-    """One axe JSON file on disk, for the CLI suites that load a scan
-    directory."""
     payload = make_axe_payload(name=name, url=url, end_time=end_time)
     (directory / filename).write_text(json.dumps(payload))
 
 
 def write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:
-    """One Import date subdirectory holding one scan file, for the CLI suites
-    that load an App directory."""
     date_dir = app_dir / date
     date_dir.mkdir()
     # `is not None`, not `or`: an explicit "" is a real case — the axe

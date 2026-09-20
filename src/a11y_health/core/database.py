@@ -38,8 +38,6 @@ class TimestampMixin:
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    # Auto-commits on success, rolls back on exception. Endpoints and services
-    # don't need to call `await session.commit()` themselves.
     async with async_session() as session:
         try:
             yield session

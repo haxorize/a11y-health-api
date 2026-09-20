@@ -155,7 +155,6 @@ async def test_delete_refusal_leaves_transaction_usable(db_session: AsyncSession
     app = await make_app(db_session, slug="blocker-app", org_unit_id=org_unit.id)
     with pytest.raises(HasDependentsError):
         await org_unit_service.delete_org_unit(db_session, org_unit.id)
-    # Clearing the dependent and retrying in the same transaction succeeds.
     await db_session.delete(app)
     await db_session.flush()
     await org_unit_service.delete_org_unit(db_session, org_unit.id)

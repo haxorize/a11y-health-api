@@ -110,7 +110,6 @@ def assert_descends(modules: Iterable[Module], root: Path) -> None:
 
 
 def package_root(package: ModuleType) -> Path:
-    """The directory `package`'s modules live in."""
     assert package.__file__ is not None, f"{package.__name__} has no __file__ — a namespace package cannot be walked"
     return Path(package.__file__).parent
 

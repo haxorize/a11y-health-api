@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # Loop pytest suites until a run goes red; save that run's full output.
 #
-# Built while chasing a rare deadline miss in the rollup race suites
-# (tests/services/test_rollup_serialization.py, tests/api/test_rollup_deadlock.py):
-# one run in ~475 blew the ~5s wait_for deadline (~6s wall vs ~0.7s baseline)
-# and never reproduced under capture — soaks under 8-way CPU stress included.
-# Attributed to a transient host stall; see the closing comment on #130.
-# If it goes red again, this saves the evidence the first sighting lost.
+# Built for a rare deadline miss in the rollup race suites that never reproduced
+# under capture; the sighting is in 8837266's message and the closing comment on
+# #130. If it goes red again, this saves the evidence the first sighting lost.
 #
 # Usage: scripts/race_loop.sh <out_file> <max_runs> <pytest args...>
 #   scripts/race_loop.sh red.log 300 tests/services/test_rollup_serialization.py tests/api/test_rollup_deadlock.py

@@ -1,9 +1,9 @@
 """The terminal surface — argument parsing, table printing, exit codes.
 
-Charter: everything between the operator's shell and a client operation, and
-nothing else. It parses argv, calls one operation, renders what comes back, and
-chooses an exit code. No decision about *what* a command means lives here; a new
-command adds a subparser and a dispatch branch, and its behavior belongs in
+This module owns everything between the operator's shell and a client operation,
+and nothing else. It parses argv, calls one operation, renders what comes back,
+and chooses an exit code. No decision about *what* a command means lives here; a
+new command adds a subparser and a dispatch branch, and its behavior belongs in
 `_operations`, or in `_client` when it is a single request.
 
 The operations are imported by name so a dispatch test can substitute one with

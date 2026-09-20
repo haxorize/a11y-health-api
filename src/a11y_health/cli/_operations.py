@@ -1,15 +1,10 @@
 """The two onboarding operations — `ingest` and `import`.
 
-Charter: everything that needs both sides at once. `_scan` reads directories,
-validates every file at the axe boundary, and knows nothing about the API;
-`_client` makes requests and knows nothing about disk. The read-then-upload
-order lives here, with the failures only the combination can produce — an App
-the scan names but the server doesn't have, an override that disagrees with the
-document it overrides.
-
-Holding this apart is what makes `_scan` and `_client` peers instead of a chain:
-neither imports the other, and each is drivable on its own. It also means a
-failure that happens before the first request can be tested without a server.
+This module owns everything that needs both `_scan` and `_client` at once. The
+read-then-upload order lives here, with the failures only the combination can
+produce — an App the scan names but the server doesn't have, an override that
+disagrees with the document it overrides. ADR 0043 records why those two stay
+peers under this module and what that buys the suite.
 """
 
 from collections.abc import Callable

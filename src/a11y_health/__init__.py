@@ -1,1 +1,0 @@
-"""Accessibility Health API."""

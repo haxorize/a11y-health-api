@@ -9,11 +9,6 @@ deploy can be running it. A module inside the closure only because a test
 imports it is a seam in the wrong place — `src/` code that exists for the
 suite — so that set is pinned by name, and growing it is a reviewed edit here
 rather than a quiet drift (ADR 0039).
-
-Each closure is pinned on a non-empty shape before its set is compared: the
-production walk must hold the app and an `api.` module, and the suite's walk
-must reach the app too. A walk that skipped a tree would otherwise pass for
-the wrong reason, the defect `test_import_graph.py` keeps closed.
 """
 
 from collections import defaultdict

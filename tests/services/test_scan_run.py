@@ -68,7 +68,6 @@ async def test_list_scan_runs_newest_first(db_session: AsyncSession) -> None:
 
     page = await scan_run_service.list_scan_runs(db_session, app_a.id)
 
-    # Newest scanned_at first (history-table order), filtered to the app.
     assert [r.id for r in page.items] == [newer.id, older.id]
     assert all(r.app_id == app_a.id for r in page.items)
 

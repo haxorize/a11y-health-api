@@ -18,12 +18,6 @@ band and an em-dash cap (#148), the quantities its pare was measured in; and
 every skill body and reference is held under the 15,000-byte re-attach bound,
 since what a re-attach drops is the tail.
 
-The stranded rule is exact rather than a guess about raggedness: a line is
-stranded when it stopped short of the wrap width while the next line still held
-a word that would have fit. A paragraph's last line is exempt — that is where
-prose ends, not where it was abandoned. Comments and docstrings differ only in
-how prose is found, so what counts as stranded is asked in one place.
-
 The guards share one strip of what the rules do not govern. A fenced block, a
 code span, a URL, and a Python literal that is not a docstring all hold names
 another system chose, so they come out before any rule reads the line, and both

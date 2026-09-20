@@ -35,6 +35,8 @@ async def list_scan_runs(
 ) -> TotalledCursorPage[ScanRun]:
     await existence.get_by_pk(session, App, app_id)
     stmt = select(ScanRun).where(ScanRun.app_id == app_id)
+    # Newest first at the source: the UI renders the Scan Run history table in
+    # server order (ADR 0017).
     return await paginate(
         session,
         stmt,

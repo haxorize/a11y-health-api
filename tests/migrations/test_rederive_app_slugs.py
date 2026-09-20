@@ -34,9 +34,9 @@ async def test_migration_reslugs_transiently_colliding_rows(db_session: AsyncSes
 
     rows = (await db_session.execute(text("SELECT id, name, slug FROM app"))).all()
     by_id = {r.id: (r.name, r.slug) for r in rows}
-    assert by_id[swap_a.id] == ("foo", "foo")  # was slug "bar"
-    assert by_id[swap_b.id] == ("bar", "bar")  # was slug "foo"
-    assert by_id[stable.id] == ("baz", "baz")  # untouched
+    assert by_id[swap_a.id] == ("foo", "foo")
+    assert by_id[swap_b.id] == ("bar", "bar")
+    assert by_id[stable.id] == ("baz", "baz")
 
 
 async def test_migration_no_op_when_all_slugs_already_derived(db_session: AsyncSession) -> None:

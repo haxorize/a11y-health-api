@@ -16,9 +16,13 @@ from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
 from a11y_health.services.page_result import create_page_result
 from tests.factories import (
+    ingest_and_score,
+    latest_brand_snapshot,
+    latest_ou_snapshot,
     make_app,
     make_app_with_org_unit,
     make_axe_payload,
+    make_brand,
     make_org_unit,
     make_scan_run,
     make_scan_run_with_parents,
@@ -152,6 +156,28 @@ async def test_delete_scan_run(db_session: AsyncSession) -> None:
 
     with pytest.raises(NotFoundError):
         await scan_run_service.get_scan_run(db_session, scan_run.id)
+
+
+# The deleted run was its App's newest, so both of that App's rollup owners
+# fall back to the older run. Red when the delete rolls up another App's owners.
+async def test_delete_scan_run_rolls_up_its_own_apps_owners(db_session: AsyncSession) -> None:
+    brand = await make_brand(db_session)
+    root = await make_org_unit(db_session, name="Root")
+    org_unit = await make_org_unit(db_session, name="Owning Unit", parent_id=root.id)
+    app = await make_app(db_session, slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
+    other_unit = await make_org_unit(db_session, name="Other Unit", parent_id=root.id)
+    other_app = await make_app(db_session, slug="app-b", org_unit_id=other_unit.id)
+    older = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+    await ingest_and_score(db_session, older.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+    newer = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+    await ingest_and_score(db_session, newer.id, [make_axe_payload()])
+    elsewhere = await make_scan_run(db_session, app_id=other_app.id)
+    await ingest_and_score(db_session, elsewhere.id, [make_axe_payload()])
+
+    await scan_run_service.delete_scan_run(db_session, newer.id)
+
+    assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.4)
+    assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(0.4)
 
 
 async def test_delete_scan_run_not_found(db_session: AsyncSession) -> None:

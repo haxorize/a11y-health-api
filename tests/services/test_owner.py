@@ -691,18 +691,20 @@ async def test_list_scores_walks_a_tied_observation_time_serving_each_snapshot_o
     first = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
     second = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
 
-    served: list[int] = []
+    pages: list[list[int]] = []
     cursor = None
     for _ in range(3):
         page = await owner_service.list_scores(
             db_session, ScoreSnapshotOwnerType.APP, app.id, cursor=cursor, limit=1, descending=descending
         )
-        served += [snapshot.id for snapshot in page.items]
+        pages.append([snapshot.id for snapshot in page.items])
         cursor = page.next_cursor
         if cursor is None:
             break
 
-    assert served == ([second.id, first.id] if descending else [first.id, second.id])
+    # One snapshot per page, so the walk crossed the tie between pages.
+    served = [page for page in pages if page]
+    assert served == ([[second.id], [first.id]] if descending else [[first.id], [second.id]])
 
 
 def test_score_aggregates_are_the_wire_aggregates() -> None:

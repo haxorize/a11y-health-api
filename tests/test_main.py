@@ -56,7 +56,7 @@ async def test_startup_probes_the_bound_engine_and_shutdown_disposes_it(engine: 
     assembled = assemble_application(allowed_origins=[])
     statements: list[str] = []
 
-    def record(conn, cursor, statement, parameters, context, executemany) -> None:  # noqa: ANN001
+    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
         statements.append(statement)
 
     event.listen(probed.sync_engine, "before_cursor_execute", record)

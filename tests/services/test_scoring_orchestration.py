@@ -4,7 +4,9 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.score_snapshot import ScoreSnapshot
+from a11y_health.services import owner
 from a11y_health.services.scoring_orchestration import (
     on_app_latest_snapshot_changed,
     on_app_reassigned,
@@ -101,6 +103,22 @@ class TestOnScanRunCompleted:
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
         assert brand_snap.score == approx(0.7)
         assert brand_snap.total_pages == 2
+
+
+# Org Unit then Brand is the lock acquisition order ADR 0029 relies on, and
+# this loop is where it is spent. Red when the handler reverses the owners.
+async def test_latest_snapshot_changed_rolls_up_the_org_unit_before_the_brand(db_session: AsyncSession, mocker) -> None:
+    brand = await make_brand(db_session)
+    org_unit = await make_org_unit(db_session, name="Owning Unit")
+    app = await make_app(db_session, org_unit_id=org_unit.id, brand_id=brand.id)
+    rollup = mocker.patch.object(owner, "rollup", new_callable=mocker.AsyncMock)
+
+    await on_app_latest_snapshot_changed(db_session, app)
+
+    assert rollup.await_args_list == [
+        mocker.call(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id),
+        mocker.call(db_session, ScoreSnapshotOwnerType.BRAND, brand.id),
+    ]
 
 
 class TestLatestSnapshotChangedAfterScanRunDelete:

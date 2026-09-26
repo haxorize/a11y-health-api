@@ -25,15 +25,19 @@ async def test_get_db_commits_a_successful_request_on_the_bound_source(
         assert await other.get(Brand, brand.id) is not None
 
 
+# The read-back alone stays green without the rollback, since closing the
+# session discards the transaction too; the spy pins the explicit call.
 async def test_get_db_rolls_back_a_failed_request_on_the_bound_source(
-    engine: AsyncEngine, committed_session_factory: SessionFactory
+    engine: AsyncEngine, committed_session_factory: SessionFactory, mocker
 ) -> None:
+    rollback = mocker.spy(AsyncSession, "rollback")
     with bind_session_source(SessionSource(engine)):
         requests = cast(AsyncGenerator[AsyncSession], get_db())
         brand = await make_brand(await anext(requests))
         with pytest.raises(RuntimeError, match="boom"):
             await requests.athrow(RuntimeError("boom"))
 
+    rollback.assert_awaited_once()
     async with committed_session_factory() as other:
         assert await other.get(Brand, brand.id) is None
 
@@ -44,5 +48,14 @@ def test_binding_a_session_source_restores_the_previous_one_on_exit(engine: Asyn
 
     with bind_session_source(bound):
         assert session_source() is bound
+
+    assert session_source() is before
+
+
+def test_binding_a_session_source_restores_the_previous_one_when_the_body_raises(engine: AsyncEngine) -> None:
+    before = session_source()
+
+    with pytest.raises(RuntimeError, match="boom"), bind_session_source(SessionSource(engine)):
+        raise RuntimeError("boom")
 
     assert session_source() is before

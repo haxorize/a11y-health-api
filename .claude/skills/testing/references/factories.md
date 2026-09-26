@@ -75,7 +75,7 @@ Two arrange helpers own the "ingest these Axe Payloads, complete the run" core e
 
 ## Query helpers
 
-For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`. The snapshot readers share one ordering, Latest Score Snapshot's (observation time, ties to the higher id), and each `latest_*` reader is the last element of its owner's list, so the two can never disagree; `tests/test_factories.py` holds them to it. Read an owner's snapshots through these rather than an inline `select(ScoreSnapshot)`:
+For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`. The snapshot readers share one ordering, Latest Score Snapshot's (observation time, ties to the higher id), and each `latest_*` reader is built as the last element of its owner's list, so the two cannot disagree by construction; `tests/test_factories.py` pins the ordering itself (the latest is the newest observation, and a tie goes to the higher id), not the agreement. Read an owner's snapshots through these rather than an inline `select(ScoreSnapshot)`:
 
 ```python
 async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:

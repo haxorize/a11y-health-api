@@ -1,4 +1,4 @@
-# CLI tests, migration-body tests, and the two session-scope gotchas
+# CLI tests, migration-body tests, `deadlock_timeout`, and session-scoped fixtures
 
 Open this before writing a CLI test, a migration-body test, or a session-scoped fixture that has to swap an attribute.
 

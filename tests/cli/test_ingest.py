@@ -181,10 +181,13 @@ async def test_ingest_schema_invalid_scan_file_fails_before_any_upload(no_server
     assert "b.json" in message
     assert "findings" in message
     # The guidance names what ran, leads with fixing the file, and names the
-    # one remedy for version skew — a reinstall, not a bypass flag.
-    assert "schema" in message
-    assert "Fix the file" in message
-    assert "reinstall" in message
+    # one remedy for version skew — a reinstall, not a bypass flag. Pinned
+    # whole, since each plural sentence contains its singular's opening words.
+    assert message.startswith("1 scan file failed axe schema validation: ")
+    assert message.endswith(
+        ". Fix the file; if this server accepts it as-is, the CLI and server are different versions: "
+        "reinstall a11y-health at the server's version."
+    )
 
 
 async def test_ingest_reports_every_invalid_scan_file_at_once(no_server: AsyncClient, tmp_path: Path) -> None:
@@ -201,7 +204,11 @@ async def test_ingest_reports_every_invalid_scan_file_at_once(no_server: AsyncCl
 
     assert [path.name for path, _ in exc_info.value.failures] == ["a.json", "c.json"]
     message = str(exc_info.value)
-    assert "2 scan files" in message
+    assert message.startswith("2 scan files failed axe schema validation: ")
+    assert message.endswith(
+        ". Fix the files; if this server accepts them as-is, the CLI and server are different versions: "
+        "reinstall a11y-health at the server's version."
+    )
     assert "a.json" in message and "endTime" in message
     assert "c.json" in message and "findings" in message
     assert "b.json" not in message

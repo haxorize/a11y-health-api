@@ -11,6 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
 
 import a11y_health
@@ -181,12 +182,23 @@ async def committed_session_factory(engine: AsyncEngine) -> AsyncIterator[Sessio
     try:
         yield factory
     finally:
-        # One broken session (e.g. a connection killed as a deadlock victim)
-        # must not skip the remaining closes or the truncate below.
-        for session in sessions:
-            with suppress(Exception):
-                await session.close()
+        await close_and_truncate(sessions, engine)
+
+
+async def close_and_truncate(sessions: list[AsyncSession], engine: AsyncEngine) -> None:
+    # One broken session (e.g. a connection killed as a deadlock victim)
+    # must not skip the remaining closes or the truncate below.
+    for session in sessions:
+        with suppress(Exception):
+            await session.close()
+    try:
         await truncate_every_table(engine)
+    except DBAPIError as error:
+        if "lock timeout" not in str(error):
+            raise
+        # Every committed row survives a truncate that never ran, and every
+        # later test then fails on a unique slug or the single root instead.
+        pytest.exit(f"committed_session_factory's teardown TRUNCATE hit its lock_timeout: {error.orig}", returncode=1)
 
 
 async def truncate_every_table(engine: AsyncEngine, *, lock_timeout: str = "5s") -> None:

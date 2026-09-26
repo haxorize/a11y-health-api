@@ -13,6 +13,7 @@ and `committed_session_factory`'s teardown truncates.
 import asyncio
 from collections.abc import Iterator
 from contextlib import AsyncExitStack
+from typing import NamedTuple
 
 import pytest
 from httpx import AsyncClient, Response
@@ -22,6 +23,7 @@ from sqlalchemy.pool import QueuePool
 
 from a11y_health.core.database import SessionSource, bind_session_source
 from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.models.org_unit import OrgUnit
 from a11y_health.services import owner as owner_service
 from a11y_health.services.owner import ChildrenRead
 from tests.factories import (
@@ -45,12 +47,17 @@ def _requests_on_the_test_engine(engine: AsyncEngine) -> Iterator[None]:
         yield
 
 
-@pytest.mark.usefixtures("_requests_on_the_test_engine")
-async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_full_stack(
-    client: AsyncClient,
-    committed_session_factory: SessionFactory,
-    mocker,
-) -> None:
+class _Race(NamedTuple):
+    response: Response
+    setup: AsyncSession
+    holder: AsyncSession
+    child: OrgUnit
+    grandchild: OrgUnit
+
+
+async def _race_a_reparent_into_a_deadlock(
+    client: AsyncClient, committed_session_factory: SessionFactory, mocker
+) -> _Race:
     setup = committed_session_factory()
     root = await make_org_unit(setup, name="Humana")
     child = await make_org_unit(setup, name="CenterWell", parent_id=root.id)
@@ -120,23 +127,42 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    assert_error(response, 409, "concurrent_rollup", message_contains="retry")
+    return _Race(response, setup, holder, child, grandchild)
+
+
+@pytest.mark.usefixtures("_requests_on_the_test_engine")
+async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_full_stack(
+    client: AsyncClient, committed_session_factory: SessionFactory, mocker
+) -> None:
+    race = await _race_a_reparent_into_a_deadlock(client, committed_session_factory, mocker)
+
+    assert_error(race.response, 409, "concurrent_rollup", message_contains="retry")
 
     # get_db rolled the poisoned transaction back: the reparent never persisted.
-    await setup.refresh(grandchild)
-    assert grandchild.parent_id == child.id
+    await race.setup.refresh(race.grandchild)
+    assert race.grandchild.parent_id == race.child.id
 
 
-# Runs after the race above, in file order: the holder's raised timeout must
-# end with its transaction, not ride its connection back into the pool, where
-# a later deadlock test's waiter would arm a 10s check instead of 50ms. A
-# plain SET the holder then commits turns this red; one it rolls back does not.
-async def test_the_race_leaves_every_pooled_connection_at_the_engine_deadlock_timeout(engine: AsyncEngine) -> None:
+# The holder's raised timeout must end with its transaction, not ride its
+# connection back into the pool, where a later deadlock test's waiter would arm
+# a 10s check instead of 50ms. A plain SET the holder then commits turns this
+# red; one it rolls back does not.
+@pytest.mark.usefixtures("_requests_on_the_test_engine")
+async def test_the_race_leaves_every_pooled_connection_at_the_engine_deadlock_timeout(
+    client: AsyncClient, committed_session_factory: SessionFactory, mocker, engine: AsyncEngine
+) -> None:
+    race = await _race_a_reparent_into_a_deadlock(client, committed_session_factory, mocker)
+    holder_pid = (await race.holder.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+    await race.holder.close()
+
     pool = engine.pool
     assert isinstance(pool, QueuePool)
     async with AsyncExitStack() as stack:
         connections = [await stack.enter_async_context(engine.connect()) for _ in range(pool.checkedin())]
-        timeouts = [(await conn.execute(text("SHOW deadlock_timeout"))).scalar_one() for conn in connections]
+        read = [
+            (await conn.execute(text("SELECT pg_backend_pid(), current_setting('deadlock_timeout')"))).one()
+            for conn in connections
+        ]
 
-    assert connections
-    assert set(timeouts) == {"50ms"}
+    assert holder_pid in {pid for pid, _ in read}
+    assert {timeout for _, timeout in read} == {"50ms"}

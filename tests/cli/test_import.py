@@ -215,7 +215,12 @@ async def test_import_reports_invalid_files_across_every_date_subdir_at_once(
         await import_app(no_server, directory=app_dir, org_unit_id=1, brand_id=1)
 
     assert [path.parent.name for path, _ in exc_info.value.failures] == ["2026-04-01", "2026-04-02"]
-    assert "2 scan files" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert message.startswith("2 scan files failed axe schema validation: ")
+    assert message.endswith(
+        ". Fix the files; if this server accepts them as-is, the CLI and server are different versions: "
+        "reinstall a11y-health at the server's version."
+    )
 
 
 async def test_import_name_mismatch_across_date_subdirs_hard_fails(

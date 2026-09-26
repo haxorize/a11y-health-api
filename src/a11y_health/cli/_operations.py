@@ -2,9 +2,9 @@
 
 This module owns everything that needs both `_scan` and `_client` at once. The
 read-then-upload order lives here, with the failures only the combination can
-produce — an App the scan names but the server doesn't have, an override that
-disagrees with the document it overrides. ADR 0043 records why those two stay
-peers under this module and what that buys the suite.
+produce — an App the scan names but the server doesn't have, and an override
+checked only once the server has no App to ignore it on. ADR 0043 records why
+those two stay peers under this module and what that buys the suite.
 """
 
 from collections.abc import Callable
@@ -18,13 +18,11 @@ from a11y_health.cli._errors import CliError
 from a11y_health.cli._scan import (
     InvalidScanFilesError,
     LoadedScan,
-    UnderivableAppNameError,
     find_date_dirs,
     load_scan,
-    resolve_app_name,
+    resolve_app_identity,
 )
 from a11y_health.core.exceptions import InvalidAxePayloadError
-from a11y_health.core.slug import derive_slug
 
 ProgressCallback = Callable[[str], None]
 
@@ -40,22 +38,6 @@ class AppNotFoundError(CliError):
         super().__init__(
             f"App with slug {slug!r} (derived from axe JSON name {name!r}) not found. "
             "Run `a11y import <dir> --org-unit-id <id> --brand-id <id>` to onboard a new app."
-        )
-
-
-class NameOverrideMismatchError(CliError):
-    # Takes both slugs rather than re-deriving them: the caller has just
-    # computed both to discover the mismatch, and an exception that derives in
-    # its own constructor is one that can raise while being raised.
-    def __init__(self, *, name: str, name_slug: str, json_name: str, json_slug: str) -> None:
-        self.name = name
-        self.name_slug = name_slug
-        self.json_name = json_name
-        self.json_slug = json_slug
-        super().__init__(
-            f"--name {name!r} derives to slug {name_slug!r}, but the axe JSON name {json_name!r} "
-            f"derives to {json_slug!r}. The override must derive to the same slug, "
-            "or future imports of this directory would resolve to a different App."
         )
 
 
@@ -134,19 +116,18 @@ async def ingest(
     scan = load_scan(directory)
     on_progress(f"Found {len(scan.files)} JSON files in {directory}")
 
-    name = resolve_app_name([scan])
-    slug = derive_slug(name)
+    identity = resolve_app_identity([scan])
 
-    app = await _client.find_app_by_slug(client, slug)
+    app = await _client.find_app_by_slug(client, identity.slug)
     if app is None:
-        raise AppNotFoundError(name, slug)
+        raise AppNotFoundError(identity.name, identity.slug)
     app_id = app["id"]
-    on_progress(f"Resolved app '{slug}' (id={app_id})")
+    on_progress(f"Resolved app '{identity.slug}' (id={app_id})")
 
     return await _upload_scan(
         client,
         app_id=app_id,
-        app_slug=slug,
+        app_slug=identity.slug,
         scan=scan,
         on_progress=on_progress,
     )
@@ -185,22 +166,16 @@ async def import_app(
             failures.extend(exc.failures)
     if failures:
         raise InvalidScanFilesError(failures)
-    json_name = resolve_app_name(scans)
-    slug = derive_slug(json_name)
+    identity = resolve_app_identity(scans)
+    slug = identity.slug
 
     existing = await _client.find_app_by_slug(client, slug)
     if existing is None:
         # Equivalence is only enforced when the override actually names the
         # App; on an existing App the override is ignored below, mismatched or
         # not (AC10).
-        if name is not None:
-            try:
-                override_slug = derive_slug(name)
-            except ValueError as exc:
-                raise UnderivableAppNameError(name, exc) from exc
-            if override_slug != slug:
-                raise NameOverrideMismatchError(name=name, name_slug=override_slug, json_name=json_name, json_slug=slug)
-        app_id = await _client.create_app(client, name=name or json_name, brand_id=brand_id, org_unit_id=org_unit_id)
+        created = identity if name is None else identity.overridden_by(name)
+        app_id = await _client.create_app(client, name=created.name, brand_id=brand_id, org_unit_id=org_unit_id)
         app_created = True
         on_progress(f"Created app '{slug}' (id={app_id})")
     else:

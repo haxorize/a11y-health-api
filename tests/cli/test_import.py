@@ -1,12 +1,19 @@
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.cli._operations import NameOverrideMismatchError, import_app
-from a11y_health.cli._scan import InvalidScanFilesError, NameResolutionError, NoDateDirsError, UnderivableAppNameError
+from a11y_health.cli._operations import import_app
+from a11y_health.cli._scan import (
+    InvalidScanFilesError,
+    NameOverrideMismatchError,
+    NameResolutionError,
+    NoDateDirsError,
+    UnderivableAppNameError,
+)
 from a11y_health.models.enums import ScanRunStatus
 from tests.factories import (
     make_app_with_org_unit,
@@ -507,3 +514,43 @@ async def test_import_underivable_name_override_fails_as_operator_error(
 
     with pytest.raises(UnderivableAppNameError, match="empty slug"):
         await import_app(db_client, directory=app_dir, org_unit_id=org_unit.id, brand_id=brand.id, name="!!!")
+
+
+# Reds if the override is checked before the existing-App lookup: the refusal
+# would then arrive with no request made. After `create_app` it would arrive
+# with an App already created.
+async def test_import_name_override_is_checked_after_the_existing_app_lookup(tmp_path: Path) -> None:
+    app_dir = tmp_path / "ordering"
+    app_dir.mkdir()
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(f"{request.method} {request.url.path}")
+        return httpx.Response(404, json={"code": "not_found", "message": "no such app"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://test") as client:
+        with pytest.raises(NameOverrideMismatchError):
+            await import_app(client, directory=app_dir, org_unit_id=1, brand_id=1, name="Other Site")
+
+    assert requests == ["GET /api/v1/apps/slug/humana-com"]
+
+
+# Reds if the override is derived before the lookup: an override that has no
+# Slug would then refuse an import it is ignored on.
+async def test_import_underivable_name_override_on_existing_app_is_ignored(
+    db_session: AsyncSession, db_client: AsyncClient, tmp_path: Path
+) -> None:
+    existing = await make_app_with_org_unit(db_session, app_name="humana-com", slug="humana-com")
+
+    app_dir = tmp_path / "already-onboarded"
+    app_dir.mkdir()
+    write_scan_dir(app_dir, "2026-03-30", name="humana-com")
+
+    result = await import_app(
+        db_client, directory=app_dir, org_unit_id=existing.org_unit_id, brand_id=existing.brand_id, name="!!!"
+    )
+
+    assert result.app_created is False
+    assert result.app_id == existing.id

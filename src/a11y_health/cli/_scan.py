@@ -2,8 +2,8 @@
 
 This module owns everything between a directory on the operator's disk and the
 facts the client needs before it can talk to the API — directory walking, JSON
-loading, the axe boundary crossing for every file, and resolving the App name
-that identifies the target App. Nothing here knows the API exists.
+loading, the axe boundary crossing for every file, and resolving the App
+identity the scans name. Nothing here knows the API exists.
 
 Every file crosses the axe boundary here, through the same `parse_axe_payload`
 the server uses, so `name` (the Slug that identifies the App, ADR 0019) and
@@ -101,6 +101,22 @@ class NoDateDirsError(CliError):
         super().__init__(
             f"No YYYY-MM-DD subdirectories found in {directory}. "
             "Run `a11y ingest <dir>` to upload a single scan to an existing app."
+        )
+
+
+class NameOverrideMismatchError(CliError):
+    # Takes both slugs rather than re-deriving them: the caller has just
+    # computed both to discover the mismatch, and an exception that derives in
+    # its own constructor is one that can raise while being raised.
+    def __init__(self, *, name: str, name_slug: str, json_name: str, json_slug: str) -> None:
+        self.name = name
+        self.name_slug = name_slug
+        self.json_name = json_name
+        self.json_slug = json_slug
+        super().__init__(
+            f"--name {name!r} derives to slug {name_slug!r}, but the axe JSON name {json_name!r} "
+            f"derives to {json_slug!r}. The override must derive to the same slug, "
+            "or future imports of this directory would resolve to a different App."
         )
 
 
@@ -216,7 +232,27 @@ def load_scan(directory: Path) -> LoadedScan:
     return LoadedScan(directory=directory, files=files, scanned_at=_resolve_scanned_at(files, directory))
 
 
-def resolve_app_name(scans: list[LoadedScan]) -> str:
+@dataclass(frozen=True)
+class AppIdentity:
+    """The App a set of scans names: the display name it is created under and
+    the Slug that finds it (ADR 0019)."""
+
+    name: str
+    slug: str
+
+    def overridden_by(self, name: str) -> AppIdentity:
+        """This identity under `--name`, refused unless the override derives to
+        the same Slug."""
+        try:
+            slug = derive_slug(name)
+        except ValueError as exc:
+            raise UnderivableAppNameError(name, exc) from exc
+        if slug != self.slug:
+            raise NameOverrideMismatchError(name=name, name_slug=slug, json_name=self.name, json_slug=self.slug)
+        return AppIdentity(name, slug)
+
+
+def resolve_app_identity(scans: list[LoadedScan]) -> AppIdentity:
     # Identity is the derived slug (ADR 0019), so names that differ only in
     # presentation but derive to the same slug are the same App — not a
     # conflict. A genuine conflict is two distinct slugs. Among same-slug
@@ -225,7 +261,7 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
     # harmless because the pick is cosmetic.
     missing: list[Path] = []
     by_slug: dict[str, list[NameVariant]] = {}
-    underivable: tuple[str, ValueError, Path] | None = None
+    underivable: UnderivableAppNameError | None = None
     newest_name: str | None = None
     newest_at: datetime | None = None
     for scan in scans:
@@ -240,7 +276,7 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
                 # An unslugifiable name still fails loudly, but only after the
                 # structured missing/conflict report below — never pre-empting
                 # it.
-                underivable = underivable or (name, exc, file.path)
+                underivable = underivable or UnderivableAppNameError(name, exc, file.path)
                 continue
             by_slug.setdefault(slug, []).append(NameVariant(name, file.path))
             if newest_at is None or scan.scanned_at > newest_at:
@@ -250,6 +286,7 @@ def resolve_app_name(scans: list[LoadedScan]) -> str:
     if missing or conflicts:
         raise NameResolutionError(missing=missing, conflicts=conflicts)
     if underivable:
-        raise UnderivableAppNameError(*underivable)
+        raise underivable
     assert newest_name is not None  # exactly one slug ⇒ at least one present name
-    return newest_name
+    (slug,) = by_slug
+    return AppIdentity(newest_name, slug)

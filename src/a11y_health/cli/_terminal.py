@@ -12,8 +12,9 @@ The operations are imported by name so a dispatch test can substitute one with
 
 import argparse
 import asyncio
+import re
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 
 import httpx
@@ -22,11 +23,27 @@ from a11y_health.cli._client import create_org_unit, list_brands, list_org_units
 from a11y_health.cli._errors import CliError
 from a11y_health.cli._operations import import_app, ingest
 
+# Every C0 and C1 control character and DEL, except the tab and newline this
+# module's own output is made of, and every Unicode bidi control. Server
+# bodies, org unit names and scan-file text all reach the operator through
+# `_write`; a control character can repaint or erase the line being read, and a
+# bidi control can display it in an order it was not written in.
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _write(line: str) -> None:
+    print(_CONTROL_CHARACTERS.sub("", line))
+
+
+def _cell(value: object) -> str:
+    # A cell's own tab or newline would read as the table's column or row break.
+    return "-" if value is None else str(value).replace("\t", " ").replace("\n", " ")
+
 
 def _print_table(rows: list[dict], columns: list[str]) -> None:
-    print("\t".join(col.upper() for col in columns))
+    _write("\t".join(col.upper() for col in columns))
     for row in rows:
-        print("\t".join("-" if row.get(col) is None else str(row[col]) for col in columns))
+        _write("\t".join(_cell(row.get(col)) for col in columns))
 
 
 def _add_base_url(parser: argparse.ArgumentParser) -> None:
@@ -41,7 +58,7 @@ def _run[T](base_url: str, call: Callable[[httpx.AsyncClient], Awaitable[T]]) ->
     return asyncio.run(_main())
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Upload axe DevTools scan results")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -74,52 +91,64 @@ def main() -> None:
     brands_list = brands_sub.add_parser("list", help="List all brands (id, name)")
     _add_base_url(brands_list)
 
-    args = parser.parse_args()
+    return parser
 
+
+def _render_errors(errors: Iterable[object]) -> int:
+    """The one `ERROR:` line shape, and the exit code it implies."""
+    code = 0
+    for error in errors:
+        _write(f"  ERROR: {error}")
+        code = 1
+    return code
+
+
+def _dispatch(args: argparse.Namespace) -> int:
+    if args.command == "ingest":
+        ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=_write))
+        return _render_errors(ingest_result.errors)
+
+    if args.command == "import":
+        import_result = _run(
+            args.base_url,
+            lambda c: import_app(
+                c,
+                directory=args.directory,
+                org_unit_id=args.org_unit_id,
+                brand_id=args.brand_id,
+                name=args.name,
+                on_progress=_write,
+            ),
+        )
+        return _render_errors(e for r in import_result.ingest_results for e in r.errors)
+
+    if args.command == "org-units":
+        if args.subcommand == "list":
+            _print_table(_run(args.base_url, list_org_units), ["id", "name", "parent_id"])
+        elif args.subcommand == "create":
+            new_id = _run(args.base_url, lambda c: create_org_unit(c, name=args.name, parent_id=args.parent_id))
+            _write(f"Created org unit {new_id}")
+
+    elif args.command == "brands":
+        _print_table(_run(args.base_url, list_brands), ["id", "name"])
+    return 0
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
     try:
-        if args.command == "ingest":
-            ingest_result = _run(args.base_url, lambda c: ingest(c, directory=args.directory, on_progress=print))
-            if ingest_result.errors:
-                for error in ingest_result.errors:
-                    print(f"  ERROR: {error}")
-                sys.exit(1)
-
-        elif args.command == "import":
-            import_result = _run(
-                args.base_url,
-                lambda c: import_app(
-                    c,
-                    directory=args.directory,
-                    org_unit_id=args.org_unit_id,
-                    brand_id=args.brand_id,
-                    name=args.name,
-                    on_progress=print,
-                ),
-            )
-            errors = [e for r in import_result.ingest_results for e in r.errors]
-            if errors:
-                for error in errors:
-                    print(f"  ERROR: {error}")
-                sys.exit(1)
-
-        elif args.command == "org-units":
-            if args.subcommand == "list":
-                _print_table(_run(args.base_url, lambda c: list_org_units(c)), ["id", "name", "parent_id"])
-            elif args.subcommand == "create":
-                new_id = _run(args.base_url, lambda c: create_org_unit(c, name=args.name, parent_id=args.parent_id))
-                print(f"Created org unit {new_id}")
-
-        elif args.command == "brands":
-            _print_table(_run(args.base_url, lambda c: list_brands(c)), ["id", "name"])
+        code = _dispatch(args)
     except CliError as error:
         # Only the declared operator failures collapse to a line and an exit
         # code. Anything else is a defect and keeps its traceback.
-        print(f"  ERROR: {error}")
-        sys.exit(1)
+        code = _render_errors([error])
     except KeyboardInterrupt:
         # Not an error either way — the operator asked to stop. 130 is the
         # shell's code for SIGINT. A Scan Run created before the interrupt is
         # left Pending and unscored, the same state a failed page upload leaves
         # behind.
-        print("\n  Interrupted.")
-        sys.exit(130)
+        _write("\n  Interrupted.")
+        code = 130
+    # Success returns rather than raising SystemExit(0).
+    if code:
+        sys.exit(code)

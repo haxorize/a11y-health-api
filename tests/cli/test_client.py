@@ -4,7 +4,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from a11y_health.cli._client import ApiError, ApiUnreachableError, list_brands
+from a11y_health.cli import _client
+from a11y_health.cli._client import ApiError, ApiUnreachableError, UnreadableApiResponseError, list_brands
 from a11y_health.cli._errors import CliError
 from a11y_health.cli._operations import ingest
 from tests.factories import write_scan_file
@@ -53,6 +54,33 @@ async def test_body_that_is_not_json_at_all_falls_back_to_raw_text() -> None:
     assert "Bad Gateway" in error.message
 
 
+async def test_raw_body_fallback_is_bounded() -> None:
+    # A proxy can answer with a whole page, or a stack trace. The operator
+    # needs the start of it, not a terminal's worth.
+    body = "<html>" + "x" * 20_000 + "TAIL</html>"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text=body)
+
+    error = await _brands_error(handler)
+
+    assert error.message.startswith("<html>xxx")
+    assert "TAIL" not in error.message
+    assert len(error.message) < len(body) // 10
+
+
+@pytest.mark.parametrize(("extra", "truncated"), [(0, False), (1, True)])
+async def test_raw_body_fallback_bound_starts_one_past_the_limit(extra: int, truncated: bool) -> None:
+    body = "x" * (_client._RAW_BODY_LIMIT + extra)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text=body)
+
+    error = await _brands_error(handler)
+
+    assert (error.message != body) is truncated
+
+
 async def test_unreachable_api_fails_as_an_operator_error() -> None:
     # The server isn't up, or --base-url is wrong. Both are the operator's to
     # fix, so neither should arrive as an httpx traceback.
@@ -77,10 +105,14 @@ async def test_success_body_that_is_not_json_fails_as_an_operator_error() -> Non
         return httpx.Response(200, text="<html>login</html>")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://localhost:3000") as client:
-        with pytest.raises(CliError) as exc_info:
+        with pytest.raises(UnreadableApiResponseError) as exc_info:
             await list_brands(client)
 
-    assert "--base-url" in str(exc_info.value)
+    # The class, not `CliError`: `ApiUnreachableError` also names --base-url,
+    # so a handler raising it instead would pass a message-only check.
+    error = exc_info.value
+    assert (error.path, error.status) == ("/api/v1/brands", 200)
+    assert "--base-url" in str(error)
 
 
 async def test_timeout_is_reported_as_a_timeout_not_as_a_dead_server() -> None:

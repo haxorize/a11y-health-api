@@ -122,12 +122,19 @@ def _json(resp: httpx.Response) -> Any:
         raise UnreadableApiResponseError(resp.request.url.path, resp.status_code, exc) from exc
 
 
+# Enough of a proxy's page or a stack trace to recognize it by.
+_RAW_BODY_LIMIT = 500
+
+
 def _api_error(resp: httpx.Response) -> ApiError:
     coded = read_error_body(resp.content)
     if coded is None:
         # Not the contract's shape — a framework 422, a proxy's HTML. The status
         # and raw body still tell the operator something; a traceback would not.
-        return ApiError(code=str(resp.status_code), message=resp.text)
+        text = resp.text
+        if len(text) > _RAW_BODY_LIMIT:
+            text = f"{text[:_RAW_BODY_LIMIT]}… ({len(text) - _RAW_BODY_LIMIT} more characters)"
+        return ApiError(code=str(resp.status_code), message=text)
     return ApiError(code=coded.code, message=coded.message)
 
 

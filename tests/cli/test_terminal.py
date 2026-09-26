@@ -1,4 +1,5 @@
 import sys
+import unicodedata
 from pathlib import Path
 
 import httpx
@@ -25,6 +26,29 @@ def test_main_no_command_exits_with_argparse_error(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(sys, "argv", ["a11y"])
     with pytest.raises(SystemExit) as exc_info:
         _terminal.main()
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (
+            ["import", "site", "--org-unit-id", "7", "--brand-id", "9"],
+            {"command": "import", "directory": Path("site"), "org_unit_id": 7, "brand_id": 9, "name": None},
+        ),
+        (["org-units", "create", "Eng"], {"command": "org-units", "subcommand": "create", "parent_id": None}),
+        (["brands", "list", "--base-url", "http://api"], {"command": "brands", "base_url": "http://api"}),
+        (["ingest", "site"], {"command": "ingest", "base_url": "http://localhost:8000"}),
+    ],
+)
+def test_parser_reads_argv_into_the_fields_dispatch_uses(argv: list[str], expected: dict[str, object]) -> None:
+    args = vars(_terminal._build_parser().parse_args(argv))
+    assert {key: args[key] for key in expected} == expected
+
+
+def test_parser_refuses_import_without_its_ids() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _terminal._build_parser().parse_args(["import", "site", "--org-unit-id", "7"])
     assert exc_info.value.code == 2
 
 
@@ -62,9 +86,15 @@ def test_main_ingest_dispatches_to_ingest(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert captured["directory"] == tmp_path
 
 
-def test_main_ingest_exits_when_uploads_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+# Reds if the ingest branch stops printing a rejected page's line: the exit
+# code alone would still say 1 while the operator learns nothing about which.
+def test_main_ingest_exits_when_uploads_fail(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     async def fake_ingest(_client, *, directory, on_progress):
-        return IngestResult(app_id=1, app_slug="foo", scan_run_id=2, pages_uploaded=0, errors=["a.json: 422 boom"])
+        return IngestResult(
+            app_id=1, app_slug="foo", scan_run_id=2, pages_uploaded=0, errors=["a.json: 422 boom", "b.json: 409 clash"]
+        )
 
     monkeypatch.setattr(_terminal, "ingest", fake_ingest)
     monkeypatch.setattr(sys, "argv", ["a11y", "ingest", str(tmp_path)])
@@ -72,6 +102,7 @@ def test_main_ingest_exits_when_uploads_fail(monkeypatch: pytest.MonkeyPatch, tm
     with pytest.raises(SystemExit) as exc_info:
         _terminal.main()
     assert exc_info.value.code == 1
+    assert capsys.readouterr().out.splitlines() == ["  ERROR: a.json: 422 boom", "  ERROR: b.json: 409 clash"]
 
 
 def test_main_import_dispatches_to_import_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -96,7 +127,10 @@ def test_main_import_dispatches_to_import_app(monkeypatch: pytest.MonkeyPatch, t
     assert captured == {"directory": tmp_path, "org_unit_id": 7, "brand_id": 9, "name": "Humana.com"}
 
 
-def test_main_import_exits_when_any_scan_has_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+# Reds if the import branch stops printing, or reads only one Scan Run's errors.
+def test_main_import_exits_when_any_scan_has_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     async def fake_import(_client, *, directory, org_unit_id, brand_id, name, on_progress):
         return ImportResult(
             app_id=1,
@@ -104,6 +138,8 @@ def test_main_import_exits_when_any_scan_has_errors(monkeypatch: pytest.MonkeyPa
             app_created=False,
             ingest_results=[
                 IngestResult(app_id=1, app_slug="foo", scan_run_id=2, pages_uploaded=0, errors=["a.json: 422 boom"]),
+                IngestResult(app_id=1, app_slug="foo", scan_run_id=3, pages_uploaded=1, errors=[]),
+                IngestResult(app_id=1, app_slug="foo", scan_run_id=4, pages_uploaded=0, errors=["c.json: 409 clash"]),
             ],
         )
 
@@ -113,6 +149,8 @@ def test_main_import_exits_when_any_scan_has_errors(monkeypatch: pytest.MonkeyPa
     with pytest.raises(SystemExit) as exc_info:
         _terminal.main()
     assert exc_info.value.code == 1
+    # Every Scan Run's rejections, flattened in order, not the first run's only.
+    assert capsys.readouterr().out.splitlines() == ["  ERROR: a.json: 422 boom", "  ERROR: c.json: 409 clash"]
 
 
 def test_main_org_units_list_renders_id_name_and_parent(
@@ -339,3 +377,94 @@ def test_main_import_missing_directory_prints_error_line_and_exits(
 
     assert exc_info.value.code == 1
     assert "ERROR: Directory does not exist" in capsys.readouterr().out
+
+
+# Every C0 and C1 control character but the tab and newline the filter keeps,
+# DEL, and the escape sequences a hostile body would use to erase or repaint
+# the line above it.
+_HOSTILE = "".join(chr(c) for c in [*range(0x00, 0x20), *range(0x7F, 0xA0)] if chr(c) not in "\t\n")
+_HOSTILE += "\x1b[2K\x1b[1A\r\x1b]0;title\x07"
+
+
+def _only_printable_tab_and_newline(out: str) -> bool:
+    return all(ch in "\t\n" or unicodedata.category(ch) != "Cc" for ch in out)
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> None:
+    async def respond(_transport: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        response.request = request
+        return response
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", respond)
+
+
+# Reds if any line reaches the terminal without passing the sink's filter.
+def test_error_body_control_characters_never_reach_the_terminal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _answer(monkeypatch, httpx.Response(502, text=f"Bad{_HOSTILE}Gateway"))
+    monkeypatch.setattr(sys, "argv", ["a11y", "brands", "list"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        _terminal.main()
+
+    out = capsys.readouterr().out
+    assert exc_info.value.code == 1
+    assert _only_printable_tab_and_newline(out), repr(out)
+    assert "ERROR: 502: Bad" in out
+    assert "Gateway" in out
+
+
+# Reds if the filter strips the tab and newline the table itself is made of.
+def test_table_cells_are_filtered_and_the_table_keeps_its_shape(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_list(_client):
+        return [{"id": 5, "name": f"Hu{_HOSTILE}mana"}]
+
+    monkeypatch.setattr(_terminal, "list_brands", fake_list)
+    monkeypatch.setattr(sys, "argv", ["a11y", "brands", "list"])
+
+    _terminal.main()
+
+    out = capsys.readouterr().out
+    assert _only_printable_tab_and_newline(out), repr(out)
+    header, row = out.splitlines()
+    assert header == "ID\tNAME"
+    assert row.startswith("5\tHu")
+    assert row.endswith("mana")
+
+
+# Every Unicode bidi control: each reorders the text around it, so a name or
+# body carrying one can display an `ERROR:` line in an order it was not
+# written in.
+_BIDI = "؜‎‏‪‫‬‭‮⁦⁧⁨⁩"
+
+
+# Reds if the sink stops stripping bidi controls.
+def test_error_body_bidi_controls_never_reach_the_terminal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _answer(monkeypatch, httpx.Response(502, text=f"Bad{_BIDI}Gateway"))
+    monkeypatch.setattr(sys, "argv", ["a11y", "brands", "list"])
+
+    with pytest.raises(SystemExit):
+        _terminal.main()
+
+    assert "ERROR: 502: BadGateway" in capsys.readouterr().out
+
+
+# Reds if a cell's own tab or newline reaches the table as a column or row
+# break.
+def test_table_cell_tab_and_newline_cannot_split_a_row(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_list(_client):
+        return [{"id": 5, "name": "Hu\tma\nna"}]
+
+    monkeypatch.setattr(_terminal, "list_brands", fake_list)
+    monkeypatch.setattr(sys, "argv", ["a11y", "brands", "list"])
+
+    _terminal.main()
+
+    assert capsys.readouterr().out.splitlines() == ["ID\tNAME", "5\tHu ma na"]

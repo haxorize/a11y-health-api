@@ -275,7 +275,7 @@ async def make_rule_finding(
     impact: Impact = Impact.SERIOUS,
     category: Category = Category.COLOR,
     wcag_criteria: list[str] | None = None,
-    classifications: list[Classification | dict[str, Any]] | None = None,
+    classifications: list[Classification] | None = None,
     tags: list[str] | None = None,
 ) -> RuleFinding:
     # `is None` rather than `or`, so an explicit empty list stays empty.
@@ -440,14 +440,25 @@ async def advisory_lock_waiters(session: AsyncSession) -> int:
     return result.scalar_one()
 
 
+# A str, so a caller that counts or searches statements never unpacks, and one
+# that re-runs a statement (EXPLAIN) reads its bound parameters off it.
+class RecordedStatement(str):
+    parameters: Any
+
+    def __new__(cls, statement: str, parameters: Any) -> RecordedStatement:
+        recorded = super().__new__(cls, statement)
+        recorded.parameters = parameters
+        return recorded
+
+
 @asynccontextmanager
-async def recorded_statements(session: AsyncSession) -> AsyncIterator[list[str]]:
-    statements: list[str] = []
+async def recorded_statements(session: AsyncSession) -> AsyncIterator[list[RecordedStatement]]:
+    statements: list[RecordedStatement] = []
     connection = (await session.connection()).sync_connection
     assert connection is not None
 
-    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
-        statements.append(statement)
+    def record(_conn: object, _cursor: object, statement: str, parameters: Any, *_: object) -> None:
+        statements.append(RecordedStatement(statement, parameters))
 
     event.listen(connection, "before_cursor_execute", record)
     try:

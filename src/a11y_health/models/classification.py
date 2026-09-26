@@ -92,10 +92,6 @@ if set(get_args(ClassificationToken)) != _TOKEN_TO_CLASSIFICATION.keys():
     raise RuntimeError("ClassificationToken and _TOKEN_TO_CLASSIFICATION have drifted")
 
 
-def token_to_stored_classification(token: ClassificationToken) -> dict[str, str]:
-    return _TOKEN_TO_CLASSIFICATION[token].stored()
-
-
 # Classification is frozen, so its own value-equality keys the reverse lookup.
 _CLASSIFICATION_TO_TOKEN: dict[Classification, ClassificationToken] = {
     _TOKEN_TO_CLASSIFICATION[token]: token for token in get_args(ClassificationToken)

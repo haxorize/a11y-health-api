@@ -3,13 +3,13 @@ from collections.abc import Iterable
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import BigInteger, ColumnElement, Enum, ForeignKey, Index, Text, TypeDecorator, or_, text
+from sqlalchemy import BigInteger, ColumnElement, Enum, ForeignKey, Index, Text, TypeDecorator, false, or_, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a11y_health.core.database import Base, enum_values
-from a11y_health.models.classification import Classification, ClassificationToken, token_to_stored_classification
+from a11y_health.models.classification import Classification, ClassificationToken, classifications_in
 from a11y_health.models.enums import Category, FindingType, Impact
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,9 @@ class _CompactClassifications(TypeDecorator[list[Classification]]):
             try:
                 kept.append(Classification.model_validate(entry))
             except ValidationError:
-                logger.warning("Dropping invalid classification %r from a rule_finding read", entry)
+                logger.warning(
+                    "Dropping invalid classification %r from a rule_finding read (findings or Filter Options)", entry
+                )
         return kept
 
 
@@ -73,8 +75,10 @@ class RuleFinding(Base):
     classifications: Mapped[list[Classification]] = mapped_column(_CompactClassifications, nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
 
-    # One @> per token against the compact stored shape, so the GIN index on
-    # the column serves each; a caller never builds the target itself.
+    # One @> per token, so the GIN index on the column serves each; the column
+    # type binds each target in the compact stored shape. The false() seed
+    # means an empty token list matches nothing instead of building an empty
+    # OR.
     @classmethod
     def classified_as_any(cls, tokens: Iterable[ClassificationToken]) -> ColumnElement[bool]:
-        return or_(*(cls.classifications.contains([token_to_stored_classification(t)]) for t in tokens))
+        return or_(false(), *(cls.classifications.contains([c]) for c in classifications_in(tokens)))

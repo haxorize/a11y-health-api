@@ -1,13 +1,12 @@
 import logging
 import re
-from typing import Any, get_args
 
 import pytest
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
-from a11y_health.models.classification import Classification, ClassificationToken, token_to_stored_classification
+from a11y_health.models.classification import Classification, ClassificationToken, classifications_in
 from a11y_health.models.enums import Category, Impact, ScanRunStatus
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.schemas.rule_finding import FindingFilters
@@ -18,6 +17,7 @@ from tests.factories import (
     make_page_result_with_parents,
     make_rule_finding,
     make_scan_run_with_parents,
+    recorded_statements,
 )
 from tests.finding_filter_cases import FILTER_CASES, FilterCase
 
@@ -53,10 +53,11 @@ async def test_node_finding_count_present_under_each_filter(db_session: AsyncSes
     match = await make_rule_finding(db_session, page_result_id=page.id, rule_id="image-alt", **case.matching[0])
     await make_node_finding(db_session, rule_finding_id=match.id)
     await make_node_finding(db_session, rule_finding_id=match.id)
-    other = await make_rule_finding(db_session, page_result_id=page.id, rule_id="meta-viewport", **case.other)
-    await make_node_finding(db_session, rule_finding_id=other.id)
+    if case.other is not None:
+        other = await make_rule_finding(db_session, page_result_id=page.id, rule_id="meta-viewport", **case.other)
+        await make_node_finding(db_session, rule_finding_id=other.id)
 
-    result = await rule_finding_service.list_findings(db_session, scan_run.id, filters=FindingFilters(**case.filters))
+    result = await rule_finding_service.list_findings(db_session, scan_run.id, filters=case.filters)
 
     assert [(f.rule_id, f.node_finding_count) for f in result.items] == [("image-alt", 2)]
 
@@ -67,11 +68,10 @@ async def test_total_counts_only_findings_matching_the_filter(db_session: AsyncS
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
     for rule_id in ("image-alt", "aria-hidden-focus"):
         await make_rule_finding(db_session, page_result_id=page_result.id, rule_id=rule_id, **case.matching[0])
-    await make_rule_finding(db_session, page_result_id=page_result.id, rule_id="meta-viewport", **case.other)
+    if case.other is not None:
+        await make_rule_finding(db_session, page_result_id=page_result.id, rule_id="meta-viewport", **case.other)
 
-    result = await rule_finding_service.list_findings(
-        db_session, scan_run.id, filters=FindingFilters(**case.filters), limit=1
-    )
+    result = await rule_finding_service.list_findings(db_session, scan_run.id, filters=case.filters, limit=1)
 
     # limit=1 keeps the page smaller than the match set, so total can only come
     # from the filtered count, never from the returned items.
@@ -86,9 +86,7 @@ async def test_each_filter_matches_any_selected_value(db_session: AsyncSession, 
     page = await make_page_result_with_parents(db_session)
     kept = await case.seed(db_session, page.id)
 
-    result = await rule_finding_service.list_findings(
-        db_session, page.scan_run_id, filters=FindingFilters(**case.filters)
-    )
+    result = await rule_finding_service.list_findings(db_session, page.scan_run_id, filters=case.filters)
 
     assert {f.rule_id for f in result.items} == kept
 
@@ -123,7 +121,7 @@ async def test_classification_filter_matches_a_finding_by_any_of_its_classificat
         db_session,
         page_result_id=page.id,
         rule_id="color-contrast",
-        classifications=[token_to_stored_classification("wcag2aa"), token_to_stored_classification("wcag21aa")],
+        classifications=classifications_in(["wcag2aa", "wcag21aa"]),
     )
 
     result = await rule_finding_service.list_findings(
@@ -201,8 +199,9 @@ async def test_filter_options_ordered_numerically_not_lexicographically(db_sessi
 
 
 async def test_filter_options_sort_malformed_criterion_last(db_session: AsyncSession) -> None:
-    # The column carries no format constraint (ADR 0014); a value written past
-    # the ingest regex sorts last instead of failing the whole enumeration.
+    # ADR 0014 rejected the reference table that would hold the column to known
+    # criteria; a value written past the ingest regex sorts last instead of
+    # failing the whole enumeration.
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["not-a-criterion", "1.4.3"])
@@ -222,13 +221,13 @@ async def test_filter_options_enumerate_distinct_classifications_in_vocabulary_o
         db_session,
         page_result_id=page_one.id,
         rule_id="color-contrast",
-        classifications=[token_to_stored_classification("best-practice"), token_to_stored_classification("wcag22aaa")],
+        classifications=classifications_in(["best-practice", "wcag22aaa"]),
     )
     await make_rule_finding(
         db_session,
         page_result_id=page_two.id,
         rule_id="image-alt",
-        classifications=[token_to_stored_classification("wcag22aaa"), token_to_stored_classification("wcag2a")],
+        classifications=classifications_in(["wcag22aaa", "wcag2a"]),
     )
 
     options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
@@ -245,11 +244,9 @@ async def test_filter_options_classifications_scoped_to_the_run(db_session: Asyn
     other_run = await make_scan_run_with_parents(db_session, org_name="Other Org", app_name="Other App", slug="other")
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     other_page = await make_page_result(db_session, scan_run_id=other_run.id)
+    await make_rule_finding(db_session, page_result_id=page.id, classifications=classifications_in(["wcag2aa"]))
     await make_rule_finding(
-        db_session, page_result_id=page.id, classifications=[token_to_stored_classification("wcag2aa")]
-    )
-    await make_rule_finding(
-        db_session, page_result_id=other_page.id, classifications=[token_to_stored_classification("best-practice")]
+        db_session, page_result_id=other_page.id, classifications=classifications_in(["best-practice"])
     )
 
     options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
@@ -270,8 +267,8 @@ async def test_filter_options_omit_valid_but_off_vocabulary_classification(
         db_session,
         page_result_id=page.id,
         classifications=[
-            {"standard": "wcag", "version": "3.0", "level": "A"},
-            token_to_stored_classification("wcag2aa"),
+            Classification(standard="wcag", version="3.0", level="A"),
+            *classifications_in(["wcag2aa"]),
         ],
     )
 
@@ -282,11 +279,11 @@ async def test_filter_options_omit_valid_but_off_vocabulary_classification(
     assert "3.0" in caplog.text
 
 
-async def test_filter_options_statements_are_bounded_by_the_vocabulary_not_the_findings(
-    db_session: AsyncSession,
-) -> None:
+async def test_filter_options_read_returns_one_row_not_one_per_finding(db_session: AsyncSession) -> None:
     # Reds if the read pulls one row per Rule Finding back into Python: the top
-    # node's estimate then tracks the 2,000 seeded rows, not the vocabulary.
+    # node's estimate then tracks the 2,000 seeded rows. Any aggregate passes;
+    # that each value comes back once is the distinct-criteria and warn-once
+    # tests' claim.
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     seed = await make_rule_finding(db_session, page_result_id=page.id)
@@ -301,27 +298,17 @@ async def test_filter_options_statements_are_bounded_by_the_vocabulary_not_the_f
     # Unanalyzed, page_result's side of the join estimates near zero rows and
     # hides the growth this test exists to see.
     await db_session.execute(text("ANALYZE rule_finding, page_result"))
-    statements: list[tuple[str, Any]] = []
-    connection = (await db_session.connection()).sync_connection
-    assert connection is not None
-
-    def record(_conn: object, _cursor: object, statement: str, parameters: Any, *_: object) -> None:
-        statements.append((statement, parameters))
-
-    event.listen(connection, "before_cursor_execute", record)
-    try:
+    async with recorded_statements(db_session) as statements:
         await rule_finding_service.list_filter_options(db_session, scan_run.id)
-    finally:
-        event.remove(connection, "before_cursor_execute", record)
 
-    over_findings = [(s, p) for s, p in statements if re.search(r"\bFROM rule_finding\b", s)]
+    over_findings = [s for s in statements if re.search(r"\bFROM rule_finding\b", s)]
     assert over_findings
-    for statement, parameters in over_findings:
+    for statement in over_findings:
         explained = await (await db_session.connection()).exec_driver_sql(
-            f"EXPLAIN (FORMAT JSON) {statement}", parameters
+            f"EXPLAIN (FORMAT JSON) {statement}", statement.parameters
         )
         top = explained.scalar_one()[0]["Plan"]
-        assert top["Plan Rows"] <= len(get_args(ClassificationToken)), statement
+        assert top["Plan Rows"] == 1, statement
 
 
 async def test_filter_options_warn_once_per_distinct_invalid_classification(
@@ -349,9 +336,9 @@ async def test_filter_options_warn_once_per_distinct_invalid_classification(
 
 
 async def test_filter_options_skip_a_non_array_value(db_session: AsyncSession) -> None:
-    # The column carries no shape constraint (ADR 0014), so a raw write can
-    # leave an object where the array belongs; the expansion must skip it
-    # rather than fail the whole read.
+    # Nothing constrains either column to an array, so a raw write can leave an
+    # object where the array belongs; the expansion must skip it rather than
+    # fail the whole read.
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
     await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3"])
@@ -367,29 +354,34 @@ async def test_filter_options_skip_a_non_array_value(db_session: AsyncSession) -
     assert [o.token for o in options.classifications] == ["wcag2aa"]
 
 
-async def test_pinning_the_classification_filter_emits_one_containment_per_token(db_session: AsyncSession) -> None:
-    # Pins the SQL the classification filter emitted before the predicate moved
-    # to the column's module: an OR of @> tests, each against a one-entry array
-    # in the compact stored shape, so the GIN index keeps serving it.
+async def test_filter_options_skip_a_null_criterion(db_session: AsyncSession) -> None:
+    # A raw write can leave a JSON null inside the array, which the expansion
+    # yields as SQL NULL: there is no criterion to offer, and no string to sort.
     scan_run = await make_scan_run_with_parents(db_session)
-    statements: list[tuple[str, Any]] = []
-    connection = (await db_session.connection()).sync_connection
-    assert connection is not None
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    finding = await make_rule_finding(db_session, page_result_id=page.id)
+    await db_session.execute(
+        text("""UPDATE rule_finding SET wcag_criteria = '[null, "1.4.3"]'::jsonb WHERE id = :id"""),
+        {"id": finding.id},
+    )
 
-    def record(_conn: object, _cursor: object, statement: str, parameters: Any, *_: object) -> None:
-        statements.append((statement, parameters))
+    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
 
-    event.listen(connection, "before_cursor_execute", record)
-    try:
+    assert options.wcag_criteria == ["1.4.3"]
+
+
+async def test_pinning_the_classification_filter_emits_one_containment_per_token(db_session: AsyncSession) -> None:
+    # An OR of @> tests, each against a one-entry array in the compact stored
+    # shape, is the form the GIN index on the column serves.
+    scan_run = await make_scan_run_with_parents(db_session)
+    async with recorded_statements(db_session) as statements:
         await rule_finding_service.list_findings(
             db_session, scan_run.id, filters=FindingFilters(classification=["wcag2aa", "best-practice"])
         )
-    finally:
-        event.remove(connection, "before_cursor_execute", record)
 
     containment = r"\(rule_finding\.classifications @> \$(\d+)::JSONB\)"
     fragment = re.compile(rf"\({containment} OR {containment}\)")
-    filtered = [(fragment.search(s), p) for s, p in statements if "@>" in s]
+    filtered = [(fragment.search(s), s.parameters) for s in statements if "@>" in s]
     assert filtered
     for match, parameters in filtered:
         assert match is not None

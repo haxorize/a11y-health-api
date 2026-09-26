@@ -1,20 +1,24 @@
 import logging
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.classification import Classification, token_to_stored_classification
+from a11y_health.models.classification import Classification, classifications_in
 from a11y_health.models.rule_finding import RuleFinding
 from tests.factories import make_page_result_with_parents, make_rule_finding
 
 
+# The flush guard exists for a writer that ignores the column's annotation, so
+# these two tests cast a raw entry past it.
 async def test_unknown_standard_classification_is_refused_at_flush(db_session: AsyncSession) -> None:
     page = await make_page_result_with_parents(db_session)
+    entries = cast(Any, [{"standard": "section508"}])
 
     with pytest.raises(StatementError):
-        await make_rule_finding(db_session, page_result_id=page.id, classifications=[{"standard": "section508"}])
+        await make_rule_finding(db_session, page_result_id=page.id, classifications=entries)
 
 
 @pytest.mark.parametrize(
@@ -31,7 +35,7 @@ async def test_non_canonical_classification_is_refused_at_flush(
     page = await make_page_result_with_parents(db_session)
 
     with pytest.raises(StatementError):
-        await make_rule_finding(db_session, page_result_id=page.id, classifications=[entry])
+        await make_rule_finding(db_session, page_result_id=page.id, classifications=cast(Any, [entry]))
 
 
 async def test_invalid_containment_target_is_refused_at_query_time(db_session: AsyncSession) -> None:
@@ -48,7 +52,7 @@ async def test_invalid_containment_target_is_refused_at_query_time(db_session: A
 async def test_containment_target_is_compacted_before_comparison(db_session: AsyncSession) -> None:
     page = await make_page_result_with_parents(db_session)
     rf = await make_rule_finding(
-        db_session, page_result_id=page.id, classifications=[token_to_stored_classification("best-practice")]
+        db_session, page_result_id=page.id, classifications=classifications_in(["best-practice"])
     )
 
     # Null members must be dropped from the target before @> runs: the stored
@@ -63,7 +67,7 @@ async def test_containment_target_is_compacted_before_comparison(db_session: Asy
 async def test_a_loaded_rule_finding_carries_classifications(db_session: AsyncSession) -> None:
     page = await make_page_result_with_parents(db_session)
     rf = await make_rule_finding(
-        db_session, page_result_id=page.id, classifications=[{"standard": "wcag", "version": "2.1", "level": "AA"}]
+        db_session, page_result_id=page.id, classifications=[Classification(standard="wcag", version="2.1", level="AA")]
     )
     rf_id = rf.id
     db_session.expire_all()
@@ -98,7 +102,7 @@ async def test_bound_entries_are_stored_in_the_compact_shape(db_session: AsyncSe
     rf = await make_rule_finding(
         db_session,
         page_result_id=page.id,
-        classifications=[{"standard": "best-practice", "version": None, "level": None}],
+        classifications=[Classification(standard="best-practice", version=None, level=None)],
     )
 
     stored = (

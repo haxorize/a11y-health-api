@@ -2,10 +2,11 @@ from dataclasses import fields
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.main import app
-from a11y_health.models.classification import token_to_stored_classification
+from a11y_health.models.classification import classifications_in
 from a11y_health.schemas.rule_finding import FindingFilters
 from tests.factories import (
     make_node_finding,
@@ -63,7 +64,7 @@ async def test_best_practice_classification_serializes_without_null_members(
     scan_run = await make_scan_run_with_parents(db_session)
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
     rule_finding = await make_rule_finding(
-        db_session, page_result_id=page_result.id, classifications=[token_to_stored_classification("best-practice")]
+        db_session, page_result_id=page_result.id, classifications=classifications_in(["best-practice"])
     )
     await make_node_finding(db_session, rule_finding_id=rule_finding.id)
 
@@ -71,6 +72,22 @@ async def test_best_practice_classification_serializes_without_null_members(
 
     # The wire shape must stay identical to the stored JSONB — explicit null
     # members would break clients generated before Classification was typed.
+    assert response.json()["items"][0]["classifications"] == [{"standard": "best-practice"}]
+
+
+async def test_a_raw_written_null_member_stays_off_the_wire(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
+    rule_finding = await make_rule_finding(db_session, page_result_id=page_result.id)
+    await db_session.execute(
+        text("UPDATE rule_finding SET classifications = CAST(:val AS jsonb) WHERE id = :id"),
+        {"val": '[{"standard": "best-practice", "version": null}]', "id": rule_finding.id},
+    )
+    scan_run_id = scan_run.id
+    db_session.expire_all()
+
+    response = await db_client.get(f"/api/v1/scan-runs/{scan_run_id}/findings")
+
     assert response.json()["items"][0]["classifications"] == [{"standard": "best-practice"}]
 
 
@@ -151,14 +168,12 @@ async def test_filter_options_serve_classifications_as_token_plus_structure(
 ) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session, page_result_id=page.id, classifications=[token_to_stored_classification("wcag21aa")]
-    )
+    await make_rule_finding(db_session, page_result_id=page.id, classifications=classifications_in(["wcag21aa"]))
     await make_rule_finding(
         db_session,
         page_result_id=page.id,
         rule_id="image-alt",
-        classifications=[token_to_stored_classification("best-practice")],
+        classifications=classifications_in(["best-practice"]),
     )
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/filter-options")
@@ -189,12 +204,19 @@ async def test_filter_options_scan_run_not_found(db_client: AsyncClient) -> None
 # Breaks when a dimension is declared with no case, which the decode test below
 # would then never send, so nothing proves it reaches the service.
 def test_every_declared_filter_dimension_has_a_case() -> None:
-    assert {f.name for f in fields(FindingFilters)} == {str(case.id) for case in FILTER_CASES}
+    covered: set[str] = set()
+    for param in FILTER_CASES:
+        case = param.values[0]
+        assert isinstance(case, FilterCase)
+        covered |= case.dimensions
+
+    assert {f.name for f in fields(FindingFilters)} == covered
 
 
 # Breaks when a dimension's query parameter is renamed or dropped (the
 # non-matching finding comes back), or when a repeated parameter decodes to its
-# last value only (the first-value match goes missing).
+# last value only (the first-value match goes missing; every dimension has a
+# case selecting two values).
 @pytest.mark.parametrize("case", FILTER_CASES)
 async def test_each_filter_parameter_decodes_to_its_dimension(
     db_client: AsyncClient, db_session: AsyncSession, case: FilterCase

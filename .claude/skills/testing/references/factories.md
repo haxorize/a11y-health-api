@@ -81,3 +81,7 @@ For test assertions that query derived state (e.g., checking rollup snapshots), 
 async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
     return (await ou_snapshots(db, org_unit_id))[-1]
 ```
+
+## Statement recorders
+
+`recorded_statements(session)` is an async context manager that yields the list of every statement the session's connection sends inside the block, each a `RecordedStatement`: a `str` of the SQL, so a test counts or searches the list directly, carrying the bound `.parameters` for a test that re-runs a statement, as the Filter Options `EXPLAIN` test does. Reach for it rather than an inline `before_cursor_execute` listener; a new need for what a statement carried is an attribute on `RecordedStatement`, not a second recorder.

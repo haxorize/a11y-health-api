@@ -6,7 +6,7 @@ from sqlalchemy import ColumnElement, Select, SQLColumnExpression, Subquery, fun
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
-from sqlalchemy.types import Text
+from sqlalchemy.types import Text, TypeEngine
 
 from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotalledCursorPage, paginate
@@ -42,6 +42,11 @@ _MATCHES: dict[str, Callable[[Any], ColumnElement[bool]]] = {
     "wcag_criterion": lambda values: RuleFinding.wcag_criteria.has_any(array(values, type_=Text)),
     "classification": lambda values: RuleFinding.classified_as_any(values),
 }
+
+# A field with no entry would 500 on a valid query; an entry with no field is
+# dead. An explicit raise, not an assert, which python -O strips.
+if _MATCHES.keys() != {dimension.name for dimension in fields(FindingFilters)}:
+    raise RuntimeError("_MATCHES and FindingFilters have drifted")
 
 
 async def list_findings(
@@ -84,8 +89,9 @@ async def list_findings(
 def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
     """Numeric segment order, so 1.4.13 sorts between 1.4.3 and 1.10.1.
 
-    The column carries no format constraint (ADR 0014), so an out-of-shape
-    value sorts last instead of failing the read that sorts it.
+    ADR 0014 rejected the reference table that would hold the column to known
+    criteria, so an out-of-shape value sorts last instead of failing the read
+    that sorts it.
     """
     parts = criterion.split(".")
     if all(part.isdigit() for part in parts):
@@ -96,10 +102,13 @@ def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
 # The jsonb_typeof guard shares a SELECT with a select-list expansion, which
 # runs after WHERE, so a non-array value is skipped rather than raising.
 def _elements_in_run(
-    column: SQLColumnExpression[Any], expansion: SQLColumnExpression[Any], scan_run_id: int
+    column: SQLColumnExpression[Any],
+    expand: Callable[..., ColumnElement[Any]],
+    element_type: TypeEngine[Any],
+    scan_run_id: int,
 ) -> Subquery:
     return (
-        _scoped_to_run(select(expansion.label("element")), scan_run_id)
+        _scoped_to_run(select(expand(column, type_=element_type).label("element")), scan_run_id)
         .where(func.jsonb_typeof(column) == "array")
         .subquery()
     )
@@ -113,14 +122,11 @@ async def list_filter_options(session: AsyncSession, scan_run_id: int) -> Findin
     # One row back, not one per Rule Finding: Postgres expands and dedupes each
     # array, and the aggregate reads through the column's own type, so each
     # distinct Classification entry is validated once.
-    criteria = _elements_in_run(
-        RuleFinding.wcag_criteria, func.jsonb_array_elements_text(RuleFinding.wcag_criteria, type_=Text), scan_run_id
-    )
-    entries = _elements_in_run(
-        RuleFinding.classifications, func.jsonb_array_elements(RuleFinding.classifications, type_=JSONB), scan_run_id
-    )
+    criteria = _elements_in_run(RuleFinding.wcag_criteria, func.jsonb_array_elements_text, Text(), scan_run_id)
+    entries = _elements_in_run(RuleFinding.classifications, func.jsonb_array_elements, JSONB(), scan_run_id)
     stmt = select(
-        select(func.array_agg(criteria.c.element.distinct())).scalar_subquery(),
+        # A JSON null element expands to SQL NULL, which names no criterion.
+        select(func.array_agg(criteria.c.element.distinct())).where(criteria.c.element.is_not(None)).scalar_subquery(),
         select(func.jsonb_agg(entries.c.element.distinct(), type_=RuleFinding.classifications.type)).scalar_subquery(),
     )
     distinct_criteria, distinct_entries = (await session.execute(stmt)).one()

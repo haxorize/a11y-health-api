@@ -73,8 +73,7 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
 
 async def delete_app(session: AsyncSession, app_id: int) -> None:
     app = await get_app(session, app_id)
-    org_unit_id = app.org_unit_id
-    brand_id = app.brand_id
+    rollup_targets = scoring_orchestration.app_rollup_targets(app)
     await session.delete(app)
     await session.flush()
-    await scoring_orchestration.on_app_latest_snapshot_changed(session, org_unit_id, brand_id)
+    await scoring_orchestration.on_app_latest_snapshot_changed(session, rollup_targets)

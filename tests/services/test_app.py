@@ -1,21 +1,27 @@
 import re
 
 import pytest
+from pytest import approx
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
+from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import app as app_service
+from a11y_health.services import owner as owner_service
 from tests.factories import (
+    latest_brand_snapshot,
+    latest_ou_snapshot,
     make_app,
     make_app_with_org_unit,
     make_brand,
     make_org_unit,
     make_scan_run,
     make_score_snapshot,
+    ou_snapshots,
 )
 
 
@@ -280,6 +286,30 @@ async def test_delete_app_cascades_dependents(db_session: AsyncSession) -> None:
     assert snapshots.scalars().all() == []
 
 
+# The unit and the brand are given different ids, so rolling up the wrong
+# owner for either is visible. Red when `delete_app` swaps or drops a rollup
+# owner.
+async def test_delete_app_moves_both_rollup_owners_latest_snapshots(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    org_unit = await make_org_unit(db_session, name="Owning Unit", parent_id=root.id)
+    brand = await make_brand(db_session)
+    assert org_unit.id != brand.id
+    kept = await make_app(db_session, name="Kept", slug="kept", brand_id=brand.id, org_unit_id=org_unit.id)
+    doomed = await make_app(db_session, name="Doomed", slug="doomed", brand_id=brand.id, org_unit_id=org_unit.id)
+    await make_score_snapshot(db_session, app_id=kept.id, score=0.4)
+    await make_score_snapshot(db_session, app_id=doomed.id, score=1.0)
+    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+    await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
+    # (0.4 + 1.0) / 2
+    assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.7)
+    assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(0.7)
+
+    await app_service.delete_app(db_session, doomed.id)
+
+    assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.4)
+    assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(0.4)
+
+
 async def test_update_app_org_unit(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     org_unit_a = await make_org_unit(db_session, name="Org A")
@@ -293,9 +323,16 @@ async def test_update_app_same_org_unit_no_rollup(db_session: AsyncSession) -> N
     brand = await make_brand(db_session)
     org_unit = await make_org_unit(db_session)
     app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
+    # The unit's snapshot disagrees with its one child on purpose: a rollup that
+    # fired would replace it, where one agreeing with the child is skipped as
+    # no change. Red when `update_app` drops its old-value comparison.
+    await make_score_snapshot(db_session, app_id=app.id, score=0.6)
+    await make_score_snapshot(db_session, org_unit_id=org_unit.id, score=0.9)
+    before = [(s.id, s.score) for s in await ou_snapshots(db_session, org_unit.id)]
+
     await app_service.update_app(db_session, app.id, AppUpdate(org_unit_id=org_unit.id))
-    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.org_unit_id == org_unit.id))
-    assert result.scalar_one_or_none() is None
+
+    assert [(s.id, s.score) for s in await ou_snapshots(db_session, org_unit.id)] == before
 
 
 async def test_update_app_org_unit_not_found(db_session: AsyncSession) -> None:

@@ -108,6 +108,23 @@ class TestScoreSnapshotMetrics:
         assert snapshot.pages_with_critical_violations == 1
         assert snapshot.total_pages == 3
 
+    # Red when `compute_app_score` drops its Violation predicate (ADR 0006).
+    async def test_incomplete_finding_is_excluded_from_every_aggregate(self, db_session: AsyncSession) -> None:
+        scan_run = await make_scan_run_with_parents(db_session)
+        axe_payloads = [
+            make_axe_payload(url="https://example.com/a", incomplete=[make_violation("r9", "critical")]),
+            make_axe_payload(url="https://example.com/b"),
+        ]
+
+        snapshot = await ingest_and_score(db_session, scan_run.id, axe_payloads)
+
+        assert snapshot.score == approx(1.0)
+        assert snapshot.total_violations == 0
+        assert snapshot.pages_with_violations == 0
+        assert snapshot.pages_with_critical_violations == 0
+        result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
+        assert [page.page_health for page in result.scalars()] == [PageHealth.GOOD, PageHealth.GOOD]
+
 
 class TestComputeAppScoreCreatesSnapshot:
     async def test_creates_snapshot_with_correct_metrics(self, db_session: AsyncSession) -> None:

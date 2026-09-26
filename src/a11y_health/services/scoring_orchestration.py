@@ -25,15 +25,23 @@ from a11y_health.services import score_snapshot as score_snapshot_service
 async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
     await score_snapshot_service.compute_app_score(session, scan_run)
     app = await existence.get_by_pk(session, App, scan_run.app_id)
-    await on_app_latest_snapshot_changed(session, app.org_unit_id, app.brand_id)
+    await on_app_latest_snapshot_changed(session, app_rollup_targets(app))
+
+
+# Resource services may not import the Owner Dispatcher
+# (tests/test_sibling_imports.py), so the capture a deleting caller makes before
+# its delete comes through here.
+def app_rollup_targets(app: App) -> tuple[owner.RollupTarget, ...]:
+    return owner.app_rollup_targets(app)
 
 
 # The shared tail of completion and both deletions (a scan run, the whole app):
-# whichever way the app's latest Score Snapshot moved, the same rollup pair
-# fires.
-async def on_app_latest_snapshot_changed(session: AsyncSession, org_unit_id: int, brand_id: int) -> None:
-    await owner.rollup(session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit_id)
-    await owner.rollup(session, ScoreSnapshotOwnerType.BRAND, brand_id)
+# whichever way the app's latest Score Snapshot moved, every rollup target
+# fires, in the order the Owner Dispatcher hands them over. A caller deleting
+# the app captures the targets first.
+async def on_app_latest_snapshot_changed(session: AsyncSession, targets: tuple[owner.RollupTarget, ...]) -> None:
+    for target in targets:
+        await owner.rollup(session, target.owner_type, target.owner_id)
 
 
 async def on_app_reassigned(session: AsyncSession, old_org_unit_id: int, new_org_unit_id: int) -> None:

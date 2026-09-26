@@ -137,6 +137,21 @@ class TestOwnedConstruction:
             )
 
 
+# Org Unit then Brand is the lock acquisition order ADR 0029 relies on. Red
+# when a rollup spec names the wrong App column, or the table's order moves.
+async def test_app_rollup_targets_are_the_org_unit_then_the_brand(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    org_unit = await make_org_unit(db_session, name="Owning Unit", parent_id=root.id)
+    brand = await make_brand(db_session)
+    assert org_unit.id != brand.id
+    app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
+
+    assert owner_service.app_rollup_targets(app) == (
+        (ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id),
+        (ScoreSnapshotOwnerType.BRAND, brand.id),
+    )
+
+
 async def test_rollup_refuses_an_app_owner(db_session: AsyncSession) -> None:
     # APP snapshots come from scoring; reaching a rollup with one is a bug.
     with pytest.raises(ValueError, match="scoring"):
@@ -664,6 +679,30 @@ async def test_brand_scope_intersects_with_the_under_org_unit_scope(db_session: 
 async def test_brand_scope_requires_the_brand_to_exist(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
         await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP, brand_id=999999)
+
+
+# The score-history walk across a tie on Observation Time. Red when
+# `list_scores` drops the id from its keyset.
+@pytest.mark.parametrize("descending", [False, True])
+async def test_list_scores_walks_a_tied_observation_time_serving_each_snapshot_once(
+    db_session: AsyncSession, descending: bool
+) -> None:
+    app = await make_app_with_org_unit(db_session)
+    first = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+    second = await make_score_snapshot(db_session, app_id=app.id, snapshot_at=DEFAULT_SNAPSHOT_AT)
+
+    served: list[int] = []
+    cursor = None
+    for _ in range(3):
+        page = await owner_service.list_scores(
+            db_session, ScoreSnapshotOwnerType.APP, app.id, cursor=cursor, limit=1, descending=descending
+        )
+        served += [snapshot.id for snapshot in page.items]
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+
+    assert served == ([second.id, first.id] if descending else [first.id, second.id])
 
 
 def test_score_aggregates_are_the_wire_aggregates() -> None:

@@ -85,6 +85,8 @@ class RollupSpec(NamedTuple):
     unique_index: str
     children: ChildrenRead
     cascade_parent: ParentLookup | None
+    # The reverse edge: the App column that addresses this owner.
+    app_column: InstrumentedAttribute[int]
 
 
 class OwnerSpec(NamedTuple):
@@ -104,14 +106,16 @@ def _spec_for(owner_type: ScoreSnapshotOwnerType) -> OwnerSpec:
                 owner_type,
                 ScoreSnapshot.org_unit_id,
                 OrgUnit,
-                RollupSpec(UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, _latest_child_snapshots, _org_unit_parent),
+                RollupSpec(
+                    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, _latest_child_snapshots, _org_unit_parent, App.org_unit_id
+                ),
             )
         case ScoreSnapshotOwnerType.BRAND:
             return OwnerSpec(
                 owner_type,
                 ScoreSnapshot.brand_id,
                 Brand,
-                RollupSpec(UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, _latest_brand_app_snapshots, None),
+                RollupSpec(UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, _latest_brand_app_snapshots, None, App.brand_id),
             )
         case _:
             assert_never(owner_type)
@@ -120,6 +124,22 @@ def _spec_for(owner_type: ScoreSnapshotOwnerType) -> OwnerSpec:
 OWNERS: Mapping[ScoreSnapshotOwnerType, OwnerSpec] = MappingProxyType(
     {owner_type: _spec_for(owner_type) for owner_type in ScoreSnapshotOwnerType}
 )
+
+
+class RollupTarget(NamedTuple):
+    owner_type: ScoreSnapshotOwnerType
+    owner_id: int
+
+
+# Every Owner whose Rollup aggregates this App, as one value a caller captures
+# before deleting the App. The order is the spec table's, Org Unit then Brand,
+# which is the lock acquisition order ADR 0029 relies on.
+def app_rollup_targets(app: App) -> tuple[RollupTarget, ...]:
+    return tuple(
+        RollupTarget(spec.owner_type, getattr(app, spec.rollup.app_column.key))
+        for spec in OWNERS.values()
+        if spec.rollup is not None
+    )
 
 
 async def list_latest_scores(

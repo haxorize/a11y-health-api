@@ -1,11 +1,11 @@
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
-from a11y_health.models.classification import token_to_stored_classification
+from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
@@ -77,7 +77,7 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
     finding = result.scalars().first()
     assert finding is not None
 
-    assert token_to_stored_classification("wcag2a") in finding.classifications
+    assert Classification(standard="wcag", version="2.0", level="A") in finding.classifications
 
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
@@ -87,7 +87,7 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
     finding = result.scalars().first()
     assert finding is not None
 
-    assert token_to_stored_classification("wcag2aa") in finding.classifications
+    assert Classification(standard="wcag", version="2.0", level="AA") in finding.classifications
 
 
 async def test_best_practice_classification_stored_without_null_members(db_session: AsyncSession) -> None:
@@ -95,12 +95,12 @@ async def test_best_practice_classification_stored_without_null_members(db_sessi
     payload = make_axe_payload(violations=[make_violation("region", "moderate")])
     await create_page_result(db_session, scan_run.id, payload)
 
-    stmt = select(RuleFinding).where(RuleFinding.rule_id == "region")
-    finding = (await db_session.execute(stmt)).scalars().one()
+    stmt = select(text("classifications")).select_from(RuleFinding).where(RuleFinding.rule_id == "region")
+    stored = (await db_session.execute(stmt)).scalar_one()
 
     # Compact JSONB, matching the GIN containment targets the classification
     # filter builds.
-    assert finding.classifications == [{"standard": "best-practice"}]
+    assert stored == [{"standard": "best-practice"}]
 
 
 async def test_wcag21_classification_stored_from_ingested_tags(db_session: AsyncSession) -> None:
@@ -108,13 +108,12 @@ async def test_wcag21_classification_stored_from_ingested_tags(db_session: Async
     payload = make_axe_payload(violations=[make_violation("target-size", "serious", tags=["wcag21aa", "cat.color"])])
     await create_page_result(db_session, scan_run.id, payload)
 
-    stmt = select(RuleFinding).where(RuleFinding.rule_id == "target-size")
-    finding = (await db_session.execute(stmt)).scalars().one()
+    stmt = select(text("classifications")).select_from(RuleFinding).where(RuleFinding.rule_id == "target-size")
+    stored = (await db_session.execute(stmt)).scalar_one()
 
     # Deliberately literal — the ingest-path pin for a 2.1 stored shape,
-    # independent of the token map; the fixture-driven wcag2a/wcag2aa asserts
-    # above derive from it.
-    assert finding.classifications == [{"standard": "wcag", "version": "2.1", "level": "AA"}]
+    # independent of the token map.
+    assert stored == [{"standard": "wcag", "version": "2.1", "level": "AA"}]
 
 
 async def test_category_and_wcag_criterion_extracted(db_session: AsyncSession, page_result: PageResult) -> None:

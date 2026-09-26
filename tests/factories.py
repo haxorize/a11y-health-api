@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
-from a11y_health.models.classification import token_to_stored_classification
+from a11y_health.models.classification import Classification
 from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus, ScoreSnapshotOwnerType
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.org_unit import OrgUnit
@@ -274,14 +274,14 @@ async def make_rule_finding(
     impact: Impact = Impact.SERIOUS,
     category: Category = Category.COLOR,
     wcag_criteria: list[str] | None = None,
-    classifications: list[dict[str, Any]] | None = None,
+    classifications: list[Classification | dict[str, Any]] | None = None,
     tags: list[str] | None = None,
 ) -> RuleFinding:
     # `is None` rather than `or`, so an explicit empty list stays empty.
     if wcag_criteria is None:
         wcag_criteria = ["1.4.3"]
     if classifications is None:
-        classifications = [token_to_stored_classification("wcag2aa")]
+        classifications = [Classification(standard="wcag", version="2.0", level="AA")]
     if tags is None:
         tags = ["wcag2aa", "cat.color"]
     rf = RuleFinding(

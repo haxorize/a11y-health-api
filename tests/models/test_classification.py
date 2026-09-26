@@ -1,15 +1,9 @@
-import logging
 from collections.abc import Mapping
 
 import pytest
 
 import a11y_health
-from a11y_health.models.classification import (
-    Classification,
-    classification_options,
-    classifications_in,
-    token_to_stored_classification,
-)
+from a11y_health.models.classification import Classification, classifications_in
 from tests.import_graph import Module, source_paths_importing
 
 
@@ -58,16 +52,6 @@ def test_classifications_in_drops_what_it_cannot_name() -> None:
 
 def test_classifications_in_on_no_candidates() -> None:
     assert classifications_in([]) == []
-
-
-def test_classification_options_drop_invalid_entry_with_warning(caplog: pytest.LogCaptureFixture) -> None:
-    # "Callers need not pre-clean": an invalid stored entry is dropped with a
-    # warning, mirroring the tolerant column read, never raised.
-    with caplog.at_level(logging.WARNING):
-        options = classification_options([{"standard": "section508"}, token_to_stored_classification("wcag2aa")])
-
-    assert [token for token, _ in options] == ["wcag2aa"]
-    assert "section508" in caplog.text
 
 
 def test_the_module_has_exactly_its_five_recorded_consumers(source_edges: Mapping[Module, frozenset[str]]) -> None:

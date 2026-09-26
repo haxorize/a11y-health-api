@@ -1,13 +1,15 @@
 import logging
-from typing import Any
+import re
+from typing import Any, get_args
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
-from a11y_health.models.classification import Classification, token_to_stored_classification
+from a11y_health.models.classification import Classification, ClassificationToken, token_to_stored_classification
 from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
+from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.services import rule_finding as rule_finding_service
 from tests.factories import (
     make_node_finding,
@@ -267,6 +269,121 @@ async def test_filter_options_omit_valid_but_off_vocabulary_classification(
 
     assert [o.token for o in options.classifications] == ["wcag2aa"]
     assert "3.0" in caplog.text
+
+
+async def test_filter_options_statements_are_bounded_by_the_vocabulary_not_the_findings(
+    db_session: AsyncSession,
+) -> None:
+    # Reds if the read pulls one row per Rule Finding back into Python: the top
+    # node's estimate then tracks the 2,000 seeded rows, not the vocabulary.
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    seed = await make_rule_finding(db_session, page_result_id=page.id)
+    columns = ", ".join(c.name for c in RuleFinding.__table__.columns if c.name != "id")
+    await db_session.execute(
+        text(
+            f"INSERT INTO rule_finding ({columns}) "  # noqa: S608 — column names from the model
+            f"SELECT {columns} FROM rule_finding, generate_series(1, 2000) WHERE id = :id"
+        ),
+        {"id": seed.id},
+    )
+    # Unanalyzed, page_result's side of the join estimates near zero rows and
+    # hides the growth this test exists to see.
+    await db_session.execute(text("ANALYZE rule_finding, page_result"))
+    statements: list[tuple[str, Any]] = []
+    connection = (await db_session.connection()).sync_connection
+    assert connection is not None
+
+    def record(_conn: object, _cursor: object, statement: str, parameters: Any, *_: object) -> None:
+        statements.append((statement, parameters))
+
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        await rule_finding_service.list_filter_options(db_session, scan_run.id)
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+
+    over_findings = [(s, p) for s, p in statements if re.search(r"\bFROM rule_finding\b", s)]
+    assert over_findings
+    for statement, parameters in over_findings:
+        explained = await (await db_session.connection()).exec_driver_sql(
+            f"EXPLAIN (FORMAT JSON) {statement}", parameters
+        )
+        top = explained.scalar_one()[0]["Plan"]
+        assert top["Plan Rows"] <= len(get_args(ClassificationToken)), statement
+
+
+async def test_filter_options_warn_once_per_distinct_invalid_classification(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    for _ in range(3):
+        finding = await make_rule_finding(db_session, page_result_id=page.id)
+        await db_session.execute(
+            text("UPDATE rule_finding SET classifications = CAST(:val AS jsonb) WHERE id = :id"),
+            {
+                "val": '[{"standard": "section508"}, {"standard": "wcag", "version": "2.1", "level": "AA"}]',
+                "id": finding.id,
+            },
+        )
+    scan_run_id = scan_run.id
+    db_session.expire_all()
+
+    with caplog.at_level(logging.WARNING):
+        options = await rule_finding_service.list_filter_options(db_session, scan_run_id)
+
+    assert [o.token for o in options.classifications] == ["wcag21aa"]
+    assert len([r for r in caplog.records if "section508" in r.getMessage()]) == 1
+
+
+async def test_filter_options_skip_a_non_array_value(db_session: AsyncSession) -> None:
+    # The column carries no shape constraint (ADR 0014), so a raw write can
+    # leave an object where the array belongs; the expansion must skip it
+    # rather than fail the whole read.
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3"])
+    broken = await make_rule_finding(db_session, page_result_id=page.id)
+    await db_session.execute(
+        text("UPDATE rule_finding SET wcag_criteria = '{}'::jsonb, classifications = '{}'::jsonb WHERE id = :id"),
+        {"id": broken.id},
+    )
+
+    options = await rule_finding_service.list_filter_options(db_session, scan_run.id)
+
+    assert options.wcag_criteria == ["1.4.3"]
+    assert [o.token for o in options.classifications] == ["wcag2aa"]
+
+
+async def test_pinning_the_classification_filter_emits_one_containment_per_token(db_session: AsyncSession) -> None:
+    # Pins the SQL the classification filter emitted before the predicate moved
+    # to the column's module: an OR of @> tests, each against a one-entry array
+    # in the compact stored shape, so the GIN index keeps serving it.
+    scan_run = await make_scan_run_with_parents(db_session)
+    statements: list[tuple[str, Any]] = []
+    connection = (await db_session.connection()).sync_connection
+    assert connection is not None
+
+    def record(_conn: object, _cursor: object, statement: str, parameters: Any, *_: object) -> None:
+        statements.append((statement, parameters))
+
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        await rule_finding_service.list_findings(db_session, scan_run.id, classification=["wcag2aa", "best-practice"])
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+
+    containment = r"\(rule_finding\.classifications @> \$(\d+)::JSONB\)"
+    fragment = re.compile(rf"\({containment} OR {containment}\)")
+    filtered = [(fragment.search(s), p) for s, p in statements if "@>" in s]
+    assert filtered
+    for match, parameters in filtered:
+        assert match is not None
+        assert [parameters[int(n) - 1] for n in match.groups()] == [
+            '[{"standard": "wcag", "version": "2.0", "level": "AA"}]',
+            '[{"standard": "best-practice"}]',
+        ]
 
 
 async def test_planted_invalid_classification_is_dropped_from_reads_not_fatal(

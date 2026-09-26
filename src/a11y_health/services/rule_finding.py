@@ -1,18 +1,14 @@
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
-from sqlalchemy.dialects.postgresql import array
+from sqlalchemy import Select, SQLColumnExpression, Subquery, func, select
+from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text
 
 from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotalledCursorPage, paginate
-from a11y_health.models.classification import (
-    ClassificationToken,
-    classification_options,
-    token_to_stored_classification,
-)
+from a11y_health.models.classification import ClassificationToken, classification_options
 from a11y_health.models.enums import Category, FindingType, Impact
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
@@ -68,8 +64,7 @@ async def list_findings(
     if wcag_criterion:
         stmt = stmt.where(RuleFinding.wcag_criteria.has_any(array(wcag_criterion, type_=Text)))
     if classification:
-        targets = [token_to_stored_classification(c) for c in classification]
-        stmt = stmt.where(or_(*(RuleFinding.classifications.contains([t]) for t in targets)))
+        stmt = stmt.where(RuleFinding.classified_as_any(classification))
 
     return await paginate(
         session,
@@ -94,17 +89,40 @@ def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
     return (1, (), criterion)
 
 
+# The jsonb_typeof guard shares a SELECT with a select-list expansion, which
+# runs after WHERE, so a non-array value is skipped rather than raising.
+def _elements_in_run(
+    column: SQLColumnExpression[Any], expansion: SQLColumnExpression[Any], scan_run_id: int
+) -> Subquery:
+    return (
+        _scoped_to_run(select(expansion.label("element")), scan_run_id)
+        .where(func.jsonb_typeof(column) == "array")
+        .subquery()
+    )
+
+
 # Filter Options (DOMAIN.md): the distinct values present across one Scan Run's
 # Rule Findings, per filter dimension.
 async def list_filter_options(session: AsyncSession, scan_run_id: int) -> FindingFilterOptionsRead:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
-    stmt = _scoped_to_run(select(RuleFinding.wcag_criteria, RuleFinding.classifications), scan_run_id)
-    rows = (await session.execute(stmt)).all()
-    distinct = {criterion for row in rows for criterion in row.wcag_criteria}
-    options = classification_options(entry for row in rows for entry in row.classifications)
+    # One row back, not one per Rule Finding: Postgres expands and dedupes each
+    # array, and the aggregate reads through the column's own type, so each
+    # distinct Classification entry is validated once.
+    criteria = _elements_in_run(
+        RuleFinding.wcag_criteria, func.jsonb_array_elements_text(RuleFinding.wcag_criteria, type_=Text), scan_run_id
+    )
+    entries = _elements_in_run(
+        RuleFinding.classifications, func.jsonb_array_elements(RuleFinding.classifications, type_=JSONB), scan_run_id
+    )
+    stmt = select(
+        select(func.array_agg(criteria.c.element.distinct())).scalar_subquery(),
+        select(func.jsonb_agg(entries.c.element.distinct(), type_=RuleFinding.classifications.type)).scalar_subquery(),
+    )
+    distinct_criteria, distinct_entries = (await session.execute(stmt)).one()
+    options = classification_options(distinct_entries or [])
     return FindingFilterOptionsRead(
-        wcag_criteria=sorted(distinct, key=wcag_criterion_sort_key),
+        wcag_criteria=sorted(distinct_criteria or [], key=wcag_criterion_sort_key),
         classifications=[
             ClassificationFilterOption(token=token, classification=classification) for token, classification in options
         ],

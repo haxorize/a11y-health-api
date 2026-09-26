@@ -1,9 +1,11 @@
+import logging
+
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.models.classification import token_to_stored_classification
+from a11y_health.models.classification import Classification, token_to_stored_classification
 from a11y_health.models.rule_finding import RuleFinding
 from tests.factories import make_page_result_with_parents, make_rule_finding
 
@@ -56,6 +58,38 @@ async def test_containment_target_is_compacted_before_comparison(db_session: Asy
     )
 
     assert (await db_session.execute(stmt)).scalars().all() == [rf.id]
+
+
+async def test_a_loaded_rule_finding_carries_classifications(db_session: AsyncSession) -> None:
+    page = await make_page_result_with_parents(db_session)
+    rf = await make_rule_finding(
+        db_session, page_result_id=page.id, classifications=[{"standard": "wcag", "version": "2.1", "level": "AA"}]
+    )
+    rf_id = rf.id
+    db_session.expire_all()
+
+    loaded = await db_session.get_one(RuleFinding, rf_id)
+
+    assert loaded.classifications == [Classification(standard="wcag", version="2.1", level="AA")]
+
+
+async def test_an_invalid_entry_written_past_the_orm_is_dropped_on_read(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    page = await make_page_result_with_parents(db_session)
+    rf = await make_rule_finding(db_session, page_result_id=page.id)
+    await db_session.execute(
+        text("UPDATE rule_finding SET classifications = CAST(:val AS jsonb) WHERE id = :id"),
+        {"val": '[{"standard": "section508"}, {"standard": "best-practice", "version": null}]', "id": rf.id},
+    )
+    rf_id = rf.id
+    db_session.expire_all()
+
+    with caplog.at_level(logging.WARNING):
+        loaded = await db_session.get_one(RuleFinding, rf_id)
+
+    assert loaded.classifications == [Classification(standard="best-practice")]
+    assert "section508" in caplog.text
 
 
 async def test_bound_entries_are_stored_in_the_compact_shape(db_session: AsyncSession) -> None:

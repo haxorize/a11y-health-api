@@ -1,12 +1,7 @@
 """The Classification value object and the closed vocabulary that names it.
 
-A layer-neutral leaf whose charter is closed: the value object, the token
-vocabulary, the import-time drift guard that keeps the two in lockstep, and the
-reads that vocabulary answers — the stored-shape mint, the Filter Options
-enumeration, and the screen that names a rule's raw axe tags at ingest —
-nothing else. All three run the same closed table, so a token cannot mean one
-thing to a query and another to an ingest. Reading a tag's *shape* — a Category,
-a WCAG Criterion — is `schemas/_tag_parsing.py`'s job.
+Reading a tag's *shape* — a Category, a WCAG Criterion — is
+`schemas/_tag_parsing.py`'s job.
 
 See `docs/architecture.md` ("The layers") for why this lives in `models/`, ADR
 0031 for the wire shape, its five production consumers, and the placement
@@ -22,7 +17,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     SerializerFunctionWrapHandler,
-    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -42,8 +36,7 @@ class Classification(BaseModel):
 
     @model_validator(mode="after")
     def _members_match_standard(self) -> Self:
-        # DOMAIN.md: a WCAG Classification carries a version and level; a
-        # best-practice Classification carries neither.
+        # The rule is DOMAIN.md's Classification entry.
         if self.standard == "wcag":
             if self.version is None or self.level is None:
                 raise ValueError("a wcag Classification carries a version and a level")
@@ -110,23 +103,16 @@ _CLASSIFICATION_TO_TOKEN: dict[Classification, ClassificationToken] = {
 
 
 def classification_options(
-    stored_entries: Iterable[dict[str, str]],
+    classifications: Iterable[Classification],
 ) -> list[tuple[ClassificationToken, Classification]]:
-    """Distinct (token, Classification) pairs for the stored entries, in
-    vocabulary order. An entry that earns no token is dropped with a warning —
-    whether invalid (mirroring the tolerant column read, so callers need not
-    pre-clean) or valid but off-vocabulary, e.g. a raw-SQL backfilled WCAG 3.0:
-    the filter can't query what it can't name."""
+    """Distinct (token, Classification) pairs, in vocabulary order. A
+    Classification that earns no token — a raw-SQL backfilled WCAG 3.0, say — is
+    dropped with a warning: the filter can't query what it can't name."""
     present: set[ClassificationToken] = set()
-    for entry in stored_entries:
-        try:
-            classification = Classification.model_validate(entry)
-        except ValidationError:
-            logger.warning("Omitting invalid classification %r from filter options", entry)
-            continue
+    for classification in classifications:
         token = _CLASSIFICATION_TO_TOKEN.get(classification)
         if token is None:
-            logger.warning("Omitting off-vocabulary classification %r from filter options", entry)
+            logger.warning("Omitting off-vocabulary classification %r from filter options", classification)
             continue
         present.add(token)
     return [(token, _TOKEN_TO_CLASSIFICATION[token]) for token in get_args(ClassificationToken) if token in present]

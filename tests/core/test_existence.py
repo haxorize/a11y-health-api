@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import exceptions, existence
-from a11y_health.core.exceptions import NotFoundError
+from a11y_health.core.exceptions import LabeledModel, NotFoundError
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
 from a11y_health.models.org_unit import OrgUnit
@@ -14,7 +14,7 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
-from tests.factories import make_app_with_org_unit, make_brand
+from tests.factories import make_app_with_org_unit, make_brand, make_page_result_with_parents
 from tests.import_graph import Module, package_sources, source_paths_importing
 
 # Message text is the observable contract — each label must match the wording
@@ -38,7 +38,7 @@ class TestGetByPk:
         assert found is brand
 
     @pytest.mark.parametrize(("model", "label"), EXPECTED_LABELS.items())
-    async def test_label_selection_when_absent(self, db_session: AsyncSession, model: type, label: str) -> None:
+    async def test_label_selection_when_absent(self, db_session: AsyncSession, model: LabeledModel, label: str) -> None:
         with pytest.raises(NotFoundError) as exc_info:
             await existence.get_by_pk(db_session, model, 999999)
 
@@ -66,13 +66,21 @@ class TestEntityLabels:
     def test_every_guarded_entity_has_a_label(self) -> None:
         assert exceptions.ENTITY_LABELS == EXPECTED_LABELS
 
-    async def test_unlabeled_model_is_rejected(self, db_session: AsyncSession) -> None:
-        # The table is closed: guarding a new entity requires adding its label,
-        # not silently inventing one — and the label lookup is eager, so the
-        # rejection fires on the entity's first guarded call, not its first
-        # miss.
-        with pytest.raises(KeyError):
-            await existence.get_by_pk(db_session, PageResult, 999999)
+    # The table is closed: guarding a new entity requires adding its label,
+    # not silently inventing one. The rows exist, so only the eager label
+    # check can raise; a miss would raise from the error's constructor.
+    async def test_unlabeled_model_is_rejected_by_pk_on_a_hit(self, db_session: AsyncSession) -> None:
+        row = await make_page_result_with_parents(db_session)
+
+        with pytest.raises(KeyError, match="PageResult"):
+            await existence.get_by_pk(db_session, PageResult, row.id)  # ty: ignore[invalid-argument-type]
+
+    async def test_unlabeled_model_is_rejected_by_query_on_a_hit(self, db_session: AsyncSession) -> None:
+        row = await make_page_result_with_parents(db_session)
+        stmt = select(PageResult).where(PageResult.id == row.id)
+
+        with pytest.raises(KeyError, match="PageResult"):
+            await existence.get_by_query(db_session, PageResult, stmt, row.id)  # ty: ignore[invalid-argument-type]
 
 
 def _constructs_or_raises_not_found(tree: ast.AST) -> bool:

@@ -46,7 +46,7 @@ _MODE_EXAMPLES: list[DomainError] = [
 ]
 
 
-# Each mode naming an entity resolves its label from the one table. Breaks
+# Each mode taking a model type resolves its label from the one table. Breaks
 # when a mode derives the label any other way, `OrgUnit.__name__` included.
 @pytest.mark.parametrize(
     ("exc", "message"),

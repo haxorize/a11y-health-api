@@ -1,6 +1,7 @@
 import enum
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import TypeVar
 
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
@@ -9,8 +10,16 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 
-# How every error mode names its entity, so an entity reads identically across
-# all its errors. ScoreSnapshot is only ever guarded as a Scan Run's summary
+# The models ENTITY_LABELS names, so an unlabeled model fails the type check
+# rather than raising KeyError while its error is being built.
+type LabeledModel = type[App] | type[Brand] | type[OrgUnit] | type[ScanRun] | type[RuleFinding] | type[ScoreSnapshot]
+Labeled = TypeVar("Labeled", bound=App | Brand | OrgUnit | ScanRun | RuleFinding | ScoreSnapshot)
+
+# How a mode taking a model type names its entity, so an entity reads
+# identically across all its errors. The three modes serving one entity
+# (DuplicateSlugError, ScanRunCompletedError, EmptyScanRunError) open on its
+# label as a literal instead, so each stays searchable from its first word
+# (#162). ScoreSnapshot is only ever guarded as a Scan Run's summary
 # lookup, so that is its canonical label. Read-only so the table stays closed
 # at runtime, not just by convention.
 ENTITY_LABELS: Mapping[type, str] = MappingProxyType(
@@ -32,14 +41,14 @@ class DomainError(Exception):
 
 
 class NotFoundError(DomainError):
-    def __init__(self, entity: type, resource_id: object) -> None:
+    def __init__(self, entity: LabeledModel, resource_id: object) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.resource_id = resource_id
         super().__init__(f"{resource} {resource_id} not found")
 
 
 class CircularReferenceError(DomainError):
-    def __init__(self, entity: type, resource_id: object, parent_id: object) -> None:
+    def __init__(self, entity: LabeledModel, resource_id: object, parent_id: object) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.resource_id = resource_id
         self.parent_id = parent_id
@@ -47,7 +56,7 @@ class CircularReferenceError(DomainError):
 
 
 class DuplicateRootError(DomainError):
-    def __init__(self, entity: type, existing_root_id: object | None = None) -> None:
+    def __init__(self, entity: LabeledModel, existing_root_id: object | None = None) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.existing_root_id = existing_root_id
         # existing_root_id is None on the race path: the root race guard
@@ -67,7 +76,9 @@ class DuplicateSlugError(DomainError):
 
 
 class InvalidStatusTransitionError(DomainError):
-    def __init__(self, entity: type, resource_id: object, current_status: enum.Enum, target_status: enum.Enum) -> None:
+    def __init__(
+        self, entity: LabeledModel, resource_id: object, current_status: enum.Enum, target_status: enum.Enum
+    ) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.resource_id = resource_id
         self.current_status = current_status
@@ -96,7 +107,7 @@ class InvalidAxePayloadError(DomainError):
 
 
 class ConcurrentRollupError(DomainError):
-    def __init__(self, entity: type, resource_id: object) -> None:
+    def __init__(self, entity: LabeledModel, resource_id: object) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.resource_id = resource_id
         super().__init__(
@@ -105,7 +116,7 @@ class ConcurrentRollupError(DomainError):
 
 
 class HasDependentsError(DomainError):
-    def __init__(self, entity: type, resource_id: object) -> None:
+    def __init__(self, entity: LabeledModel, resource_id: object) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.resource_id = resource_id
         super().__init__(f"Cannot delete {resource} {resource_id}: it has dependent records")

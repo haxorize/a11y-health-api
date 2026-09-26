@@ -88,7 +88,7 @@ src/a11y_health/
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
-- Name an entity in an error by its model type, never a label string: `HasDependentsError(OrgUnit, org_unit_id)`. The mode resolves the label from `ENTITY_LABELS` in `core/exceptions.py`, so a service holds no label constant; a new entity, or a contextual label like `ScoreSnapshot`'s "Scan run summary", is a row in that table
+- Name an entity in an error by its model type, never a label string: `HasDependentsError(OrgUnit, org_unit_id)`. The mode resolves the label from `ENTITY_LABELS` in `core/exceptions.py`, so a service holds no label constant; a new entity, or a contextual label like `ScoreSnapshot`'s "Scan run summary", is a row in that table. The three modes serving one entity (`DuplicateSlugError`, `ScanRunCompletedError`, `EmptyScanRunError`) open on its label as a literal instead, so the sentence stays searchable from its first word
 - Writes guarded by a named constraint use `core/integrity.py`'s `guard` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard` docstring for why):
   ```python
   async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
@@ -169,14 +169,15 @@ Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts 
 
 ## Domain exceptions
 
-Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. `DuplicateSlugError` is the shape, quoted as it stands in `core/exceptions.py`:
+Exception classes subclass `DomainError` and store context as instance attributes before calling `super().__init__()`. `HasDependentsError` is the shape, quoted as it stands in `core/exceptions.py`: it takes the model type, resolves the label from `ENTITY_LABELS`, and opens its message on a literal:
 ```python
-class DuplicateSlugError(DomainError):
-    def __init__(self, slug: str) -> None:
-        self.slug = slug
-        super().__init__(f"App with slug '{slug}' already exists")
+class HasDependentsError(DomainError):
+    def __init__(self, entity: LabeledModel, resource_id: object) -> None:
+        self.resource = resource = ENTITY_LABELS[entity]
+        self.resource_id = resource_id
+        super().__init__(f"Cannot delete {resource} {resource_id}: it has dependent records")
 ```
 
 Follow this pattern for new exceptions — attributes enable structured logging and testing; `str(exc)` provides the HTTP response detail.
 
-**Open a new message on a literal rather than on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for. This is a rule for messages not yet written: five of the ten current subclasses open interpolated, `NotFoundError` among them. Their text is the served body — `core/error_contract.py` sends `str(exc)` — so rewording one moves `openapi.json`, the UI's generated client, and three tests that pin the exact string (`tests/core/test_error_contract.py`, `tests/core/test_existence.py`). #184 owns that sweep; until it lands, **when rewording an existing message** match the file rather than the rule — a message written new follows the rule.
+**Open a new message on a literal rather than on an interpolated value** — a message pasted from a log or a bug report has to grep back to the one line that raises it, and a leading `{resource}` leaves only the tail to search for. This is a rule for messages not yet written: five of the ten current subclasses open interpolated, `NotFoundError` among them. Their text is the served body — `core/error_contract.py` sends `str(exc)` — so rewording one moves `openapi.json`, the UI's generated client, and the tests that pin the exact string (in `tests/core/test_error_contract.py` and `tests/core/test_existence.py`). #184 owns that sweep; until it lands, **when rewording an existing message** match the file rather than the rule — a message written new follows the rule.

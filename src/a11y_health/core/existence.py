@@ -13,23 +13,30 @@ See `docs/architecture.md` ("The Existence Guard and the two-tier call rule").
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import ENTITY_LABELS, NotFoundError
+from a11y_health.core.exceptions import ENTITY_LABELS, Labeled, NotFoundError
 
 
-def _require[T](entity: T | None, model: type[T], resource_id: object) -> T:
+def _require_label(model: type) -> None:
+    # Checked before the fetch, so an unlabeled model fails on its first
+    # guarded call rather than on its first miss in production.
+    if model not in ENTITY_LABELS:
+        raise KeyError(f"{model.__name__} has no ENTITY_LABELS entry")
+
+
+def _require(entity: Labeled | None, model: type[Labeled], resource_id: object) -> Labeled:
     if entity is None:
         raise NotFoundError(model, resource_id)
     return entity
 
 
-async def get_by_pk[T](session: AsyncSession, model: type[T], resource_id: object) -> T:
-    # Label resolution precedes the fetch so an unlabeled model fails on its
-    # first guarded call, not its first miss in production.
-    ENTITY_LABELS[model]
+async def get_by_pk(session: AsyncSession, model: type[Labeled], resource_id: object) -> Labeled:
+    _require_label(model)
     return _require(await session.get(model, resource_id), model, resource_id)
 
 
-async def get_by_query[T](session: AsyncSession, model: type[T], stmt: Select[tuple[T]], resource_id: object) -> T:
-    ENTITY_LABELS[model]
+async def get_by_query(
+    session: AsyncSession, model: type[Labeled], stmt: Select[tuple[Labeled]], resource_id: object
+) -> Labeled:
+    _require_label(model)
     result = await session.execute(stmt)
     return _require(result.scalar_one_or_none(), model, resource_id)

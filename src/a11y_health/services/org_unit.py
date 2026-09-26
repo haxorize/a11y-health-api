@@ -42,7 +42,6 @@ async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit
     org_unit = OrgUnit(**data.model_dump())
     async with _root_race_guard(session):
         session.add(org_unit)
-    await session.refresh(org_unit)
     return org_unit
 
 

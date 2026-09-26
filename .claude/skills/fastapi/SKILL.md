@@ -87,13 +87,12 @@ src/a11y_health/
 - Cross-cutting orchestration goes in `services/<name>.py` without underscore prefix (e.g., `scoring_orchestration.py`). These modules coordinate multiple resource services for side effects triggered by mutations
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
-- Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
+- Never re-read a row you just inserted: the INSERT's own `RETURNING` loads its server-generated values (id, `created_at`, `updated_at`), since the mapper's default `eager_defaults="auto"` fetches them on insert. An UPDATE returns nothing, so an update path that serializes `updated_at` still calls `await session.refresh(obj)` after its flush
 - Name an entity in an error by its model type, never a label string: `HasDependentsError(OrgUnit, org_unit_id)`. The mode resolves the label from `ENTITY_LABELS` in `core/exceptions.py`, so a service holds no label constant; a new entity, or a contextual label like `ScoreSnapshot`'s "Scan run summary", is a row in that table. The three modes serving one entity (`DuplicateSlugError`, `ScanRunCompletedError`, `EmptyScanRunError`) open on its label as a literal instead, so the sentence stays searchable from its first word
 - Writes guarded by a named constraint use `core/integrity.py`'s `guard` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard` docstring for why):
   ```python
   async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
       session.add(app)
-  await session.refresh(app)
   ```
   On a recognized violation `guard` raises the mapped domain error with the transaction still usable; anything else re-raises unchanged. Classification rules and the single-use-mapping invariant live in `guard`'s docstrings; ADR 0028 records the decisions.
 

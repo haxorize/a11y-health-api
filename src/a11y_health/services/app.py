@@ -48,7 +48,6 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     app = App(**data.model_dump(), slug=slug)
     async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
         session.add(app)
-    await session.refresh(app)
     return app
 
 

@@ -2,10 +2,11 @@ import re
 
 import pytest
 from pytest import approx
-from sqlalchemy import event, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
+from a11y_health.models.app import App
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.app import AppCreate, AppUpdate
@@ -22,6 +23,7 @@ from tests.factories import (
     make_scan_run,
     make_score_snapshot,
     ou_snapshots,
+    recorded_statements,
 )
 
 
@@ -36,6 +38,22 @@ async def test_create_app_derives_slug_from_name(db_session: AsyncSession) -> No
     assert app.brand_id == brand.id
     assert app.org_unit_id == org_unit.id
     assert app.id is not None
+
+
+# Reds if the create path re-reads its row: the INSERT's RETURNING carries the
+# timestamps, so savepoint, insert and release are the whole write.
+async def test_create_app_takes_its_timestamps_from_the_insert(db_session: AsyncSession) -> None:
+    org_unit = await make_org_unit(db_session)
+    brand = await make_brand(db_session)
+    async with recorded_statements(db_session) as statements:
+        app = await app_service.create_app(
+            db_session, AppCreate(name="My App", brand_id=brand.id, org_unit_id=org_unit.id)
+        )
+    returned = (app.created_at, app.updated_at)
+
+    assert len(statements) == 3
+    stored = await db_session.execute(select(App.created_at, App.updated_at).where(App.id == app.id))
+    assert returned == tuple(stored.one())
 
 
 async def test_create_app_invalid_brand(db_session: AsyncSession) -> None:
@@ -184,18 +202,8 @@ async def test_list_apps_org_unit_filter_embeds_the_subtree_expansion(db_session
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     await make_app(db_session, slug="child-app", org_unit_id=child.id)
     await db_session.flush()
-    statements: list[str] = []
-    connection = (await db_session.connection()).sync_connection
-    assert connection is not None
-
-    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
-        statements.append(statement)
-
-    event.listen(connection, "before_cursor_execute", record)
-    try:
+    async with recorded_statements(db_session) as statements:
         page = await app_service.list_apps(db_session, org_unit_id=[root.id])
-    finally:
-        event.remove(connection, "before_cursor_execute", record)
 
     assert [a.slug for a in page.items] == ["child-app"]
     reading_apps = [s for s in statements if re.search(r"\bFROM app\b", s)]

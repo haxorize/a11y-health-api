@@ -11,6 +11,7 @@ from a11y_health.core.exceptions import (
     NotFoundError,
 )
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
@@ -28,6 +29,7 @@ from tests.factories import (
     make_scan_run,
     make_scan_run_with_parents,
     make_violation,
+    recorded_statements,
     score_new_scan_run,
 )
 
@@ -43,6 +45,22 @@ async def test_create_scan_run(db_session: AsyncSession) -> None:
     assert scan_run.status == ScanRunStatus.PENDING
     assert scan_run.scanned_at == scanned_at
     assert scan_run.created_at is not None
+
+
+# Reds if the create path re-reads its row: the INSERT's RETURNING carries the
+# timestamps, and the App is already in the identity map, so the insert is the
+# whole write.
+async def test_create_scan_run_takes_its_timestamps_from_the_insert(db_session: AsyncSession) -> None:
+    app = await make_app_with_org_unit(db_session)
+    async with recorded_statements(db_session) as statements:
+        scan_run = await scan_run_service.create_scan_run(
+            db_session, app.id, ScanRunCreate(scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC))
+        )
+    returned = (scan_run.created_at, scan_run.updated_at)
+
+    assert len(statements) == 1
+    stored = await db_session.execute(select(ScanRun.created_at, ScanRun.updated_at).where(ScanRun.id == scan_run.id))
+    assert returned == tuple(stored.one())
 
 
 async def test_create_scan_run_invalid_app(db_session: AsyncSession) -> None:

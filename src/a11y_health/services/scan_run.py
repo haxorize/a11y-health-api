@@ -20,7 +20,6 @@ async def create_scan_run(session: AsyncSession, app_id: int, data: ScanRunCreat
     scan_run = ScanRun(app_id=app_id, status=ScanRunStatus.PENDING, **data.model_dump())
     session.add(scan_run)
     await session.flush()
-    await session.refresh(scan_run)
     return scan_run
 
 

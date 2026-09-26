@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from pytest import approx
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,7 @@ from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services._org_subtree import get_descendant_ids
-from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
+from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot, recorded_statements
 
 
 async def test_create_org_unit(db_session: AsyncSession) -> None:
@@ -24,6 +24,19 @@ async def test_create_org_unit(db_session: AsyncSession) -> None:
     assert org_unit.name == "Humana"
     assert org_unit.parent_id is None
     assert org_unit.id is not None
+
+
+# Reds if the create path re-reads its row: the INSERT's RETURNING carries the
+# timestamps, so savepoint, insert and release are the whole write.
+async def test_create_org_unit_takes_its_timestamps_from_the_insert(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    async with recorded_statements(db_session) as statements:
+        org_unit = await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Digital", parent_id=root.id))
+    returned = (org_unit.created_at, org_unit.updated_at)
+
+    assert len(statements) == 3
+    stored = await db_session.execute(select(OrgUnit.created_at, OrgUnit.updated_at).where(OrgUnit.id == org_unit.id))
+    assert returned == tuple(stored.one())
 
 
 async def test_create_org_unit_with_parent(db_session: AsyncSession) -> None:

@@ -89,6 +89,4 @@ async def create_page_result(session: AsyncSession, scan_run_id: int, raw_docume
 
     await _persist_findings(session, page_result.id, payload.findings.violations, FindingType.VIOLATION)
     await _persist_findings(session, page_result.id, payload.findings.incomplete, FindingType.INCOMPLETE)
-
-    await session.refresh(page_result)
     return page_result

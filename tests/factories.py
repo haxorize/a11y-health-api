@@ -1,13 +1,14 @@
 import itertools
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 from httpx import Response
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.app import App
@@ -437,6 +438,22 @@ async def advisory_lock_waiters(session: AsyncSession) -> int:
         )
     )
     return result.scalar_one()
+
+
+@asynccontextmanager
+async def recorded_statements(session: AsyncSession) -> AsyncIterator[list[str]]:
+    statements: list[str] = []
+    connection = (await session.connection()).sync_connection
+    assert connection is not None
+
+    def record(_conn: object, _cursor: object, statement: str, *_: object) -> None:
+        statements.append(statement)
+
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
 
 
 def assert_error(response: Response, status: int, code: str, *, message_contains: str | None = None) -> None:

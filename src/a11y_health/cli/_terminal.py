@@ -23,16 +23,27 @@ from a11y_health.cli._client import create_org_unit, list_brands, list_org_units
 from a11y_health.cli._errors import CliError
 from a11y_health.cli._operations import import_app, ingest
 
-# Every C0 and C1 control character and DEL, except the tab and newline this
-# module's own output is made of, and every Unicode bidi control. Server
-# bodies, org unit names and scan-file text all reach the operator through
-# `_write`; a control character can repaint or erase the line being read, and a
-# bidi control can display it in an order it was not written in.
+# Server bodies, Org Unit names and the text of a Scan Directory's files all
+# reach the operator through `_write`. A CSI or OSC escape sequence goes whole,
+# so a colored proxy body loses its codes rather than printing their
+# parameters.
+_ESCAPE_SEQUENCES = re.compile(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)")
+
+# Then every C0 and C1 control character and DEL, except the tab and newline
+# this module's own output is made of, and every Unicode Bidi_Control: a
+# control character can repaint or erase the line being read, and a bidi
+# control can display it in an order it was not written in. Other invisible
+# format characters, such as a zero-width space or joiner, pass, since they
+# can neither repaint nor reorder a line.
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 
 
 def _write(line: str) -> None:
-    print(_CONTROL_CHARACTERS.sub("", line))
+    line = _CONTROL_CHARACTERS.sub("", _ESCAPE_SEQUENCES.sub("", line))
+    # A lone surrogate, from a file name that is not UTF-8, or a character a
+    # non-UTF-8 stdout cannot encode, prints as an escape rather than raising.
+    encoding = sys.stdout.encoding or "utf-8"
+    print(line.encode(encoding, "backslashreplace").decode(encoding))
 
 
 def _cell(value: object) -> str:

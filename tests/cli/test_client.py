@@ -81,6 +81,17 @@ async def test_raw_body_fallback_bound_starts_one_past_the_limit(extra: int, tru
     assert (error.message != body) is truncated
 
 
+async def test_raw_body_fallback_keeps_the_limit_and_counts_the_rest() -> None:
+    body = "x" * (_client._RAW_BODY_LIMIT + 1)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, text=body)
+
+    error = await _brands_error(handler)
+
+    assert error.message == "x" * 500 + "… (1 more characters)"
+
+
 async def test_unreachable_api_fails_as_an_operator_error() -> None:
     # The server isn't up, or --base-url is wrong. Both are the operator's to
     # fix, so neither should arrive as an httpx traceback.

@@ -335,7 +335,8 @@ def test_main_interrupt_exits_cleanly_without_a_traceback(
         _terminal.main()
 
     assert exc_info.value.code == 130
-    assert "Interrupted" in capsys.readouterr().out
+    # The leading newline ends a half-written progress line first.
+    assert capsys.readouterr().out == "\n  Interrupted.\n"
 
 
 def test_main_ingest_unreachable_api_prints_error_line_and_exits(
@@ -411,8 +412,9 @@ def test_error_body_control_characters_never_reach_the_terminal(
     out = capsys.readouterr().out
     assert exc_info.value.code == 1
     assert _only_printable_tab_and_newline(out), repr(out)
-    assert "ERROR: 502: Bad" in out
-    assert "Gateway" in out
+    # Whole escape sequences go, not just their ESC: no `[2K` or `]0;title`
+    # residue between the halves.
+    assert "ERROR: 502: BadGateway" in out
 
 
 # Reds if the filter strips the tab and newline the table itself is made of.
@@ -431,8 +433,7 @@ def test_table_cells_are_filtered_and_the_table_keeps_its_shape(
     assert _only_printable_tab_and_newline(out), repr(out)
     header, row = out.splitlines()
     assert header == "ID\tNAME"
-    assert row.startswith("5\tHu")
-    assert row.endswith("mana")
+    assert row == "5\tHumana"
 
 
 # Every Unicode bidi control: each reorders the text around it, so a name or
@@ -468,3 +469,18 @@ def test_table_cell_tab_and_newline_cannot_split_a_row(
     _terminal.main()
 
     assert capsys.readouterr().out.splitlines() == ["ID\tNAME", "5\tHu ma na"]
+
+
+# Reds if the sink strips the tab or newline its own output is made of.
+def test_sink_keeps_tab_and_newline(capsys: pytest.CaptureFixture[str]) -> None:
+    _terminal._write("a\tb\nc")
+
+    assert capsys.readouterr().out == "a\tb\nc\n"
+
+
+# A lone surrogate is what a non-UTF-8 file name decodes to on Linux; printed
+# as-is it raises `UnicodeEncodeError` out of `main()`.
+def test_sink_escapes_a_lone_surrogate_instead_of_raising(capsys: pytest.CaptureFixture[str]) -> None:
+    _terminal._write("ERROR: a\ud800b")
+
+    assert capsys.readouterr().out == "ERROR: a\\ud800b\n"

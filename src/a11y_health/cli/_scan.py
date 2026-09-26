@@ -3,7 +3,7 @@
 This module owns everything between a directory on the operator's disk and the
 facts the client needs before it can talk to the API — directory walking, JSON
 loading, the axe boundary crossing for every file, and resolving the App
-identity the scans name. Nothing here knows the API exists.
+identity the Scan Directories name. Nothing here knows the API exists.
 
 Every file crosses the axe boundary here, through the same `parse_axe_payload`
 the server uses, so `name` (the Slug that identifies the App, ADR 0019) and
@@ -234,8 +234,7 @@ def load_scan(directory: Path) -> LoadedScan:
 
 @dataclass(frozen=True)
 class AppIdentity:
-    """The App a set of scans names: the display name it is created under and
-    the Slug that finds it (ADR 0019)."""
+    """Identity is the Slug; the name is only presentation (ADR 0019)."""
 
     name: str
     slug: str

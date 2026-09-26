@@ -17,17 +17,17 @@ from pydantic import BaseModel, ValidationError
 
 
 class ErrorCode(enum.StrEnum):
-    NOT_FOUND = enum.auto()
-    DUPLICATE_ROOT = enum.auto()
-    DUPLICATE_SLUG = enum.auto()
-    HAS_DEPENDENTS = enum.auto()
-    INVALID_STATUS_TRANSITION = enum.auto()
-    SCAN_RUN_COMPLETED = enum.auto()
-    EMPTY_SCAN_RUN = enum.auto()
-    CIRCULAR_REFERENCE = enum.auto()
-    CONCURRENT_ROLLUP = enum.auto()
-    INVALID_CURSOR = enum.auto()
-    INVALID_AXE_PAYLOAD = enum.auto()
+    NOT_FOUND = "not_found"
+    DUPLICATE_ROOT = "duplicate_root"
+    DUPLICATE_SLUG = "duplicate_slug"
+    HAS_DEPENDENTS = "has_dependents"
+    INVALID_STATUS_TRANSITION = "invalid_status_transition"
+    SCAN_RUN_COMPLETED = "scan_run_completed"
+    EMPTY_SCAN_RUN = "empty_scan_run"
+    CIRCULAR_REFERENCE = "circular_reference"
+    CONCURRENT_ROLLUP = "concurrent_rollup"
+    INVALID_CURSOR = "invalid_cursor"
+    INVALID_AXE_PAYLOAD = "invalid_axe_payload"
 
 
 class ErrorBody(BaseModel):

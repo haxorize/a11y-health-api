@@ -10,7 +10,7 @@ from tests.factories import make_org_unit
 
 def _root_taken() -> dict[str, DuplicateRootError]:
     # Fresh mapping per test: `raise ... from` mutates the instance it raises.
-    return {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError("Org unit")}
+    return {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit)}
 
 
 async def test_recognized_constraint_raises_mapped_domain_error(db_session: AsyncSession) -> None:

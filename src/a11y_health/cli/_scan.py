@@ -80,12 +80,19 @@ class InvalidScanFilesError(CliError):
         # str prefixes it with "Invalid axe payload", which this sentence
         # already says.
         detail = "; ".join(f"{file}: {reason.reason}" for file, reason in failures)
-        noun = "file" if len(failures) == 1 else "files"
-        super().__init__(
-            f"{len(failures)} scan {noun} failed axe schema validation: {detail}. "
-            f"Fix the {noun}; if this server accepts {'it' if len(failures) == 1 else 'them'} as-is, "
-            "the CLI and server are different versions: reinstall a11y-health at the server's version."
-        )
+        if len(failures) == 1:
+            message = (
+                f"1 scan file failed axe schema validation: {detail}. "
+                "Fix the file; if this server accepts it as-is, "
+                "the CLI and server are different versions: reinstall a11y-health at the server's version."
+            )
+        else:
+            message = (
+                f"{len(failures)} scan files failed axe schema validation: {detail}. "
+                "Fix the files; if this server accepts them as-is, "
+                "the CLI and server are different versions: reinstall a11y-health at the server's version."
+            )
+        super().__init__(message)
 
 
 class NoDateDirsError(CliError):

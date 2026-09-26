@@ -14,8 +14,6 @@ from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
 from a11y_health.services._org_subtree import get_descendant_ids
 
-_RESOURCE = existence.ENTITY_LABELS[OrgUnit]
-
 
 async def get_root_id(session: AsyncSession, *, exclude_id: int | None = None) -> int | None:
     stmt = select(OrgUnit.id).where(OrgUnit.parent_id.is_(None))
@@ -27,13 +25,13 @@ async def get_root_id(session: AsyncSession, *, exclude_id: int | None = None) -
 async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = None) -> None:
     existing_root_id = await get_root_id(session, exclude_id=exclude_id)
     if existing_root_id is not None:
-        raise DuplicateRootError(_RESOURCE, existing_root_id)
+        raise DuplicateRootError(OrgUnit, existing_root_id)
 
 
 def _root_race_guard(session: AsyncSession) -> AbstractAsyncContextManager[None]:
     """The single-root violation is only reachable when a concurrent transaction
     won the root race after `_check_no_other_root` passed."""
-    return integrity.guard(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(_RESOURCE)})
+    return integrity.guard(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit)})
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
@@ -71,7 +69,7 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
             # The subtree is inclusive of the unit itself, so self-parenting
             # and descendant-parenting fail as one membership check.
             if new_parent_id in await get_descendant_ids(session, [org_unit_id]):
-                raise CircularReferenceError(_RESOURCE, org_unit_id, new_parent_id)
+                raise CircularReferenceError(OrgUnit, org_unit_id, new_parent_id)
         else:
             await _check_no_other_root(session, exclude_id=org_unit_id)
     async with _root_race_guard(session):
@@ -107,7 +105,7 @@ async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
     # One instance for all three dependent FKs: guard raises at most once per
     # call.
-    dependents = HasDependentsError(_RESOURCE, org_unit_id)
+    dependents = HasDependentsError(OrgUnit, org_unit_id)
     async with integrity.guard(
         session,
         {

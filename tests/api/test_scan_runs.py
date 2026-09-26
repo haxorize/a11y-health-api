@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.org_unit import OrgUnit
 from a11y_health.services import owner as owner_service
 from tests.factories import (
     assert_error,
@@ -130,7 +131,7 @@ async def test_delete_scan_run_losing_a_concurrent_rollup_returns_retryable_409(
     mocker.patch.object(
         owner_service,
         "_acquire_rollup_lock",
-        side_effect=ConcurrentRollupError("Org unit", app.org_unit_id),
+        side_effect=ConcurrentRollupError(OrgUnit, app.org_unit_id),
     )
 
     response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")

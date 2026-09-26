@@ -134,7 +134,7 @@ def _not_found_raising_app(include_responses: dict[int | str, dict[str, object]]
 
     @router.get("/widgets/{widget_id}")
     async def get_widget(widget_id: int) -> None:
-        raise NotFoundError("Widget", widget_id)
+        raise NotFoundError(App, widget_id)
 
     widget_app.include_router(router, prefix="/api/v1", responses=include_responses)
     return widget_app

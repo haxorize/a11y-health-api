@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core import existence
+from a11y_health.core import exceptions, existence
 from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
@@ -64,7 +64,7 @@ class TestGetByQuery:
 
 class TestEntityLabels:
     def test_every_guarded_entity_has_a_label(self) -> None:
-        assert existence.ENTITY_LABELS == EXPECTED_LABELS
+        assert exceptions.ENTITY_LABELS == EXPECTED_LABELS
 
     async def test_unlabeled_model_is_rejected(self, db_session: AsyncSession) -> None:
         # The table is closed: guarding a new entity requires adding its label,

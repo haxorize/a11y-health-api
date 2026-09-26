@@ -14,10 +14,10 @@ src/a11y_health/
   cli/             # Onboarding CLI: _scan (disk), _client (API), _operations (sequences), _terminal (argv), _errors
   core/
     database.py       # SessionSource + its one rebinding point, Base, get_db dependency
-    exceptions.py     # domain exceptions raised by services, caught by endpoints
+    exceptions.py     # domain exceptions raised by services, caught by endpoints + ENTITY_LABELS
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
-    existence.py      # the Existence Guard: get_by_pk/get_by_query + ENTITY_LABELS
+    existence.py      # the Existence Guard: get_by_pk/get_by_query
     integrity.py      # the Integrity Guard: guard() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
     slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.
@@ -88,7 +88,7 @@ src/a11y_health/
 - Shared helpers go in `services/_<name>.py` (underscore prefix signals "not a resource service"). These modules can export types and constants used by endpoints too
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Call `await session.refresh(obj)` after flush to load server-generated values (id, timestamps)
-- Define a module-level `_RESOURCE = "ResourceName"` constant for exception messages. For derived resource labels, use f-string composition: `f"{_RESOURCE} summary"`
+- Name an entity in an error by its model type, never a label string: `HasDependentsError(OrgUnit, org_unit_id)`. The mode resolves the label from `ENTITY_LABELS` in `core/exceptions.py`, so a service holds no label constant; a new entity, or a contextual label like `ScoreSnapshot`'s "Scan run summary", is a row in that table
 - Writes guarded by a named constraint use `core/integrity.py`'s `guard` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard` docstring for why):
   ```python
   async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):

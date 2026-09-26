@@ -14,8 +14,6 @@ from a11y_health.schemas.page_result import PageMetricsRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scoring_orchestration
 
-_RESOURCE = existence.ENTITY_LABELS[ScanRun]
-
 
 async def create_scan_run(session: AsyncSession, app_id: int, data: ScanRunCreate) -> ScanRun:
     await existence.get_by_pk(session, App, app_id)
@@ -57,7 +55,7 @@ _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {
 async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRun:
     scan_run = await get_scan_run(session, scan_run_id)
     if data.status not in _VALID_TRANSITIONS[scan_run.status]:
-        raise InvalidStatusTransitionError(_RESOURCE, scan_run_id, scan_run.status, data.status)
+        raise InvalidStatusTransitionError(ScanRun, scan_run_id, scan_run.status, data.status)
     if data.status == ScanRunStatus.COMPLETED:
         # A Scan Run has one or more Page Results (DOMAIN.md): an empty run must
         # not complete — its snapshot would score "no data" as 0.0 and roll up.

@@ -25,21 +25,67 @@ from a11y_health.core.exceptions import (
 )
 from a11y_health.core.pagination import InvalidCursorError
 from a11y_health.main import app
+from a11y_health.models.app import App
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.org_unit import OrgUnit
+from a11y_health.models.scan_run import ScanRun
+from a11y_health.models.score_snapshot import ScoreSnapshot
 
 _MODE_EXAMPLES: list[DomainError] = [
-    NotFoundError("App", 42),
-    DuplicateRootError("Org unit", 1),
+    NotFoundError(App, 42),
+    DuplicateRootError(OrgUnit, 1),
     DuplicateSlugError("my-app"),
-    HasDependentsError("Org unit", 7),
-    InvalidStatusTransitionError("Scan run", 3, ScanRunStatus.COMPLETED, ScanRunStatus.PENDING),
+    HasDependentsError(OrgUnit, 7),
+    InvalidStatusTransitionError(ScanRun, 3, ScanRunStatus.COMPLETED, ScanRunStatus.PENDING),
     ScanRunCompletedError(3),
     EmptyScanRunError(3),
-    CircularReferenceError("Org unit", 1, 2),
-    ConcurrentRollupError("Org unit", 1),
+    CircularReferenceError(OrgUnit, 1, 2),
+    ConcurrentRollupError(OrgUnit, 1),
     InvalidCursorError(),
     InvalidAxePayloadError("findings: Field required"),
 ]
+
+
+# Each mode naming an entity resolves its label from the one table. Breaks
+# when a mode derives the label any other way, `OrgUnit.__name__` included.
+@pytest.mark.parametrize(
+    ("exc", "message"),
+    [
+        pytest.param(NotFoundError(ScoreSnapshot, 5), "Scan run summary 5 not found", id="not_found"),
+        pytest.param(
+            DuplicateRootError(OrgUnit),
+            "A top-level org unit already exists: only one is allowed",
+            id="duplicate_root_race",
+        ),
+        pytest.param(
+            DuplicateRootError(OrgUnit, 1),
+            "Org unit 1 is already the top-level org unit: only one is allowed",
+            id="duplicate_root",
+        ),
+        pytest.param(
+            CircularReferenceError(OrgUnit, 1, 2),
+            "Org unit 1 cannot have 2 as parent: circular reference",
+            id="circular_reference",
+        ),
+        pytest.param(
+            InvalidStatusTransitionError(ScanRun, 3, ScanRunStatus.COMPLETED, ScanRunStatus.PENDING),
+            "Scan run 3 cannot transition from completed to pending",
+            id="invalid_status_transition",
+        ),
+        pytest.param(
+            ConcurrentRollupError(OrgUnit, 1),
+            "Org unit 1 score was updated by another request at the same time; retry the request",
+            id="concurrent_rollup",
+        ),
+        pytest.param(
+            HasDependentsError(OrgUnit, 7),
+            "Cannot delete Org unit 7: it has dependent records",
+            id="has_dependents",
+        ),
+    ],
+)
+def test_mode_names_its_entity_by_the_table_label(exc: DomainError, message: str) -> None:
+    assert str(exc) == message
 
 
 def _domain_error_types() -> set[type[DomainError]]:

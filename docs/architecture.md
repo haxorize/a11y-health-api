@@ -47,7 +47,7 @@ A source module whose name starts with `_` may be reached from within its own pa
 
 ### The Existence Guard and the two-tier call rule
 
-One module owns checking that a referenced entity exists: `core/existence.py`. Its two entry points, `get_by_pk` and `get_by_query`, each return the entity or raise `NotFoundError` with the entity's label from the module's one closed label table. `tests/core/test_existence.py` fails if any other module raises `NotFoundError`; the label table's exclusivity is convention, not a checked claim.
+One module owns checking that a referenced entity exists: `core/existence.py`. Its two entry points, `get_by_pk` and `get_by_query`, each return the entity or raise `NotFoundError`, which names the entity by its label from the one closed label table beside the error definitions in `core/exceptions.py`. Every other mode that names an entity takes its model type and reads the same table, so no service spells a label. `tests/core/test_existence.py` fails if any other module raises `NotFoundError`; the label table's exclusivity is convention, not a checked claim.
 
 Callers follow a two-tier call rule:
 

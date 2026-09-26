@@ -329,7 +329,7 @@ def _require_rollup_spec(owner_type: ScoreSnapshotOwnerType) -> tuple[OwnerSpec,
 
 
 def _concurrent_rollup_error(owner_type: ScoreSnapshotOwnerType, owner_id: int) -> ConcurrentRollupError:
-    return ConcurrentRollupError(existence.ENTITY_LABELS[OWNERS[owner_type].entity], owner_id)
+    return ConcurrentRollupError(OWNERS[owner_type].entity, owner_id)
 
 
 # The #98 indexes allow at most one match; the id-desc pick mirrors the Latest

@@ -55,10 +55,10 @@ def test_classifications_in_on_no_candidates() -> None:
 
 
 def test_the_module_has_exactly_its_four_recorded_consumers(source_edges: Mapping[Module, frozenset[str]]) -> None:
-    # The module docstring and `docs/architecture.md` both state this roster,
-    # and ADR 0031's amendment enumerates a different four, so no record
-    # settles the count on its own. A fifth importer would falsify two pieces
-    # of prose silently; this is the walk that notices.
+    # ADR 0031's 2026-09-26 (#167) amendment keeps this roster, and the module
+    # docstring and `docs/architecture.md` each state its count. A fifth
+    # importer would falsify all three pieces of prose silently; this is the
+    # walk that notices.
     consumers = source_paths_importing(
         source_edges, a11y_health, lambda names: "a11y_health.models.classification" in names
     )

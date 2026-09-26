@@ -1,12 +1,13 @@
 """The Classification value object and the closed vocabulary that names it.
 
-Reading a tag's *shape* — a Category, a WCAG Criterion — is
-`schemas/_tag_parsing.py`'s job.
-
 See `docs/architecture.md` ("The layers") for why this lives in `models/`, ADR
 0031 for the wire shape, its four production consumers, and the placement
-argument that put the vocabulary here, and `DOMAIN.md` for Classification and
-Classification Token.
+argument that put the vocabulary here, that record's 2026-08-05 (#131 review)
+amendment for the module's closed charter and the import-time drift guard, and
+`DOMAIN.md` for Classification and Classification Token.
+
+Reading a tag's *shape* — a Category, a WCAG Criterion — is
+`schemas/_tag_parsing.py`'s job.
 """
 
 import logging

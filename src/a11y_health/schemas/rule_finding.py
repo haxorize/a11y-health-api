@@ -13,8 +13,7 @@ if TYPE_CHECKING:
 
 # The findings filter dimensions, declared once: the endpoint takes it as a
 # dependency, which flattens each field into a query parameter, and the service
-# matches on each field it finds set. The published parameter for finding_type
-# is `type`.
+# matches on each field it finds set.
 @dataclass(frozen=True)
 class FindingFilters:
     finding_type: Annotated[list[FindingType] | None, Query(alias="type")] = None

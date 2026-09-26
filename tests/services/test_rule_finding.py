@@ -8,15 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.classification import Classification, ClassificationToken, token_to_stored_classification
-from a11y_health.models.enums import Category, FindingType, Impact, ScanRunStatus
+from a11y_health.models.enums import Category, Impact, ScanRunStatus
 from a11y_health.models.rule_finding import RuleFinding
+from a11y_health.schemas.rule_finding import FindingFilters
 from a11y_health.services import rule_finding as rule_finding_service
 from tests.factories import (
     make_node_finding,
     make_page_result,
+    make_page_result_with_parents,
     make_rule_finding,
     make_scan_run_with_parents,
 )
+from tests.finding_filter_cases import FILTER_CASES, FilterCase
 
 
 async def test_node_finding_count_reflects_rows_at_read_time_on_pending_run(db_session: AsyncSession) -> None:
@@ -43,83 +46,91 @@ async def test_node_finding_count_zero_for_finding_with_no_node_findings(db_sess
     assert result.items[0].node_finding_count == 0
 
 
-# One case per filter dimension: factory kwargs for a matching finding, for a
-# non-matching one, and the service filter that separates them. Shared by every
-# per-filter parametrized test so a new dimension can't land in one and not the
-# other.
-FILTER_CASES = [
-    pytest.param(
-        {"finding_type": FindingType.VIOLATION},
-        {"finding_type": FindingType.INCOMPLETE},
-        {"finding_type": [FindingType.VIOLATION]},
-        id="finding_type",
-    ),
-    pytest.param(
-        {"impact": Impact.CRITICAL},
-        {"impact": Impact.MINOR},
-        {"impact": [Impact.CRITICAL]},
-        id="impact",
-    ),
-    pytest.param(
-        {"category": Category.KEYBOARD},
-        {"category": Category.COLOR},
-        {"category": [Category.KEYBOARD]},
-        id="category",
-    ),
-    pytest.param(
-        {"wcag_criteria": ["2.4.4"]},
-        {"wcag_criteria": ["1.4.3"]},
-        {"wcag_criterion": ["2.4.4"]},
-        id="wcag_criterion",
-    ),
-    pytest.param(
-        {"classifications": [token_to_stored_classification("best-practice")]},
-        {"classifications": [token_to_stored_classification("wcag2aa")]},
-        {"classification": ["best-practice"]},
-        id="classification",
-    ),
-]
-
-
-@pytest.mark.parametrize(("match_kwargs", "other_kwargs", "filter_kwargs"), FILTER_CASES)
-async def test_node_finding_count_present_under_each_filter(
-    db_session: AsyncSession,
-    match_kwargs: dict[str, Any],
-    other_kwargs: dict[str, Any],
-    filter_kwargs: dict[str, Any],
-) -> None:
+@pytest.mark.parametrize("case", FILTER_CASES)
+async def test_node_finding_count_present_under_each_filter(db_session: AsyncSession, case: FilterCase) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    match = await make_rule_finding(db_session, page_result_id=page.id, rule_id="image-alt", **match_kwargs)
+    match = await make_rule_finding(db_session, page_result_id=page.id, rule_id="image-alt", **case.matching[0])
     await make_node_finding(db_session, rule_finding_id=match.id)
     await make_node_finding(db_session, rule_finding_id=match.id)
-    other = await make_rule_finding(db_session, page_result_id=page.id, rule_id="meta-viewport", **other_kwargs)
+    other = await make_rule_finding(db_session, page_result_id=page.id, rule_id="meta-viewport", **case.other)
     await make_node_finding(db_session, rule_finding_id=other.id)
 
-    result = await rule_finding_service.list_findings(db_session, scan_run.id, **filter_kwargs)
+    result = await rule_finding_service.list_findings(db_session, scan_run.id, filters=FindingFilters(**case.filters))
 
     assert [(f.rule_id, f.node_finding_count) for f in result.items] == [("image-alt", 2)]
 
 
-@pytest.mark.parametrize(("match_kwargs", "other_kwargs", "filter_kwargs"), FILTER_CASES)
-async def test_total_counts_only_findings_matching_the_filter(
-    db_session: AsyncSession,
-    match_kwargs: dict[str, Any],
-    other_kwargs: dict[str, Any],
-    filter_kwargs: dict[str, Any],
-) -> None:
+@pytest.mark.parametrize("case", FILTER_CASES)
+async def test_total_counts_only_findings_matching_the_filter(db_session: AsyncSession, case: FilterCase) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
     page_result = await make_page_result(db_session, scan_run_id=scan_run.id)
     for rule_id in ("image-alt", "aria-hidden-focus"):
-        await make_rule_finding(db_session, page_result_id=page_result.id, rule_id=rule_id, **match_kwargs)
-    await make_rule_finding(db_session, page_result_id=page_result.id, rule_id="meta-viewport", **other_kwargs)
+        await make_rule_finding(db_session, page_result_id=page_result.id, rule_id=rule_id, **case.matching[0])
+    await make_rule_finding(db_session, page_result_id=page_result.id, rule_id="meta-viewport", **case.other)
 
-    result = await rule_finding_service.list_findings(db_session, scan_run.id, limit=1, **filter_kwargs)
+    result = await rule_finding_service.list_findings(
+        db_session, scan_run.id, filters=FindingFilters(**case.filters), limit=1
+    )
 
     # limit=1 keeps the page smaller than the match set, so total can only come
     # from the filtered count, never from the returned items.
     assert len(result.items) == 1
     assert result.total == 2
+
+
+# Breaks when a dimension matches all of its selected values, or only the first,
+# instead of any of them.
+@pytest.mark.parametrize("case", FILTER_CASES)
+async def test_each_filter_matches_any_selected_value(db_session: AsyncSession, case: FilterCase) -> None:
+    page = await make_page_result_with_parents(db_session)
+    kept = await case.seed(db_session, page.id)
+
+    result = await rule_finding_service.list_findings(
+        db_session, page.scan_run_id, filters=FindingFilters(**case.filters)
+    )
+
+    assert {f.rule_id for f in result.items} == kept
+
+
+async def test_filter_dimensions_combine_with_and(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(
+        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.COLOR, rule_id="color-contrast"
+    )
+    await make_rule_finding(
+        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.KEYBOARD, rule_id="tabindex"
+    )
+    await make_rule_finding(
+        db_session, page_result_id=page.id, impact=Impact.MINOR, category=Category.COLOR, rule_id="meta-viewport"
+    )
+
+    result = await rule_finding_service.list_findings(
+        db_session, scan_run.id, filters=FindingFilters(impact=[Impact.CRITICAL], category=[Category.COLOR])
+    )
+
+    assert [f.rule_id for f in result.items] == ["color-contrast"]
+
+
+@pytest.mark.parametrize("token", ["wcag2aa", "wcag21aa"])
+async def test_classification_filter_matches_a_finding_by_any_of_its_classifications(
+    db_session: AsyncSession, token: ClassificationToken
+) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    await make_rule_finding(
+        db_session,
+        page_result_id=page.id,
+        rule_id="color-contrast",
+        classifications=[token_to_stored_classification("wcag2aa"), token_to_stored_classification("wcag21aa")],
+    )
+
+    result = await rule_finding_service.list_findings(
+        db_session, scan_run.id, filters=FindingFilters(classification=[token])
+    )
+
+    assert [f.rule_id for f in result.items] == ["color-contrast"]
 
 
 async def test_total_scoped_to_the_run(db_session: AsyncSession) -> None:
@@ -370,7 +381,9 @@ async def test_pinning_the_classification_filter_emits_one_containment_per_token
 
     event.listen(connection, "before_cursor_execute", record)
     try:
-        await rule_finding_service.list_findings(db_session, scan_run.id, classification=["wcag2aa", "best-practice"])
+        await rule_finding_service.list_findings(
+            db_session, scan_run.id, filters=FindingFilters(classification=["wcag2aa", "best-practice"])
+        )
     finally:
         event.remove(connection, "before_cursor_execute", record)
 

@@ -1,6 +1,8 @@
+from collections.abc import Callable
+from dataclasses import fields
 from typing import Any
 
-from sqlalchemy import Select, SQLColumnExpression, Subquery, func, select
+from sqlalchemy import ColumnElement, Select, SQLColumnExpression, Subquery, func, select
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
@@ -8,8 +10,7 @@ from sqlalchemy.types import Text
 
 from a11y_health.core import existence
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotalledCursorPage, paginate
-from a11y_health.models.classification import ClassificationToken, classification_options
-from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.models.classification import classification_options
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
@@ -17,6 +18,7 @@ from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.rule_finding import (
     ClassificationFilterOption,
     FindingFilterOptionsRead,
+    FindingFilters,
     NodeFindingDetail,
     RuleFindingDetail,
     RuleFindingRead,
@@ -29,15 +31,24 @@ def _scoped_to_run[SelectT: Select[Any]](stmt: SelectT, scan_run_id: int) -> Sel
     )
 
 
+_NO_FILTERS = FindingFilters()
+
+# What a finding matching any of one dimension's selected values means, per
+# FindingFilters field. Dimensions combine with AND.
+_MATCHES: dict[str, Callable[[Any], ColumnElement[bool]]] = {
+    "finding_type": lambda values: RuleFinding.type.in_(values),
+    "impact": lambda values: RuleFinding.impact.in_(values),
+    "category": lambda values: RuleFinding.category.in_(values),
+    "wcag_criterion": lambda values: RuleFinding.wcag_criteria.has_any(array(values, type_=Text)),
+    "classification": lambda values: RuleFinding.classified_as_any(values),
+}
+
+
 async def list_findings(
     session: AsyncSession,
     scan_run_id: int,
     *,
-    finding_type: list[FindingType] | None = None,
-    impact: list[Impact] | None = None,
-    category: list[Category] | None = None,
-    wcag_criterion: list[str] | None = None,
-    classification: list[ClassificationToken] | None = None,
+    filters: FindingFilters = _NO_FILTERS,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> TotalledCursorPage[RuleFindingRead]:
@@ -55,16 +66,9 @@ async def list_findings(
     )
     stmt = _scoped_to_run(select(RuleFinding, node_finding_count), scan_run_id)
 
-    if finding_type:
-        stmt = stmt.where(RuleFinding.type.in_(finding_type))
-    if impact:
-        stmt = stmt.where(RuleFinding.impact.in_(impact))
-    if category:
-        stmt = stmt.where(RuleFinding.category.in_(category))
-    if wcag_criterion:
-        stmt = stmt.where(RuleFinding.wcag_criteria.has_any(array(wcag_criterion, type_=Text)))
-    if classification:
-        stmt = stmt.where(RuleFinding.classified_as_any(classification))
+    for dimension in fields(filters):
+        if values := getattr(filters, dimension.name):
+            stmt = stmt.where(_MATCHES[dimension.name](values))
 
     return await paginate(
         session,

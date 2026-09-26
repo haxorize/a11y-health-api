@@ -1,5 +1,7 @@
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Annotated, Any
 
+from fastapi import Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from a11y_health.models.classification import Classification, ClassificationToken
@@ -7,6 +9,23 @@ from a11y_health.models.enums import Category, FindingType, Impact
 
 if TYPE_CHECKING:
     from a11y_health.models.rule_finding import RuleFinding
+
+
+# The findings filter dimensions, declared once: the endpoint takes it as a
+# dependency, which flattens each field into a query parameter, and the service
+# matches on each field it finds set. The published parameter for finding_type
+# is `type`.
+@dataclass(frozen=True)
+class FindingFilters:
+    finding_type: Annotated[list[FindingType] | None, Query(alias="type")] = None
+    impact: Annotated[list[Impact] | None, Query()] = None
+    category: Annotated[list[Category] | None, Query()] = None
+    wcag_criterion: Annotated[list[str] | None, Query()] = None
+    classification: Annotated[list[ClassificationToken] | None, Query()] = None
+
+
+# Depends(), not Query(), for the reason `PageParams` gives.
+FindingFilterParams = Annotated[FindingFilters, Depends()]
 
 
 # The token is the findings filter's query vocabulary; the Classification is the

@@ -4,7 +4,7 @@ Reading a tag's *shape* — a Category, a WCAG Criterion — is
 `schemas/_tag_parsing.py`'s job.
 
 See `docs/architecture.md` ("The layers") for why this lives in `models/`, ADR
-0031 for the wire shape, its five production consumers, and the placement
+0031 for the wire shape, its four production consumers, and the placement
 argument that put the vocabulary here, and `DOMAIN.md` for Classification and
 Classification Token.
 """

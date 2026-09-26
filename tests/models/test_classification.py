@@ -54,16 +54,15 @@ def test_classifications_in_on_no_candidates() -> None:
     assert classifications_in([]) == []
 
 
-def test_the_module_has_exactly_its_five_recorded_consumers(source_edges: Mapping[Module, frozenset[str]]) -> None:
+def test_the_module_has_exactly_its_four_recorded_consumers(source_edges: Mapping[Module, frozenset[str]]) -> None:
     # The module docstring and `docs/architecture.md` both state this roster,
     # and ADR 0031's amendment enumerates a different four, so no record
-    # settles the count on its own. A sixth importer would falsify two pieces
+    # settles the count on its own. A fifth importer would falsify two pieces
     # of prose silently; this is the walk that notices.
     consumers = source_paths_importing(
         source_edges, a11y_health, lambda names: "a11y_health.models.classification" in names
     )
     assert consumers == [
-        "api/v1/endpoints/findings.py",
         "models/rule_finding.py",
         "schemas/axe_payload.py",
         "schemas/rule_finding.py",

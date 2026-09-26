@@ -1,15 +1,20 @@
+from dataclasses import fields
+
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.main import app
 from a11y_health.models.classification import token_to_stored_classification
-from a11y_health.models.enums import Category, FindingType, Impact
+from a11y_health.schemas.rule_finding import FindingFilters
 from tests.factories import (
     make_node_finding,
     make_page_result,
+    make_page_result_with_parents,
     make_rule_finding,
     make_scan_run_with_parents,
 )
+from tests.finding_filter_cases import FILTER_CASES, FilterCase
 
 
 async def test_list_findings(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -181,108 +186,26 @@ async def test_filter_options_scan_run_not_found(db_client: AsyncClient) -> None
     assert response.status_code == 404
 
 
-async def test_filter_by_type(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session, page_result_id=page.id, finding_type=FindingType.VIOLATION, rule_id="color-contrast"
-    )
-    await make_rule_finding(
-        db_session, page_result_id=page.id, finding_type=FindingType.INCOMPLETE, rule_id="image-alt"
-    )
-
-    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"type": "violation"})
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "color-contrast"
+# Breaks when a dimension is declared with no case, which the decode test below
+# would then never send, so nothing proves it reaches the service.
+def test_every_declared_filter_dimension_has_a_case() -> None:
+    assert {f.name for f in fields(FindingFilters)} == {str(case.id) for case in FILTER_CASES}
 
 
-async def test_filter_by_type_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session, page_result_id=page.id, finding_type=FindingType.VIOLATION, rule_id="color-contrast"
-    )
-    await make_rule_finding(
-        db_session, page_result_id=page.id, finding_type=FindingType.INCOMPLETE, rule_id="image-alt"
-    )
+# Breaks when a dimension's query parameter is renamed or dropped (the
+# non-matching finding comes back), or when a repeated parameter decodes to its
+# last value only (the first-value match goes missing).
+@pytest.mark.parametrize("case", FILTER_CASES)
+async def test_each_filter_parameter_decodes_to_its_dimension(
+    db_client: AsyncClient, db_session: AsyncSession, case: FilterCase
+) -> None:
+    page = await make_page_result_with_parents(db_session)
+    kept = await case.seed(db_session, page.id)
 
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params=[("type", "violation"), ("type", "incomplete")],
-    )
+    response = await db_client.get(f"/api/v1/scan-runs/{page.scan_run_id}/findings", params=case.query)
 
     assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 2
-
-
-async def test_filter_by_impact(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, impact=Impact.CRITICAL, rule_id="image-alt")
-    await make_rule_finding(db_session, page_result_id=page.id, impact=Impact.MINOR, rule_id="meta-viewport")
-
-    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"impact": "critical"})
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "image-alt"
-
-
-async def test_filter_by_impact_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, impact=Impact.CRITICAL, rule_id="image-alt")
-    await make_rule_finding(db_session, page_result_id=page.id, impact=Impact.MINOR, rule_id="meta-viewport")
-    await make_rule_finding(db_session, page_result_id=page.id, impact=Impact.MODERATE, rule_id="tabindex")
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params=[("impact", "critical"), ("impact", "minor")],
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 2
-    rule_ids = {f["rule_id"] for f in items}
-    assert rule_ids == {"image-alt", "meta-viewport"}
-
-
-async def test_filter_by_category(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, category=Category.COLOR, rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, category=Category.KEYBOARD, rule_id="tabindex")
-
-    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"category": "keyboard"})
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "tabindex"
-
-
-async def test_filter_by_category_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, category=Category.COLOR, rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, category=Category.KEYBOARD, rule_id="tabindex")
-    await make_rule_finding(db_session, page_result_id=page.id, category=Category.FORMS, rule_id="label")
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params=[("category", "color"), ("category", "forms")],
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 2
-    rule_ids = {f["rule_id"] for f in items}
-    assert rule_ids == {"color-contrast", "label"}
+    assert {f["rule_id"] for f in response.json()["items"]} == kept
 
 
 async def test_filter_by_category_invalid_returns_422(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -291,146 +214,6 @@ async def test_filter_by_category_invalid_returns_422(db_client: AsyncClient, db
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"category": "bogus"})
 
     assert response.status_code == 422
-
-
-async def test_filter_by_wcag_criteria(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3"], rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["2.4.4"], rule_id="link-name")
-
-    response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"wcag_criterion": "2.4.4"})
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "link-name"
-
-
-async def test_filter_by_wcag_criteria_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["1.4.3"], rule_id="color-contrast")
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["2.4.4"], rule_id="link-name")
-    await make_rule_finding(db_session, page_result_id=page.id, wcag_criteria=["4.1.2"], rule_id="aria-roles")
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params=[("wcag_criterion", "1.4.3"), ("wcag_criterion", "2.4.4")],
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 2
-    rule_ids = {f["rule_id"] for f in items}
-    assert rule_ids == {"color-contrast", "link-name"}
-
-
-async def test_filter_by_classification(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="color-contrast",
-        classifications=[token_to_stored_classification("wcag2aa")],
-    )
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="skip-link",
-        classifications=[token_to_stored_classification("best-practice")],
-    )
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": "best-practice"}
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "skip-link"
-
-
-async def test_filter_by_classification_multi_select(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="color-contrast",
-        classifications=[token_to_stored_classification("wcag2aa")],
-    )
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="skip-link",
-        classifications=[token_to_stored_classification("best-practice")],
-    )
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="aria-roles",
-        classifications=[token_to_stored_classification("wcag21aa")],
-    )
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params=[("classification", "wcag2aa"), ("classification", "best-practice")],
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 2
-    rule_ids = {f["rule_id"] for f in items}
-    assert rule_ids == {"color-contrast", "skip-link"}
-
-
-async def test_filter_by_classification_multi(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session,
-        page_result_id=page.id,
-        rule_id="color-contrast",
-        classifications=[
-            token_to_stored_classification("wcag2aa"),
-            token_to_stored_classification("wcag21aa"),
-        ],
-    )
-
-    r1 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": "wcag2aa"})
-    r2 = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings", params={"classification": "wcag21aa"})
-
-    items1, items2 = r1.json()["items"], r2.json()["items"]
-    assert len(items1) == 1
-    assert len(items2) == 1
-    assert items1[0]["rule_id"] == "color-contrast"
-    assert items2[0]["rule_id"] == "color-contrast"
-
-
-async def test_filters_combine_with_and(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
-    await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.COLOR, rule_id="color-contrast"
-    )
-    await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.CRITICAL, category=Category.KEYBOARD, rule_id="tabindex"
-    )
-    await make_rule_finding(
-        db_session, page_result_id=page.id, impact=Impact.MINOR, category=Category.COLOR, rule_id="meta-viewport"
-    )
-
-    response = await db_client.get(
-        f"/api/v1/scan-runs/{scan_run.id}/findings",
-        params={"impact": "critical", "category": "color"},
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["rule_id"] == "color-contrast"
 
 
 async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSession) -> None:

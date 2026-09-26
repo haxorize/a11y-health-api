@@ -7,7 +7,7 @@ description: Test conventions for this project — layout, the seven conftest fi
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism**, a **topology guard**, or a **test of something outside `src/`**, which live at the root beside their implementation rather than under the package they happen to guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either of those two under a mirrored directory is what produced the mixed contract suite #133 had to split. A test of something outside `src/` — a script under `scripts/`, the way `test_staged_worktree.py` drives `scripts/staged_worktree.sh` — has no package to mirror at all.
+Mirror the app structure — except for a **suite-wide mechanism**, a **topology guard**, or a **test of something outside `src/`**, which live at the root beside their implementation rather than under the package they guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either of those two under a mirrored directory is what produced the mixed contract suite #133 had to split. A test of something outside `src/` — a script under `scripts/`, the way `test_staged_worktree.py` drives `scripts/staged_worktree.sh` — has no package to mirror at all.
 
 ```
 tests/
@@ -33,6 +33,7 @@ tests/
   test_prose_shape.py      # the six prose guards, the 15,000-byte bound on every skill body and
                            # reference among them; the code-documentation skill names each
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
+  finding_filter_cases.py  # the findings filter case table the API and service suites both read
   test_factories.py        # the Latest Score Snapshot readers
   test_truncate_teardown.py  # teardown lock timeout
   fixtures/                # one sample Axe Payload (humana.com-home.json)
@@ -82,7 +83,7 @@ Seven fixtures, layered:
 - **`axe_payload`** (function scope) — `tests/fixtures/humana.com-home.json`, parsed once per run; each test gets its own copy
 - **`source_edges`** (session scope) — `package_edges` over `src/`, walked once per run
 
-Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed. The one exception is tests built on `committed_session_factory`, which really commit and rely on its truncate teardown.
+Every DB test uses transactional isolation — each test's transaction rolls back, so no cleanup is needed. The one exception is `committed_session_factory` (above).
 
 ## Writing endpoint tests
 
@@ -174,6 +175,6 @@ pytestmark = pytest.mark.integration
 
 ## Anti-patterns
 
-- **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation. (Sessions from `committed_session_factory` are the exception — committing is their purpose, and its truncate teardown cleans up.)
+- **Don't `commit()` in tests or factories** — use `flush()`; `commit()` breaks the rollback isolation. (`committed_session_factory` sessions are the exception, above.)
 - **Don't make parallel HTTP calls in a single test** — `db_client` routes every request through one shared `AsyncSession`, which isn't concurrent-safe; `asyncio.gather` on it deadlocks or corrupts state. Await calls sequentially.
 - **Don't `asyncio.sleep()` to wait for state** — poll the condition with a deadline (loop: check, short sleep, re-check, fail past timeout) and assert what you waited *for*; a fixed sleep is either too slow or flaky. Fixed sleeps are legitimate only when elapsed time is itself the behavior under test (e.g., TTL expiry).

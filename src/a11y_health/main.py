@@ -7,8 +7,8 @@ from fastapi.routing import APIRoute
 from sqlalchemy import text
 
 from a11y_health.api.v1.router import api_router
-from a11y_health.config import API_V1_PREFIX, PROJECT_NAME, VERSION, settings
-from a11y_health.core.database import engine
+from a11y_health.config import API_V1_PREFIX, PROJECT_NAME, VERSION, Settings, settings
+from a11y_health.core.database import session_source
 from a11y_health.core.error_contract import register_error_handlers
 
 
@@ -17,6 +17,7 @@ from a11y_health.core.error_contract import register_error_handlers
 # restarts the process.
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    engine = session_source().engine
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
     yield
@@ -33,19 +34,28 @@ def _operation_id(route: APIRoute) -> str:
     return route.name
 
 
-app = FastAPI(
-    title=PROJECT_NAME,
-    version=VERSION,
-    openapi_url=f"{API_V1_PREFIX}/openapi.json",
-    lifespan=lifespan,
-    generate_unique_id_function=_operation_id,
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-register_error_handlers(app)
-app.include_router(api_router)
+# Settings reach the middleware here; the database does not. DATABASE_URL and
+# DEBUG are read once, by the session source, which `bind_session_source`
+# rebinds.
+def assemble_application(settings: Settings) -> FastAPI:
+    app = FastAPI(
+        title=PROJECT_NAME,
+        version=VERSION,
+        openapi_url=f"{API_V1_PREFIX}/openapi.json",
+        lifespan=lifespan,
+        generate_unique_id_function=_operation_id,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    register_error_handlers(app)
+    app.include_router(api_router)
+    return app
+
+
+# The object uvicorn serves and scripts/export_openapi.py exports.
+app = assemble_application(settings)

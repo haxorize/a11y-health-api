@@ -14,6 +14,7 @@ tests/
   __init__.py              # one in every test directory except fixtures/, which holds data
   conftest.py              # shared fixtures (engine, client, db_session, db_client, committed_session_factory, axe_payload)
   test_config.py           # top-level Settings/config tests
+  test_main.py             # application assembly: operation-id uniqueness, CORS by settings, lifespan
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
   import_graph.py          # shared import-reading helpers for the topology guards
@@ -74,7 +75,7 @@ Six fixtures, layered:
 - **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test. Its superuser requirement and the one sanctioned per-session exception are in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md)
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
-- **`db_client`** — `AsyncClient` with `app.dependency_overrides[get_db]` set to use `db_session`; clears overrides in a `finally` block. For endpoints that touch the DB. The override yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why the override is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
+- **`db_client`** — `AsyncClient` with the session source bound, through `bind_session_source`, to one that hands every request `db_session`; the binding is restored on exit. For endpoints that touch the DB. That source yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why that source is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
 - **`committed_session_factory`** — factory for real-commit sessions on separate connections, for the rare test that needs one session's writes visible to another (genuine lock contention); teardown truncates every table. The sanctioned exception to rollback isolation — see [ADR 0011](../../../docs/adr/0011-transactional-rollback-test-isolation.md)
 - **`axe_payload`** (function scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests. Function scope prevents cross-test pollution from mutations
 

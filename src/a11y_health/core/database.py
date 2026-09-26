@@ -1,4 +1,5 @@
-"""Database engine, session factory, and the ORM base classes.
+"""The session source, the per-request session dependency, and the ORM base
+classes.
 
 `get_db()` is the per-request session dependency: one transaction per request,
 committed on success and rolled back on any exception, so services never call
@@ -8,11 +9,12 @@ See `docs/architecture.md` ("How the database session and transactions work").
 """
 
 import enum
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, Identity, func
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from a11y_health.config import settings
@@ -26,8 +28,44 @@ def enum_values(e: type[enum.Enum]) -> list[str]:
     return [m.value for m in e]
 
 
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
-async_session = async_sessionmaker(engine, expire_on_commit=False)
+class SessionSource:
+    """Where this process's connections come from: one engine, and the
+    transaction each request's session runs in."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self.engine = engine
+        self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def request_session(self) -> AsyncIterator[AsyncSession]:
+        async with self._sessions() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+
+_session_source = SessionSource(create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG))
+
+
+# Read at call time by `get_db` and the application's lifespan, never bound
+# by value at import, so `bind_session_source` below reaches both.
+def session_source() -> SessionSource:
+    return _session_source
+
+
+# The one rebinding point: the suite points the application at its own
+# database here, and restores the previous source on exit.
+@contextmanager
+def bind_session_source(source: SessionSource) -> Iterator[None]:
+    global _session_source
+    previous, _session_source = _session_source, source
+    try:
+        yield
+    finally:
+        _session_source = previous
 
 
 class Base(DeclarativeBase):
@@ -42,10 +80,5 @@ class TimestampMixin:
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    async with async_session() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    async with session_source().request_session() as session:
+        yield session

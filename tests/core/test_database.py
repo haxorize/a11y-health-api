@@ -1,43 +1,48 @@
 from collections.abc import AsyncGenerator
 from typing import cast
-from unittest.mock import AsyncMock
 
 import pytest
-from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from a11y_health.core import database as db_module
+from a11y_health.core.database import SessionSource, bind_session_source, get_db, session_source
+from a11y_health.models import Brand
+from tests.factories import SessionFactory, make_brand
 
-
-def _patch_session(mocker: MockerFixture) -> AsyncMock:
-    session = mocker.AsyncMock()
-    cm = mocker.AsyncMock()
-    cm.__aenter__.return_value = session
-    mocker.patch.object(db_module, "async_session", return_value=cm)
-    return session
+# `get_db` drives real commits here, so these take `committed_session_factory`
+# for its truncate and read the outcome back on a connection of its own.
 
 
-async def test_get_db_commits_on_success(mocker: MockerFixture) -> None:
-    session = _patch_session(mocker)
+async def test_get_db_commits_a_successful_request_on_the_bound_source(
+    engine: AsyncEngine, committed_session_factory: SessionFactory
+) -> None:
+    with bind_session_source(SessionSource(engine)):
+        requests = get_db()
+        brand = await make_brand(await anext(requests))
+        with pytest.raises(StopAsyncIteration):
+            await anext(requests)
 
-    gen = db_module.get_db()
-    yielded = await anext(gen)
-    assert yielded is session
-    with pytest.raises(StopAsyncIteration):
-        await anext(gen)
-
-    session.commit.assert_awaited_once()
-    session.rollback.assert_not_called()
+    async with committed_session_factory() as other:
+        assert await other.get(Brand, brand.id) is not None
 
 
-async def test_get_db_rolls_back_on_exception(mocker: MockerFixture) -> None:
-    session = _patch_session(mocker)
+async def test_get_db_rolls_back_a_failed_request_on_the_bound_source(
+    engine: AsyncEngine, committed_session_factory: SessionFactory
+) -> None:
+    with bind_session_source(SessionSource(engine)):
+        requests = cast(AsyncGenerator[AsyncSession], get_db())
+        brand = await make_brand(await anext(requests))
+        with pytest.raises(RuntimeError, match="boom"):
+            await requests.athrow(RuntimeError("boom"))
 
-    gen = cast(AsyncGenerator[AsyncSession], db_module.get_db())
-    await anext(gen)
+    async with committed_session_factory() as other:
+        assert await other.get(Brand, brand.id) is None
 
-    with pytest.raises(RuntimeError, match="boom"):
-        await gen.athrow(RuntimeError("boom"))
 
-    session.rollback.assert_awaited_once()
-    session.commit.assert_not_called()
+def test_binding_a_session_source_restores_the_previous_one_on_exit(engine: AsyncEngine) -> None:
+    before = session_source()
+    bound = SessionSource(engine)
+
+    with bind_session_source(bound):
+        assert session_source() is bound
+
+    assert session_source() is before

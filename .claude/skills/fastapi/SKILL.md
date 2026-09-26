@@ -9,11 +9,11 @@ description: Project conventions for this FastAPI API — app structure, endpoin
 
 ```
 src/a11y_health/
-  main.py          # FastAPI app, lifespan, middleware
+  main.py          # assemble_application(settings): lifespan, middleware, routers; `app` is its one module-level call
   config.py        # pydantic-settings Settings singleton
   cli/             # Onboarding CLI: _scan (disk), _client (API), _operations (sequences), _terminal (argv), _errors
   core/
-    database.py       # engine, async_session, Base, get_db dependency
+    database.py       # SessionSource + its one rebinding point, Base, get_db dependency
     exceptions.py     # domain exceptions raised by services, caught by endpoints
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
@@ -119,7 +119,7 @@ if data.status == ScanRunStatus.COMPLETED:
 
 ## Database sessions
 
-`get_db` yields an `AsyncSession` that auto-commits on success and rolls back on exception. Endpoints receive it via `Depends(get_db)`. Session uses `expire_on_commit=False`.
+`get_db` yields an `AsyncSession` from the session source that auto-commits on success and rolls back on exception. Endpoints receive it via `Depends(get_db)`. Session uses `expire_on_commit=False`. The source (`session_source()`) is read at call time by `get_db` and the lifespan, and `bind_session_source` is the one place to point both at another engine; never import the engine by value.
 
 ## Config
 

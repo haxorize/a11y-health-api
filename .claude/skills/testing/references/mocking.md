@@ -4,7 +4,7 @@ Open this before mocking anything: which tool, which seam, and the async form.
 
 Use the `mocker` fixture from `pytest-mock` rather than raw `unittest.mock` — it auto-cleans patches per test.
 
-`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (a sessionmaker rebinding, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — and the way around that is in [cli-and-migration-tests.md](cli-and-migration-tests.md).
+`monkeypatch` is the other sanctioned tool, for a plain attribute or env swap that asserts nothing about calls (an environment variable, `sys.argv`); reach for `mocker` when the test asserts on the call. A session-scoped fixture cannot take either — both are function-scoped — and the way around that is in [cli-and-migration-tests.md](cli-and-migration-tests.md).
 
 ```python
 async def test_complete_scan_run_sends_the_status(mocker) -> None:

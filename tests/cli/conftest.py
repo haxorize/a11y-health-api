@@ -7,10 +7,10 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from a11y_health.cli._client import make_client
-from a11y_health.core import database
+from a11y_health.core.database import SessionSource, bind_session_source, session_source
 from tests.conftest import declaration_honest_app
 
 
@@ -108,22 +108,22 @@ async def live_server(_fake_proxy: _FakeProxy, engine: AsyncEngine) -> AsyncIter
 
     uvicorn runs as a task on the suite's session loop rather than in a thread
     or a subprocess, so the served app shares the Declaration Honesty request
-    scope (ADR 0033). The production `get_db` is bound to the test engine for
-    the server's lifetime — the binding `test_rollup_deadlock.py` makes per
-    test — because a server's requests cannot join a test's rolled-back
-    transaction, and unbound they would reach the dev `DATABASE_URL`; a test
-    that writes through the server takes `committed_session_factory` for the
-    truncate at teardown (ADR 0011). Over a socket an undeclared mode does not
-    surface as the shim's assertion text: the status line is on the wire
-    before the shim asserts on the body, so the client sees a torn connection
-    instead. Lifespan is off, as it is under `ASGITransport`: the app's
-    lifespan pings the dev `DATABASE_URL`, and the suite requires only the
-    test database.
+    scope (ADR 0033). The session source is bound to the test engine for the
+    server's lifetime, and read back so a missing binding fails at setup
+    rather than writing rows, because a server's requests cannot join a
+    test's rolled-back transaction and unbound they would reach the dev
+    `DATABASE_URL`; a test that writes through the server takes
+    `committed_session_factory` for the truncate at teardown (ADR 0011). Over
+    a socket an undeclared mode does not surface as the shim's assertion
+    text: the status line is on the wire before the shim asserts on the body,
+    so the client sees a torn connection instead. Lifespan is off, as it is
+    under `ASGITransport`; `tests/test_main.py` runs it against the test
+    engine.
     """
     config = uvicorn.Config(_fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
     server = uvicorn.Server(config)
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(database, "async_session", async_sessionmaker(engine, expire_on_commit=False))
+    with bind_session_source(SessionSource(engine)):
+        assert session_source().engine is engine
         serving = asyncio.create_task(server.serve())
         try:
             async with asyncio.timeout(5):

@@ -12,7 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
 
 from a11y_health.config import settings
-from a11y_health.core.database import Base, get_db
+from a11y_health.core.database import Base, SessionSource, bind_session_source
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
 from tests._declaration_honesty import (
@@ -187,17 +187,26 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
             await session.close()
 
 
-@pytest.fixture
-async def db_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
-    async def override_get_db() -> AsyncIterator[AsyncSession]:
-        yield db_session
+class _SharedSession(SessionSource):
+    """Hands every request the test's own `db_session` and stops there: no
+    commit, no rollback, so the test asserts through the session that served
+    the request (ADR 0007) and its outer rollback still isolates it (ADR
+    0011)."""
 
-    app.dependency_overrides[get_db] = override_get_db
-    try:
+    def __init__(self, session: AsyncSession, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self._session = session
+
+    @asynccontextmanager
+    async def request_session(self) -> AsyncIterator[AsyncSession]:
+        yield self._session
+
+
+@pytest.fixture
+async def db_client(engine: AsyncEngine, db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    with bind_session_source(_SharedSession(db_session, engine)):
         async with AsyncClient(transport=_honest_transport, base_url="http://test") as ac:
             yield ac
-    finally:
-        app.dependency_overrides.clear()
 
 
 @pytest.fixture

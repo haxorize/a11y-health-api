@@ -7,14 +7,18 @@ produces. The one exception is the refused connection, a socket with no server
 behind it, which is `test_terminal.py`'s. The server and the fake proxy in front
 of it are `live_server` in conftest."""
 
+import os
 from pathlib import Path
 
 import httpx
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.engine import make_url
 
 from a11y_health.cli._client import ApiError, ApiTimeoutError, list_brands
 from a11y_health.cli._operations import import_app, ingest
+from a11y_health.config import settings
+from a11y_health.core.database import session_source
 from a11y_health.models.enums import ScanRunStatus
 from tests.cli.conftest import (
     PROXY_BODY_LIMIT,
@@ -34,6 +38,21 @@ from tests.factories import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+def test_the_served_application_resolves_the_per_run_test_database(live_server: str) -> None:
+    # Spelled from settings and the pid rather than read back from conftest,
+    # so a harness edit that aims the server elsewhere cannot move the
+    # expectation with it. CI sets DATABASE_URL to TEST_DATABASE_URL (#152);
+    # the pid suffix is what still tells them apart there.
+    template = make_url(settings.TEST_DATABASE_URL)
+    resolved = session_source().engine.url
+
+    assert (resolved.host, resolved.port, resolved.database) == (
+        template.host,
+        template.port,
+        f"{template.database}_{os.getpid()}",
+    )
 
 
 async def test_ingest_over_a_real_socket_creates_a_completed_scan_run(

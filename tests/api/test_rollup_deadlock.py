@@ -11,13 +11,14 @@ and `committed_session_factory`'s teardown truncates.
 """
 
 import asyncio
+from collections.abc import Iterator
 
 import pytest
 from httpx import AsyncClient, Response
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from a11y_health.core import database
+from a11y_health.core.database import SessionSource, bind_session_source
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import owner as owner_service
 from a11y_health.services.owner import ChildrenRead
@@ -34,9 +35,17 @@ pytestmark = pytest.mark.integration
 _DEADLINE = 15.0
 
 
+# The request must run the production `get_db` — fresh session per request,
+# commit on success, rollback on exception — just bound to the test engine.
+@pytest.fixture
+def _requests_on_the_test_engine(engine: AsyncEngine) -> Iterator[None]:
+    with bind_session_source(SessionSource(engine)):
+        yield
+
+
+@pytest.mark.usefixtures("_requests_on_the_test_engine")
 async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_full_stack(
     client: AsyncClient,
-    engine: AsyncEngine,
     committed_session_factory: SessionFactory,
     mocker,
 ) -> None:
@@ -45,10 +54,6 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
     child = await make_org_unit(setup, name="CenterWell", parent_id=root.id)
     grandchild = await make_org_unit(setup, name="Primary Care", parent_id=child.id)
     await setup.commit()
-
-    # The request must run the production `get_db` — fresh session per request,
-    # commit on success, rollback on exception — just bound to the test engine.
-    mocker.patch.object(database, "async_session", async_sessionmaker(engine, expire_on_commit=False))
 
     holder = committed_session_factory()
     poll = committed_session_factory()

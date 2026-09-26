@@ -5,7 +5,7 @@ Open this before writing a CLI test, a migration-body test, or a session-scoped 
 ## The `cli/conftest.py` fixtures
 
 - **`no_server`** — fails the test if anything reaches the transport. The default for a CLI test that should never leave the process.
-- **`live_server`** — the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`. It binds production's sessionmaker to the test engine for the server's lifetime, and unbound, a leak would reach the non-test database named by `DATABASE_URL`. `install_non_test_database_guard()` (`tests/_non_test_database.py`, armed in `tests/conftest.py`) refuses that connection in every run, and CI's unreadable `DATABASE_URL` is the second line of defense.
+- **`live_server`** — the app under uvicorn on an ephemeral port, behind a proxy that stalls, redirects, or 413s on `x-test-proxy`. It binds the session source to the test engine for the server's lifetime through `bind_session_source` and reads the binding back, so a missing binding fails at setup; unbound, a leak would reach the non-test database named by `DATABASE_URL`. `install_non_test_database_guard()` (`tests/_non_test_database.py`, armed in `tests/conftest.py`) refuses that connection in every run, and CI's unreadable `DATABASE_URL` is the second line of defense.
 - **`socket_client`** — the client `a11y` ships, pointed at that server, over the production `AsyncHTTPTransport`.
 - **`forwarded`** — what the proxy in front of `live_server` actually saw.
 
@@ -25,4 +25,4 @@ Dev and CI connect as superuser, and the setting rides the connection startup pa
 
 ## Swapping an attribute from a session-scoped fixture
 
-`monkeypatch` and `mocker` are both function-scoped, so a session-scoped fixture cannot request either. Swap inside a `pytest.MonkeyPatch.context()` wrapped around the fixture's `yield` instead — that is how `tests/cli/conftest.py`'s `live_server` binds the sessionmaker for the server's lifetime and unbinds it after.
+`monkeypatch` and `mocker` are both function-scoped, so a session-scoped fixture cannot request either. Swap inside a `pytest.MonkeyPatch.context()` wrapped around the fixture's `yield` instead. The session source needs neither: `bind_session_source` is itself a context manager that restores the previous source on exit, and `tests/cli/conftest.py`'s `live_server` wraps its `yield` in it.

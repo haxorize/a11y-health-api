@@ -58,7 +58,7 @@ Listing parameters split on whether the guard applies. A scope, such as `/scores
 
 ### How the database session and transactions work
 
-`core/database.py`'s `get_db()` opens one session per request and wraps it in a transaction: commit on success, roll back on any exception. Services and endpoints therefore never call `commit()` themselves; they call `flush()` for a generated id mid-request.
+`core/database.py`'s `get_db()` opens one session per request from the session source and wraps it in a transaction: commit on success, roll back on any exception. The source holds the engine, and `get_db` and the startup probe both read it at call time, so `bind_session_source` is the one place the suite points the application at its own database. Services and endpoints therefore never call `commit()` themselves; they call `flush()` for a generated id mid-request.
 
 The dependency is declared `Depends(get_db, scope="function")` so the commit lands before the response is sent; `docs/solutions/yield-teardown-commit-races-next-request.md` records the race that forced it. A session is not safe to share across concurrent tasks ([ADR 0007](adr/0007-async-session-not-concurrency-safe.md)), and tests rely on the rollback for isolation ([ADR 0011](adr/0011-transactional-rollback-test-isolation.md)).
 
@@ -182,4 +182,4 @@ The API is the source of truth for the contract the UI consumes. The full cross-
 
 - **`make openapi` writes a deterministic `openapi.json`**, committed alongside code so contract changes show up in PR diffs.
 - **`make openapi-check` fails the CI lint job if `openapi.json` is stale**, so a contract change cannot merge without its regenerated spec.
-- **Each endpoint's operation id is its route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Two endpoint functions may therefore not share a name across routers: FastAPI warns and writes the duplicate, which is an invalid OpenAPI document and breaks UI codegen.
+- **Each endpoint's operation id is its route function name** (`_operation_id` in `main.py`), and that name becomes the UI's generated method name. Two endpoint functions may therefore not share a name across routers: FastAPI warns and writes the duplicate, which is an invalid OpenAPI document and breaks UI codegen, so `tests/test_main.py` fails on one.

@@ -15,7 +15,7 @@ from collections.abc import Mapping
 import pytest
 
 import a11y_health
-from tests.import_graph import Module
+from tests.import_graph import Module, parsed
 
 _PACKAGE = "a11y_health.services"
 _SCORING = {"owner", "score_snapshot"}
@@ -62,7 +62,7 @@ def _sibling_service_imports(service_edges: ServiceEdges, module_name: str) -> s
     module, imported = service_edges[module_name]
     imports_package_bare = a11y_health.__name__ in imported or any(
         isinstance(node, ast.Import) and any(alias.name == _PACKAGE for alias in node.names)
-        for node in ast.walk(ast.parse(module.source))
+        for node in ast.walk(parsed(module))
     )
     assert not imports_package_bare, f"{module.name} imports the services package bare — name the sibling instead"
     return {name.removeprefix(f"{_PACKAGE}.").split(".")[0] for name in imported if name.startswith(f"{_PACKAGE}.")}

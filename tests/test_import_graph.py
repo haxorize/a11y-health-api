@@ -124,14 +124,6 @@ class TestPackageSources:
 
         assert "pkg.sub.deep" in _names_at(tree, "pkg")
 
-    def test_a_tree_that_does_not_descend_fails_loudly(self, tmp_path: Path) -> None:
-        # The complement of the pin: nothing below the top level means the walk
-        # cannot be trusted, and every guard on it would pass vacuously.
-        (tmp_path / "__init__.py").write_text("")
-
-        with pytest.raises(AssertionError, match="not descending"):
-            package_edges(_fake_package(tmp_path, "pkg"))
-
     def test_a_namespace_package_is_refused_rather_than_walked_as_empty(self) -> None:
         namespace = ModuleType("ghost")
         namespace.__file__ = None

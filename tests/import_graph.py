@@ -22,6 +22,7 @@ Named publicly because a consumer sits in a sibling test package
 """
 
 import ast
+import functools
 from collections.abc import Callable, Container, Iterable, Mapping
 from pathlib import Path
 from types import ModuleType
@@ -38,6 +39,19 @@ def synthetic_module(name: str, source: str = "") -> Module:
     """A module that exists only as a name and a source, for a guard's own
     cases."""
     return Module(Path("/fake") / name.replace(".", "/"), name, source)
+
+
+@functools.cache
+def parsed(module: Module) -> ast.Module:
+    """`module`'s syntax tree, parsed once per run however many guards walk
+    it. Shared, so a caller reads it and never mutates it."""
+    return ast.parse(module.source)
+
+
+def synthetic_edges(sources: Mapping[str, str]) -> dict[Module, frozenset[str]]:
+    """`import_edges` over synthetic modules given as name to source, for a
+    guard's own cases."""
+    return import_edges(synthetic_module(name, source) for name, source in sources.items())
 
 
 def module_name(path: Path, root: Path, root_name: str) -> str:

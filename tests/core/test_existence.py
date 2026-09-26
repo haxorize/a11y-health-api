@@ -15,7 +15,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_app_with_org_unit, make_brand, make_page_result_with_parents
-from tests.import_graph import Module, package_sources, source_paths_importing
+from tests.import_graph import Module, package_root, parsed, source_paths_importing
 
 # Message text is the observable contract — each label must match the wording
 # the entity services raised before the guard existed.
@@ -114,11 +114,11 @@ def _imports_existence(imports: set[str]) -> bool:
     return existence.__name__ in imports
 
 
-def _function_local_import_lines(source: str) -> list[int]:
+def _function_local_import_lines(tree: ast.AST) -> list[int]:
     return sorted(
         {
             node.lineno
-            for func in ast.walk(ast.parse(source))
+            for func in ast.walk(tree)
             if isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef)
             for node in ast.walk(func)
             if isinstance(node, ast.Import | ast.ImportFrom)
@@ -131,22 +131,28 @@ class TestTwoTierCallRule:
         # Constructing the error is what fixes its message text, so the pin
         # covers construction as well as raise sites — binding one to a
         # variable (or aliasing the import) before raising must not escape it.
-        offenders = [
-            module.name for module in source_edges if _constructs_or_raises_not_found(ast.parse(module.source))
-        ]
+        offenders = [module.name for module in source_edges if _constructs_or_raises_not_found(parsed(module))]
         assert offenders == [existence.__name__]
 
-    def test_services_have_no_function_local_imports(self) -> None:
+    def test_services_have_no_function_local_imports(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
         # Function-local imports in services existed only to dodge the import
         # cycles the guard removed; one reappearing means a service is reaching
         # into a sibling again instead of calling the guard.
         import a11y_health.services
 
+        services = [module for module in source_edges if module.path.is_relative_to(package_root(a11y_health.services))]
+        assert services, "the services walk found nothing — it is not reading the package"
         offenders = [
-            f"{module.name}:{line}"
-            for module in package_sources(a11y_health.services)
-            for line in _function_local_import_lines(module.source)
+            f"{module.name}:{line}" for module in services for line in _function_local_import_lines(parsed(module))
         ]
+        assert offenders == []
+
+    def test_endpoints_never_import_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
+        # Tier one of the call rule: endpoints read through each service's
+        # named accessor; the guard is service-layer machinery.
+        import a11y_health.api
+
+        offenders = source_paths_importing(source_edges, a11y_health.api, _imports_existence)
         assert offenders == []
 
 
@@ -188,7 +194,7 @@ class TestFunctionLocalImportDetection:
             "        pass\n"
         )
 
-        assert _function_local_import_lines(source) == [2, 4, 7]
+        assert _function_local_import_lines(ast.parse(source)) == [2, 4, 7]
 
     def test_an_indented_top_level_import_is_permitted(self) -> None:
         # TYPE_CHECKING and try/except blocks indent an import without putting
@@ -203,12 +209,4 @@ class TestFunctionLocalImportDetection:
             "    orjson = None\n"
         )
 
-        assert _function_local_import_lines(source) == []
-
-    def test_endpoints_never_import_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
-        # Tier one of the call rule: endpoints read through each service's
-        # named accessor; the guard is service-layer machinery.
-        import a11y_health.api
-
-        offenders = source_paths_importing(source_edges, a11y_health.api, _imports_existence)
-        assert offenders == []
+        assert _function_local_import_lines(ast.parse(source)) == []

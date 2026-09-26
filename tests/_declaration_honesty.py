@@ -247,17 +247,10 @@ class DeclarationHonestyShim:
             await self.inner(scope, receive, send_wrapper)
 
 
-# The reverse direction of ADR 0033 (#121): an operation still declaring the
-# retryable concurrent_rollup mode after its rollup call is removed. Only a
-# green full run observes every rollup-triggering variant, so any narrowing —
-# positional paths, --ignore, deselection, or a mode that executes no tests
-# (collect/setup-only, --fixtures) — skips the diff rather than failing
-# operations the subset never drove. Deselection and execution are tracked by
-# the hooks below, not another plugin's bookkeeping. Residuals (recorded in
-# ADR 0033): narrowing the gate doesn't recognize would diff a starved observed
-# set, and an explicit `pytest tests` reads as narrowed and skips the check.
-#
-# The hooks run because conftest imports them by name.
+# The session gate for the reverse direction: the diff runs only after a green
+# full run, and the narrowings it skips and its residuals are ADR 0033's
+# "Reverse direction" entry. The hooks below track deselection and execution
+# themselves rather than reading another plugin's bookkeeping.
 _deselected = False
 _tests_ran = 0
 

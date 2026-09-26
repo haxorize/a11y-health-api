@@ -18,13 +18,8 @@ from a11y_health.config import settings
 from a11y_health.core.database import Base, SessionSource, bind_session_source
 from a11y_health.main import app
 from a11y_health.models import *  # noqa: F403 — ensure all models are registered
-from tests._declaration_honesty import (
-    DeclarationHonestyShim,
-    instrument_rollup_raisers,
-    pytest_deselected,  # noqa: F401 — the session gate's hooks, registered by name
-    pytest_runtest_logreport,  # noqa: F401
-    pytest_sessionfinish,  # noqa: F401
-)
+from tests import _declaration_honesty
+from tests._declaration_honesty import DeclarationHonestyShim, instrument_rollup_raisers
 from tests._non_test_database import allow_maintenance_engine, install_non_test_database_guard
 from tests.factories import SessionFactory
 from tests.import_graph import Module, package_edges
@@ -38,6 +33,12 @@ instrument_rollup_raisers()
 # opened from inside a test. The invariant it holds, and why CI's env value was
 # not enough on its own, are tests/_non_test_database.py.
 install_non_test_database_guard()
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # The session gate's hooks, registered as a plugin: imported here by name
+    # behind a noqa, an import cleanup would drop the gate without a sound.
+    config.pluginmanager.register(_declaration_honesty, "declaration_honesty")
 
 
 @asynccontextmanager

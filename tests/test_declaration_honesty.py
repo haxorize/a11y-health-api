@@ -75,18 +75,51 @@ def test_no_src_caller_binds_a_rollup_raiser_by_from_import(source_edges: Mappin
 _RAISE_PATH = frozenset({"_concurrent_rollup_error", "ConcurrentRollupError"})
 
 
-def _rollup_raisers(source: str) -> set[str]:
-    """The public module-level functions in `source` that reach the rollup
-    raise path, directly or through other functions in the same module."""
-    functions = {
-        node.name: {name.id for name in ast.walk(node) if isinstance(name, ast.Name)}
-        for node in ast.parse(source).body
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+def _referenced(node: ast.AST, owners: set[str]) -> set[str]:
+    # An attribute counts only on a receiver that is this module or one of its
+    # own classes (`self._apply`, `owner._apply`), so `spec.rollup` does not
+    # read as a call to `rollup`.
+    return {
+        sub.id if isinstance(sub, ast.Name) else sub.attr
+        for sub in ast.walk(node)
+        if isinstance(sub, ast.Name)
+        or (isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name) and sub.value.id in owners)
     }
-    reaching = {name for name, names in functions.items() if names & _RAISE_PATH}
-    while grown := {name for name, names in functions.items() if names & reaching} - reaching:
+
+
+def _callables(source: str) -> dict[str, tuple[str, set[str]]]:
+    """Each callable `source` defines at module level, keyed by its dotted
+    name and paired with the bare name a call site reaches it by: functions,
+    class methods, and names bound by assignment (a `functools.partial`)."""
+    body = ast.parse(source).body
+    owners = {"self", "cls", owner.__name__.rpartition(".")[2]}
+    owners |= {node.name for node in body if isinstance(node, ast.ClassDef)}
+    found: dict[str, tuple[str, set[str]]] = {}
+    for node in body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            found[node.name] = (node.name, _referenced(node, owners))
+        elif isinstance(node, ast.ClassDef):
+            for member in node.body:
+                if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                    found[f"{node.name}.{member.name}"] = (member.name, _referenced(member, owners))
+        elif isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    found[target.id] = (target.id, _referenced(node.value, owners))
+    return found
+
+
+def _rollup_raisers(source: str) -> set[str]:
+    """The public callables in `source` that reach the rollup raise path,
+    directly or through other callables in the same module."""
+    callables = _callables(source)
+    reaching_names = set(_RAISE_PATH)
+    reaching: set[str] = set()
+    while grown := {key for key, (_, refs) in callables.items() if refs & reaching_names} - reaching:
         reaching |= grown
-    return {name for name in reaching if not name.startswith("_")}
+        reaching_names |= {callables[key][0] for key in grown}
+    return {key for key in reaching if not any(part.startswith("_") for part in key.split("."))}
 
 
 class TestRollupRaiserNaming:
@@ -112,6 +145,41 @@ class TestRollupRaiserNaming:
         source = "def refresh():\n    raise ConcurrentRollupError(Owner, 1)\n"
 
         assert _rollup_raisers(source) == {"refresh"}
+
+    @pytest.mark.parametrize(
+        ("source", "raiser"),
+        [
+            (
+                "class Dispatcher:\n    async def recompute(self):\n        raise ConcurrentRollupError(Owner, 1)\n",
+                "Dispatcher.recompute",
+            ),
+            (
+                "async def _apply(session):\n    raise ConcurrentRollupError(Owner, 1)\n"
+                "async def recompute(session):\n    await owner._apply(session)\n",
+                "recompute",
+            ),
+            (
+                "async def _apply(session, owner_id):\n    raise ConcurrentRollupError(Owner, owner_id)\n"
+                "recompute = functools.partial(_apply, owner_id=1)\n",
+                "recompute",
+            ),
+        ],
+        ids=["method", "attribute-call", "bound-by-assignment"],
+    )
+    def test_a_raiser_the_top_level_bare_name_walk_missed_is_reported(self, source: str, raiser: str) -> None:
+        assert raiser in _rollup_raisers(source)
+
+    def test_the_owner_dispatcher_is_the_only_src_module_naming_the_error(
+        self, source_edges: Mapping[Module, frozenset[str]]
+    ) -> None:
+        # The walk reads one module, so a raiser elsewhere would escape it.
+        # The error contract names the class to map it, not to raise it.
+        import a11y_health
+
+        names = source_paths_importing(
+            source_edges, a11y_health, lambda imports: "a11y_health.core.exceptions.ConcurrentRollupError" in imports
+        )
+        assert names == ["core/error_contract.py", "services/owner.py"]
 
     def test_every_public_raiser_on_the_owner_dispatcher_carries_the_convention(self) -> None:
         raisers = _rollup_raisers(inspect.getsource(owner))
@@ -253,14 +321,13 @@ class TestObservationScope:
         widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
         key = ("GET", "/widgets/{widget_id}")
 
-        try:
+        # The outer scope takes the kept observation back out. A cleanup scope
+        # opened after the block would find the key standing and restore it.
+        with observation_scope(key, synthetic=True):
             with observation_scope(key) as observation:
                 record_observation(key)
             assert observation.observed
             assert stale_rollup_declaration_message(widget_app) is None
-        finally:
-            with observation_scope(key, synthetic=True):
-                pass
 
     def test_a_scope_that_observes_nothing_leaves_an_earlier_observation_standing(self) -> None:
         # A canary whose request stops reaching the rollup fails on its own;
@@ -276,7 +343,17 @@ class TestObservationScope:
             assert stale_rollup_declaration_message(widget_app) is None
 
 
-class _Options:
+# The session gate runs only while its hooks are registered; a conftest edit
+# that drops the registration would switch the gate off without a failure.
+@pytest.mark.parametrize("hook", ["pytest_deselected", "pytest_runtest_logreport", "pytest_sessionfinish"])
+def test_the_session_gate_hooks_are_registered(pytestconfig: pytest.Config, hook: str) -> None:
+    plugin = pytestconfig.pluginmanager.get_plugin("declaration_honesty")
+
+    assert plugin is not None
+    assert any(impl.plugin is plugin for impl in getattr(pytestconfig.hook, hook).get_hookimpls())
+
+
+class _FakeOptions:
     def __init__(self, **values: object) -> None:
         self._values = values
 
@@ -288,20 +365,20 @@ class TestRunWasNarrowed:
     # The gate diffs only after a complete run; each narrowing on its own
     # skips it, and a plain run with tests executed does not.
     def test_a_complete_run_is_not_narrowed(self) -> None:
-        assert not run_was_narrowed(_Options(file_or_dir=[]), deselected=False, tests_ran=3)
+        assert not run_was_narrowed(_FakeOptions(file_or_dir=[]), deselected=False, tests_ran=3)
 
     @pytest.mark.parametrize(
         ("options", "deselected", "tests_ran"),
         [
-            (_Options(file_or_dir=["tests/api"]), False, 3),
-            (_Options(ignore=["tests/cli"]), False, 3),
-            (_Options(ignore_glob=["*_cli.py"]), False, 3),
-            (_Options(), True, 3),
-            (_Options(), False, 0),
+            (_FakeOptions(file_or_dir=["tests/api"]), False, 3),
+            (_FakeOptions(ignore=["tests/cli"]), False, 3),
+            (_FakeOptions(ignore_glob=["*_cli.py"]), False, 3),
+            (_FakeOptions(), True, 3),
+            (_FakeOptions(), False, 0),
         ],
         ids=["positional-path", "ignore", "ignore-glob", "deselection", "nothing-executed"],
     )
-    def test_each_narrowing_skips_the_diff(self, options: _Options, deselected: bool, tests_ran: int) -> None:
+    def test_each_narrowing_skips_the_diff(self, options: _FakeOptions, deselected: bool, tests_ran: int) -> None:
         assert run_was_narrowed(options, deselected=deselected, tests_ran=tests_ran)
 
 

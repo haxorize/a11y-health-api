@@ -9,65 +9,88 @@ from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from tests.factories import make_axe_payload, make_violation
 
 
+def _only_error_loc(raw: dict[str, object]) -> tuple[int | str, ...]:
+    # A rejection that names one location fails for one reason: a second fault
+    # in the document would let the field under test loosen without a red.
+    with pytest.raises(ValidationError) as exc_info:
+        AxePayload.model_validate(raw)
+    [err] = exc_info.value.errors()
+    return err["loc"]
+
+
 class TestAxePayloadMissingFields:
     def test_missing_test_subject(self) -> None:
         raw = make_axe_payload()
         del raw["testSubject"]
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("testSubject",)
 
     def test_missing_findings(self) -> None:
         raw = make_axe_payload()
         del raw["findings"]
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings",)
 
 
 class TestAxePayloadBoundary:
     def test_empty_file_name_rejected(self) -> None:
         raw = make_axe_payload(url="")
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("testSubject", "fileName")
 
     def test_null_impact_on_rule_rejected(self) -> None:
         violation = make_violation("color-contrast", "serious")
         violation["impact"] = None
         raw = make_axe_payload(violations=[violation])
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "violations", 0, "impact")
 
     def test_invalid_impact_value_rejected(self) -> None:
-        violation = make_violation("color-contrast", "severe")
+        # The node keeps a valid impact, so loosening the rule's own impact
+        # type reds this rather than the node's rejection covering for it.
+        violation = make_violation("color-contrast", "serious")
+        violation["impact"] = "severe"
         raw = make_axe_payload(violations=[violation])
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "violations", 0, "impact")
 
     def test_wrong_type_violations_rejected(self) -> None:
         raw = make_axe_payload()
         raw["findings"]["violations"] = "not-a-list"
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "violations")
 
     def test_wrong_type_incomplete_rejected(self) -> None:
         raw = make_axe_payload()
         raw["findings"]["incomplete"] = 42
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "incomplete")
+
+    # Both required-field cases start from a rule with valid tags and nodes, so
+    # the category derivation passes and the missing field is what fires. Each
+    # reds when its field is made optional.
 
     def test_rule_missing_required_fields_rejected(self) -> None:
-        raw = make_axe_payload(violations=[{"id": "some-rule"}])
-        with pytest.raises(ValidationError):
+        violation = make_violation("color-contrast", "serious")
+        for field in ("impact", "description", "help", "helpUrl"):
+            del violation[field]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
             AxePayload.model_validate(raw)
+        reported = {(err["loc"], err["msg"]) for err in exc_info.value.errors()}
+        assert reported == {
+            (("findings", "violations", 0, "impact"), "Field required"),
+            (("findings", "violations", 0, "description"), "Field required"),
+            (("findings", "violations", 0, "help"), "Field required"),
+            (("findings", "violations", 0, "helpUrl"), "Field required"),
+        }
 
     def test_rule_missing_id_rejected(self) -> None:
-        raw = make_axe_payload(violations=[{"impact": "serious", "description": "d", "help": "h", "helpUrl": "u"}])
-        with pytest.raises(ValidationError):
+        violation = make_violation("color-contrast", "serious")
+        del violation["id"]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
             AxePayload.model_validate(raw)
+        [err] = exc_info.value.errors()
+        assert err["loc"] == ("findings", "violations", 0, "id")
+        assert err["msg"] == "Field required"
 
     def test_non_dict_rule_entry_rejected(self) -> None:
         raw = make_axe_payload(violations=[42])
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "violations", 0)
 
     def test_empty_violations_and_incomplete_accepted(self) -> None:
         raw = make_axe_payload(violations=[], incomplete=[])
@@ -121,8 +144,7 @@ class TestAxeNodeChecks:
         violation = make_violation("color-contrast", "serious")
         violation["nodes"][0]["any"] = "not-a-list"
         raw = make_axe_payload(violations=[violation])
-        with pytest.raises(ValidationError):
-            AxePayload.model_validate(raw)
+        assert _only_error_loc(raw) == ("findings", "violations", 0, "nodes", 0, "any")
 
 
 class TestAxeFindingsPassesInapplicable:
@@ -243,6 +265,17 @@ class TestAxePayloadIdentityFields:
         # the observation time nor fail the load.
         raw = make_axe_payload(unmodeled={"end_time": "garbage"})
         assert parse_axe_payload(raw).end_time is None
+
+    def test_missing_test_subject_is_reported_before_a_mistyped_identity_field(self) -> None:
+        # Only the first error reaches the operator, and declaration order picks
+        # it: a document that is not axe JSON hears about `testSubject` first.
+        # Reds when `name` or `end_time` is declared above `test_subject`.
+        raw = make_axe_payload(end_time="last Tuesday")
+        raw["name"] = 42
+        del raw["testSubject"]
+        with pytest.raises(InvalidAxePayloadError) as exc_info:
+            parse_axe_payload(raw)
+        assert exc_info.value.reason == "testSubject: Field required"
 
     def test_non_object_document_is_named_as_such(self) -> None:
         # No field to point at, so the message names the document rather than

@@ -85,8 +85,8 @@ class RollupSpec(NamedTuple):
     unique_index: str
     children: ChildrenRead
     cascade_parent: ParentLookup | None
-    # The reverse edge: the App column that addresses this owner.
-    app_column: InstrumentedAttribute[int]
+    # The reverse edge: which of this owner's rows an App belongs to.
+    app_owner_id: Callable[[App], int]
 
 
 class OwnerSpec(NamedTuple):
@@ -107,7 +107,10 @@ def _spec_for(owner_type: ScoreSnapshotOwnerType) -> OwnerSpec:
                 ScoreSnapshot.org_unit_id,
                 OrgUnit,
                 RollupSpec(
-                    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT, _latest_child_snapshots, _org_unit_parent, App.org_unit_id
+                    UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
+                    _latest_child_snapshots,
+                    _org_unit_parent,
+                    lambda app: app.org_unit_id,
                 ),
             )
         case ScoreSnapshotOwnerType.BRAND:
@@ -115,7 +118,9 @@ def _spec_for(owner_type: ScoreSnapshotOwnerType) -> OwnerSpec:
                 owner_type,
                 ScoreSnapshot.brand_id,
                 Brand,
-                RollupSpec(UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, _latest_brand_app_snapshots, None, App.brand_id),
+                RollupSpec(
+                    UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT, _latest_brand_app_snapshots, None, lambda app: app.brand_id
+                ),
             )
         case _:
             assert_never(owner_type)
@@ -126,17 +131,16 @@ OWNERS: Mapping[ScoreSnapshotOwnerType, OwnerSpec] = MappingProxyType(
 )
 
 
-class RollupTarget(NamedTuple):
+class RollupOwner(NamedTuple):
     owner_type: ScoreSnapshotOwnerType
     owner_id: int
 
 
-# Every Owner whose Rollup aggregates this App, as one value a caller captures
-# before deleting the App. The order is the spec table's, Org Unit then Brand,
-# which is the lock acquisition order ADR 0029 relies on.
-def app_rollup_targets(app: App) -> tuple[RollupTarget, ...]:
+# Every Owner whose Rollup aggregates this App. The order is the spec table's,
+# Org Unit then Brand, which is the lock acquisition order ADR 0029 relies on.
+def app_rollup_owners(app: App) -> tuple[RollupOwner, ...]:
     return tuple(
-        RollupTarget(spec.owner_type, getattr(app, spec.rollup.app_column.key))
+        RollupOwner(spec.owner_type, spec.rollup.app_owner_id(app))
         for spec in OWNERS.values()
         if spec.rollup is not None
     )

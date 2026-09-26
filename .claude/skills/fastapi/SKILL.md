@@ -106,7 +106,7 @@ When a mutation triggers cross-service side effects (e.g., score computation + r
 async def on_scan_run_completed(session: AsyncSession, scan_run: ScanRun) -> None:
     await score_snapshot_service.compute_app_score(session, scan_run)
     app = await existence.get_by_pk(session, App, scan_run.app_id)
-    await on_app_latest_snapshot_changed(session, app_rollup_targets(app))  # → owner.rollup(...) per target
+    await on_app_latest_snapshot_changed(session, app)  # → owner.rollup(...) per rollup owner
 
 
 # services/scan_run.py — update_scan_run_status calls orchestration after the flush

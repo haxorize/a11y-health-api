@@ -11,7 +11,7 @@ from a11y_health.core.error_contract import (
     register_error_handlers,
 )
 from a11y_health.core.exceptions import NotFoundError
-from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.models.app import App
 from a11y_health.services import owner, scoring_orchestration
 from tests._declaration_honesty import (
     _OBSERVED_ROLLUP_OPERATIONS,
@@ -29,7 +29,7 @@ from tests.factories import (
 )
 from tests.import_graph import source_paths_importing
 
-_ONE_ROLLUP_TARGET = (owner.RollupTarget(ScoreSnapshotOwnerType.ORG_UNIT, 1),)
+_AN_APP = App(org_unit_id=1, brand_id=1)
 
 
 # Rollup-race 409s never fire organically in endpoint tests, so the
@@ -43,7 +43,7 @@ async def test_rollup_from_operation_without_declared_concurrent_rollup_fails() 
     scope = {"method": "PATCH", "path": "/api/v1/widgets/1", "route": route}
     with _request_scope(scope), pytest.raises(AssertionError, match="concurrent_rollup"):
         # session=None proves the check fires before any rollup work runs.
-        await scoring_orchestration.on_app_latest_snapshot_changed(None, _ONE_ROLLUP_TARGET)  # ty: ignore[invalid-argument-type]
+        await scoring_orchestration.on_app_latest_snapshot_changed(None, _AN_APP)  # ty: ignore[invalid-argument-type]
 
 
 def _from_imports_a_rollup_raiser(imports: set[str]) -> bool:
@@ -170,7 +170,7 @@ class TestIncludeLevelDeclarations:
         # below, which never gets past the assert).
         try:
             with _request_scope(scope), pytest.raises(AttributeError):
-                await scoring_orchestration.on_app_latest_snapshot_changed(None, _ONE_ROLLUP_TARGET)  # ty: ignore[invalid-argument-type]
+                await scoring_orchestration.on_app_latest_snapshot_changed(None, _AN_APP)  # ty: ignore[invalid-argument-type]
         finally:
             # The observed set is module-global and feeds the sessionfinish
             # stale-diff; a leaked synthetic key would mask a same-keyed stale

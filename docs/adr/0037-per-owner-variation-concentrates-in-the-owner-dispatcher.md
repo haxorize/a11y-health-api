@@ -8,6 +8,7 @@ class RollupSpec:
     unique_index: str                    # the #98 race backstop this owner defends
     children: ChildrenRead               # (session, owner_id) -> latest child snapshots
     cascade_parent: ParentLookup | None  # ORG_UNIT's parent cascade; BRAND None
+    app_owner_id: Callable[[App], int]   # #160: the reverse edge, App -> owner id
 
 @dataclass(frozen=True)
 class OwnerSpec:
@@ -25,6 +26,12 @@ async def rollup(session, owner_type, owner_id)      # ValueError on APP; cascad
 def owned(owner_type, owner_id, aggregates: ScoreAggregates, *,
           scan_run_id=None, snapshot_at) -> ScoreSnapshot   # #136; see amendment
 def brand_apps(brand_id) -> Select                   # the one membership predicate
+
+class RollupOwner(NamedTuple):                       # #160
+    owner_type: ScoreSnapshotOwnerType
+    owner_id: int
+
+def app_rollup_owners(app) -> tuple[RollupOwner, ...]  # Org Unit, then Brand
 ```
 
 **The read/write split is redrawn as computation-vs-dispatch.** `score.py` (the read side) is absorbed into the dispatcher; `score_snapshot.py` keeps app-score computation. This was the real trade-off: a data-only spec table (behavior staying in the old read/write homes) preserved the familiar split with the smallest diff but left owner variation spanning two modules, and a specs-plus-rollups middle ground made a third scoring module — both rejected because adding an owner type should touch exactly one module. Per-owner subclasses were rejected because each concern smears across three class bodies and exhaustiveness degrades to subclass discipline; growing the existing generic helpers with more parameters is the shallow shape polished, not deepened.
@@ -41,4 +48,4 @@ Unchanged by design: the scope semantics of [ADR 0034](0034-under-org-unit-scope
 
 The value lives in this module, and the charter widens by that one clause: the dispatcher owns the **Score Aggregates** value along with the construction, rollup, and dedupe machinery that consume it. `ScoreAggregates` is owner-agnostic, so the #136 design record offered a private shared sibling as the alternative home; it was not taken because `score_snapshot.py` already imported this module for `owned()`, so no new dependency direction was created, and a module for one NamedTuple is not worth the seam. "App-score computation stays out" still holds: it produces the value and does not own it.
 
-**Amendment (2026-09-19, #160).** The charter widens by one more clause: the dispatcher owns the reverse edge, from an **App** to the **Owners** whose **Rollup** aggregates it. The forward edge already lived here, in `brand_apps` and the Org Unit children read, while the reverse one was spelled by hand as two same-typed positional ints, `org_unit_id` then `brand_id`, in `scoring_orchestration.py` and at each of its three callers, so swapping them failed nothing and a new rollup owner type meant editing two modules. `RollupSpec` now names the App column that addresses its owner, and `app_rollup_targets(app)` returns every target as one value in the spec table's order, Org Unit then Brand, which is the acquisition order [ADR 0029](0029-per-owner-advisory-lock-rollup-serialization.md) relies on. A caller that deletes the App captures that value before the delete, and `on_app_latest_snapshot_changed` takes it whole. Resource services still do not import this module (`tests/test_sibling_imports.py`), so they reach the capture through a same-named function on the switchboard, which keeps the event table and holds no per-owner knowledge.
+**Amendment (2026-09-26, #160).** The charter widens by one more clause: the dispatcher owns the reverse edge, from an **App** to the **Owners** whose **Rollup** aggregates it. The forward edge already lived here, in `brand_apps` and the Org Unit children read, while the reverse one was spelled by hand as two same-typed positional ints, `org_unit_id` then `brand_id`, in `scoring_orchestration.py` and at each of its three callers, so swapping them failed nothing and a new rollup owner type meant editing the latest-snapshot path in two modules. `RollupSpec.app_owner_id` now reads the id of its owner off an App, typed `Callable[[App], int]` so the type checker ties it to App and nothing reaches the column by string key, and `app_rollup_owners(app)` returns every `RollupOwner` in the spec table's order, Org Unit then Brand, which is the acquisition order [ADR 0029](0029-per-owner-advisory-lock-rollup-serialization.md) relies on; the sketch above is updated. `on_app_latest_snapshot_changed(session, app)` takes the App and asks this module itself, so resource services still do not import it (`tests/test_sibling_imports.py`) and the switchboard needs no forwarder. `delete_app` passes the App after deleting and flushing it: a deleted instance keeps its loaded attributes, since sessions are built with `expire_on_commit=False`, so no caller captures anything before a delete. The reassignment path stays outside the clause: `on_app_reassigned` still names the Org Unit owner type, because an App's Brand is immutable (`AppUpdate` carries only `org_unit_id`), so a rollup owner type an App could move between would edit that handler too.

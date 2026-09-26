@@ -138,15 +138,15 @@ class TestOwnedConstruction:
 
 
 # Org Unit then Brand is the lock acquisition order ADR 0029 relies on. Red
-# when a rollup spec names the wrong App column, or the table's order moves.
-async def test_app_rollup_targets_are_the_org_unit_then_the_brand(db_session: AsyncSession) -> None:
+# when a rollup spec reads the wrong App column, or the table's order moves.
+async def test_app_rollup_owners_are_the_org_unit_then_the_brand(db_session: AsyncSession) -> None:
     root = await make_org_unit(db_session, name="Root")
     org_unit = await make_org_unit(db_session, name="Owning Unit", parent_id=root.id)
     brand = await make_brand(db_session)
     assert org_unit.id != brand.id
     app = await make_app(db_session, brand_id=brand.id, org_unit_id=org_unit.id)
 
-    assert owner_service.app_rollup_targets(app) == (
+    assert owner_service.app_rollup_owners(app) == (
         (ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id),
         (ScoreSnapshotOwnerType.BRAND, brand.id),
     )

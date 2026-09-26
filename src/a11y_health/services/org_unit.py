@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from contextlib import AbstractAsyncContextManager
 
-from sqlalchemy import literal, select
+from sqlalchemy import literal, literal_column, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -92,8 +92,15 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
     cte = select(OrgUnit, depth).where(OrgUnit.id == org_unit_id).cte(name="ancestors", recursive=True)
     parent = aliased(OrgUnit)
     cte = cte.union_all(select(parent, (cte.c.depth + 1).label("depth")).where(parent.id == cte.c.parent_id))
+    # The depth differs every iteration, so a `union` would never see a repeat
+    # row on a committed cycle. CYCLE stops the walk at the first repeated id
+    # and flags that closing row, which is dropped below.
+    cte = cte.suffix_with("CYCLE id SET is_cycle USING path", dialect="postgresql")
     result = await session.execute(
-        select(OrgUnit).join(cte, OrgUnit.id == cte.c.id).where(OrgUnit.id != org_unit_id).order_by(cte.c.depth)
+        select(OrgUnit)
+        .join(cte, OrgUnit.id == cte.c.id)
+        .where(OrgUnit.id != org_unit_id, not_(literal_column(f"{cte.name}.is_cycle")))
+        .order_by(cte.c.depth)
     )
     return list(result.scalars().all())
 

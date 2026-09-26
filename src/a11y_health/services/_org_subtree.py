@@ -28,10 +28,12 @@ def select_descendant_ids(org_unit_ids: list[int]) -> Select[tuple[int]]:
     `org_unit_ids` must be non-empty: an empty list renders an empty IN, which
     every caller guards before reaching here. The CTE is left unnamed so two
     subtrees can sit in one statement — a fixed name collides at compile time.
+    `union` rather than `union_all`: the rows are bare ids, so on a committed
+    cycle the walk comes back to an id already emitted and stops there.
     """
     cte = select(OrgUnit.id).where(OrgUnit.id.in_(org_unit_ids)).cte(recursive=True)
     child = aliased(OrgUnit)
-    cte = cte.union_all(select(child.id).where(child.parent_id == cte.c.id))
+    cte = cte.union(select(child.id).where(child.parent_id == cte.c.id))
     return select(cte.c.id)
 
 

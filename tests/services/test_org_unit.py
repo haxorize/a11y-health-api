@@ -1,5 +1,8 @@
+import asyncio
+
 import pytest
 from pytest import approx
+from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -205,6 +208,22 @@ async def test_get_descendant_ids_multiple_inputs_with_overlap(db_session: Async
     assert result == {branch_a.id, branch_b.id, leaf_a.id}
 
 
+async def test_subtree_and_ancestor_walks_terminate_on_a_committed_cycle(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    leaf = await make_org_unit(db_session, name="Primary Care", parent_id=root.id)
+    # Written past the reparent guard, the way #176's race commits one.
+    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+    # A walk that never terminates cancels here instead of hanging the test.
+    await db_session.execute(text("SET LOCAL statement_timeout = '2s'"))
+
+    assert await get_descendant_ids(db_session, [root.id]) == {root.id, child.id, leaf.id}
+    # The leaf sits outside the cycle, so the row that closes it must not
+    # come back as a second copy of the root.
+    ancestors = await org_unit_service.get_ancestors(db_session, leaf.id)
+    assert [a.id for a in ancestors] == [root.id, child.id]
+
+
 async def test_get_descendant_ids_empty_input(db_session: AsyncSession) -> None:
     result = await get_descendant_ids(db_session, [])
     assert result == set()
@@ -262,6 +281,24 @@ async def test_reparent_triggers_rollup(db_session: AsyncSession) -> None:
     await org_unit_service.update_org_unit(db_session, branch_a.id, OrgUnitUpdate(parent_id=branch_b.id))
 
     snapshot = await latest_ou_snapshot(db_session, branch_b.id)
+    assert snapshot.score == approx(0.6)
+
+
+async def test_reparent_rollup_terminates_on_a_committed_cycle(db_session: AsyncSession) -> None:
+    root = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+    leaf = await make_org_unit(db_session, name="Primary Care", parent_id=root.id)
+    app = await make_app(db_session, name="App", slug="app-cycle", org_unit_id=leaf.id)
+    await make_score_snapshot(db_session, app_id=app.id, score=0.6)
+    await make_score_snapshot(db_session, org_unit_id=leaf.id, score=0.6)
+    # Written past the reparent guard, the way #176's race commits one.
+    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+
+    # A cascade that climbs the cycle forever cancels here instead of hanging.
+    async with asyncio.timeout(5):
+        await org_unit_service.update_org_unit(db_session, leaf.id, OrgUnitUpdate(parent_id=child.id))
+
+    snapshot = await latest_ou_snapshot(db_session, child.id)
     assert snapshot.score == approx(0.6)
 
 

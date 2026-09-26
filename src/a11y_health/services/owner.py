@@ -407,11 +407,16 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
     cascading to the parent where the spec defines one. Raises `ValueError` for
     an owner type that doesn't roll up (APP)."""
     spec, rollup_spec = _require_rollup_spec(owner_type)
-    await _acquire_rollup_lock(session, owner_type, owner_id)
-    children = await rollup_spec.children(session, owner_id)
-    await _apply_rollup(session, children, spec, rollup_spec, owner_id)
-
-    if rollup_spec.cascade_parent is not None:
-        parent_id = await rollup_spec.cascade_parent(session, owner_id)
-        if parent_id is not None:
-            await rollup(session, owner_type, parent_id)
+    # The tree is meant to be acyclic, and update_org_unit's reparent guard
+    # refuses a cycle, but two concurrent reparents can still commit one past
+    # it (#176). The visited set stops the climb there instead.
+    visited: set[int] = set()
+    current: int | None = owner_id
+    while current is not None and current not in visited:
+        visited.add(current)
+        await _acquire_rollup_lock(session, owner_type, current)
+        children = await rollup_spec.children(session, current)
+        await _apply_rollup(session, children, spec, rollup_spec, current)
+        if rollup_spec.cascade_parent is None:
+            return
+        current = await rollup_spec.cascade_parent(session, current)

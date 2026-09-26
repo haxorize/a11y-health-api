@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 from sqlalchemy import text
 
 from a11y_health.api.v1.router import api_router
-from a11y_health.config import API_V1_PREFIX, PROJECT_NAME, VERSION, Settings, settings
+from a11y_health.config import API_V1_PREFIX, PROJECT_NAME, VERSION, settings
 from a11y_health.core.database import session_source
 from a11y_health.core.error_contract import register_error_handlers
 
@@ -34,10 +34,9 @@ def _operation_id(route: APIRoute) -> str:
     return route.name
 
 
-# Settings reach the middleware here; the database does not. DATABASE_URL and
-# DEBUG are read once, by the session source, which `bind_session_source`
-# rebinds.
-def assemble_application(settings: Settings) -> FastAPI:
+# Only the CORS origins are a parameter: the database is the session source's,
+# which `bind_session_source` rebinds.
+def assemble_application(*, allowed_origins: list[str]) -> FastAPI:
     app = FastAPI(
         title=PROJECT_NAME,
         version=VERSION,
@@ -47,7 +46,7 @@ def assemble_application(settings: Settings) -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -58,4 +57,4 @@ def assemble_application(settings: Settings) -> FastAPI:
 
 
 # The object uvicorn serves and scripts/export_openapi.py exports.
-app = assemble_application(settings)
+app = assemble_application(allowed_origins=settings.ALLOWED_ORIGINS)

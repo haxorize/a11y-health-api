@@ -5,7 +5,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from a11y_health.config import Settings
 from a11y_health.core.database import SessionSource, bind_session_source
 from a11y_health.main import app, assemble_application
 
@@ -28,17 +27,17 @@ def test_every_operation_id_in_the_generated_document_is_distinct() -> None:
 # spec refuses it), so an allowed origin is echoed; an origin outside a fixed
 # list is refused at preflight.
 @pytest.mark.parametrize(
-    ("assembled", "status", "allow_origin"),
+    ("allowed_origins", "status", "allow_origin"),
     [
-        (Settings(DEBUG=True, ALLOWED_ORIGINS=["*"]), 200, _ELSEWHERE),
-        (Settings(ALLOWED_ORIGINS=["http://localhost:3000"]), 400, None),
+        (["*"], 200, _ELSEWHERE),
+        (["http://localhost:3000"], 400, None),
     ],
     ids=["wildcard", "fixed-list"],
 )
-async def test_the_assembled_application_answers_a_preflight_by_its_settings(
-    assembled: Settings, status: int, allow_origin: str | None
+async def test_the_assembled_application_answers_a_preflight_by_its_allowed_origins(
+    allowed_origins: list[str], status: int, allow_origin: str | None
 ) -> None:
-    transport = ASGITransport(app=assemble_application(assembled))
+    transport = ASGITransport(app=assemble_application(allowed_origins=allowed_origins))
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.options(
             "/api/v1/health",
@@ -54,7 +53,7 @@ async def test_startup_probes_the_bound_engine_and_shutdown_disposes_it(engine: 
     # An engine of its own on the per-run database, so the dispose lands on a
     # pool no other test holds.
     probed = create_async_engine(engine.url)
-    assembled = assemble_application(Settings())
+    assembled = assemble_application(allowed_origins=[])
     statements: list[str] = []
 
     def record(conn, cursor, statement, parameters, context, executemany) -> None:  # noqa: ANN001

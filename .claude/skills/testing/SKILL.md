@@ -14,7 +14,7 @@ tests/
   __init__.py              # one in every test directory except fixtures/, which holds data
   conftest.py              # shared fixtures (engine, client, db_session, db_client, committed_session_factory, axe_payload)
   test_config.py           # top-level Settings/config tests
-  test_main.py             # application assembly: operation-id uniqueness, CORS by settings, lifespan
+  test_main.py             # application assembly: operation-id uniqueness, CORS by allowed origins, lifespan
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
   import_graph.py          # shared import-reading helpers for the topology guards

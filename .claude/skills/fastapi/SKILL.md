@@ -9,7 +9,7 @@ description: Project conventions for this FastAPI API — app structure, endpoin
 
 ```
 src/a11y_health/
-  main.py          # assemble_application(settings): lifespan, middleware, routers; `app` is its one module-level call
+  main.py          # assemble_application(*, allowed_origins): lifespan, middleware, routers; `app` is its one module-level call
   config.py        # pydantic-settings Settings singleton
   cli/             # Onboarding CLI: _scan (disk), _client (API), _operations (sequences), _terminal (argv), _errors
   core/

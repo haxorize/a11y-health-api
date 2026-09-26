@@ -1,8 +1,10 @@
 import json
 import os
-from collections.abc import AsyncIterator
+import pickle
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -11,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
 
+import a11y_health
 from a11y_health.config import settings
 from a11y_health.core.database import Base, SessionSource, bind_session_source
 from a11y_health.main import app
@@ -24,6 +27,7 @@ from tests._declaration_honesty import (
 )
 from tests._non_test_database import allow_maintenance_engine, install_non_test_database_guard
 from tests.factories import SessionFactory
+from tests.import_graph import Module, package_edges
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -181,11 +185,34 @@ async def committed_session_factory(engine: AsyncEngine) -> AsyncIterator[Sessio
         for session in sessions:
             with suppress(Exception):
                 await session.close()
-        tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-        async with engine.begin() as conn:
-            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        await truncate_every_table(engine)
+
+
+async def truncate_every_table(engine: AsyncEngine, *, lock_timeout: str = "5s") -> None:
+    # A transaction still open on these tables (a test that also took
+    # db_session, which rolls back after this runs) would otherwise hold the
+    # truncate's ACCESS EXCLUSIVE wait, and the suite, forever.
+    tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('lock_timeout', :value, true)"), {"value": lock_timeout})
+        await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture(scope="session")
+def _axe_payload_pickle() -> bytes:
+    # Parsed once per run. Loading pickled bytes is the cheapest fresh deep
+    # copy of the 1 MB document, cheaper than re-parsing it or `deepcopy`.
+    return pickle.dumps(json.loads((FIXTURE_DIR / "humana.com-home.json").read_text()))
 
 
 @pytest.fixture
-def axe_payload() -> dict[str, Any]:
-    return json.loads((FIXTURE_DIR / "humana.com-home.json").read_text())
+def axe_payload(_axe_payload_pickle: bytes) -> dict[str, Any]:
+    # A fresh copy per test, so one test's mutation never reaches the next.
+    return pickle.loads(_axe_payload_pickle)
+
+
+@pytest.fixture(scope="session")
+def source_edges() -> Mapping[Module, frozenset[str]]:
+    """`package_edges` over `src/`, walked and parsed once per run for every
+    topology guard that reads the real tree; read-only, since they share it."""
+    return MappingProxyType(package_edges(a11y_health))

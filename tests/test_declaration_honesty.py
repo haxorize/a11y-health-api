@@ -1,5 +1,6 @@
 import ast
 import inspect
+from collections.abc import Mapping
 from types import SimpleNamespace
 
 import pytest
@@ -31,7 +32,7 @@ from tests.factories import (
     make_page_result,
     make_scan_run_with_parents,
 )
-from tests.import_graph import source_paths_importing
+from tests.import_graph import Module, source_paths_importing
 
 _AN_APP = App(org_unit_id=1, brand_id=1)
 
@@ -58,7 +59,7 @@ def _from_imports_a_rollup_raiser(imports: set[str]) -> bool:
     return any(name.startswith(prefix) and "rollup" in name.removeprefix(prefix) for name in imports)
 
 
-def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
+def test_no_src_caller_binds_a_rollup_raiser_by_from_import(source_edges: Mapping[Module, frozenset[str]]) -> None:
     # The instrumentation patches owner module attributes, so it only
     # intercepts attribute-access call sites; a `from ...owner import
     # rollup*` binding taken at import time would bypass enforcement entirely
@@ -67,7 +68,7 @@ def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
     # that merely quotes the forbidden import.
     import a11y_health
 
-    offenders = source_paths_importing(a11y_health, _from_imports_a_rollup_raiser)
+    offenders = source_paths_importing(source_edges, a11y_health, _from_imports_a_rollup_raiser)
     assert not offenders, f"rollup raisers must be called as owner attributes, not from-imported: {offenders}"
 
 

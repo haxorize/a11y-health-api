@@ -26,9 +26,18 @@ async def _owner_scores_path(db: AsyncSession, owner: str) -> tuple[str, dict[st
     raise AssertionError(owner)
 
 
+# The default order is oldest first; `order=desc` reverses it.
+@pytest.mark.parametrize(
+    ("params", "expected_scores"),
+    [pytest.param({}, [0.9, 0.75, 0.6], id="default"), pytest.param({"order": "desc"}, [0.6, 0.75, 0.9], id="desc")],
+)
 @pytest.mark.parametrize("owner", _OWNERS)
-async def test_list_scores_ordered_chronologically(
-    db_client: AsyncClient, db_session: AsyncSession, owner: str
+async def test_list_scores_ordered_by_observation_time(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    owner: str,
+    params: dict[str, str],
+    expected_scores: list[float],
 ) -> None:
     path, owner_kw = await _owner_scores_path(db_session, owner)
 
@@ -36,34 +45,15 @@ async def test_list_scores_ordered_chronologically(
     await make_score_snapshot(db_session, **owner_kw, score=0.9, snapshot_at=datetime(2026, 4, 1, tzinfo=UTC))
     await make_score_snapshot(db_session, **owner_kw, score=0.75, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
 
-    response = await db_client.get(path)
+    response = await db_client.get(path, params=params)
     assert response.status_code == 200
 
     items = response.json()["items"]
-    assert len(items) == 3
-    scores = [s["score"] for s in items]
-    assert scores == approx([0.9, 0.75, 0.6])
+    assert [s["score"] for s in items] == approx(expected_scores)
     # Raw counts only on the wire — no derived shares or averages (ADR 0027).
     assert "avg_violations_per_page" not in items[0]
     assert "pct_pages_with_violations" not in items[0]
     assert "pct_pages_with_critical_violations" not in items[0]
-
-
-@pytest.mark.parametrize("owner", _OWNERS)
-async def test_list_scores_desc_orders_newest_first(
-    db_client: AsyncClient, db_session: AsyncSession, owner: str
-) -> None:
-    path, owner_kw = await _owner_scores_path(db_session, owner)
-
-    await make_score_snapshot(db_session, **owner_kw, score=0.6, snapshot_at=datetime(2026, 4, 3, tzinfo=UTC))
-    await make_score_snapshot(db_session, **owner_kw, score=0.9, snapshot_at=datetime(2026, 4, 1, tzinfo=UTC))
-    await make_score_snapshot(db_session, **owner_kw, score=0.75, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC))
-
-    response = await db_client.get(path, params={"order": "desc"})
-    assert response.status_code == 200
-
-    scores = [s["score"] for s in response.json()["items"]]
-    assert scores == approx([0.6, 0.75, 0.9])
 
 
 @pytest.mark.parametrize("owner", _OWNERS)

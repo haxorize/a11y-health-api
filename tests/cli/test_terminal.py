@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 from a11y_health.cli import _terminal
@@ -302,10 +303,16 @@ def test_main_interrupt_exits_cleanly_without_a_traceback(
 def test_main_ingest_unreachable_api_prints_error_line_and_exits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    # Port 1 on loopback refuses immediately — the "forgot to start the server"
-    # case, driven through the real client rather than a substituted operation.
+    # The "forgot to start the server" case, driven through the shipped client,
+    # operation, and error mapping, with only the transport's send replaced:
+    # it refuses the connection the way a closed port does, on any host's
+    # loopback.
+    async def refuse(_transport: httpx.AsyncHTTPTransport, request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", refuse)
     write_scan_file(tmp_path, "a.json", name="foo.com")
-    monkeypatch.setattr(sys, "argv", ["a11y", "ingest", str(tmp_path), "--base-url", "http://127.0.0.1:1"])
+    monkeypatch.setattr(sys, "argv", ["a11y", "ingest", str(tmp_path), "--base-url", "http://localhost:8000"])
 
     with pytest.raises(SystemExit) as exc_info:
         _terminal.main()

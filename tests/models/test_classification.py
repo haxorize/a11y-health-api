@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 
 import pytest
 
@@ -9,7 +10,7 @@ from a11y_health.models.classification import (
     classifications_in,
     token_to_stored_classification,
 )
-from tests.import_graph import source_paths_importing
+from tests.import_graph import Module, source_paths_importing
 
 
 @pytest.mark.parametrize(
@@ -69,12 +70,14 @@ def test_classification_options_drop_invalid_entry_with_warning(caplog: pytest.L
     assert "section508" in caplog.text
 
 
-def test_the_module_has_exactly_its_five_recorded_consumers() -> None:
+def test_the_module_has_exactly_its_five_recorded_consumers(source_edges: Mapping[Module, frozenset[str]]) -> None:
     # The module docstring and `docs/architecture.md` both state this roster,
     # and ADR 0031's amendment enumerates a different four, so no record
     # settles the count on its own. A sixth importer would falsify two pieces
     # of prose silently; this is the walk that notices.
-    consumers = source_paths_importing(a11y_health, lambda names: "a11y_health.models.classification" in names)
+    consumers = source_paths_importing(
+        source_edges, a11y_health, lambda names: "a11y_health.models.classification" in names
+    )
     assert consumers == [
         "api/v1/endpoints/findings.py",
         "models/rule_finding.py",

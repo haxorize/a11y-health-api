@@ -16,6 +16,7 @@ from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunStatusUpdate
 from a11y_health.services import scan_run as scan_run_service
 from a11y_health.services.page_result import create_page_result
 from tests.factories import (
+    app_snapshots,
     ingest_and_score,
     latest_brand_snapshot,
     latest_ou_snapshot,
@@ -27,6 +28,7 @@ from tests.factories import (
     make_scan_run,
     make_scan_run_with_parents,
     make_violation,
+    score_new_scan_run,
 )
 
 
@@ -143,8 +145,7 @@ async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
     )
 
-    result = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app.id))
-    snapshot = result.scalar_one()
+    [snapshot] = await app_snapshots(db_session, app.id)
     assert snapshot.score == approx(0.4)
     assert snapshot.total_pages == 1
 
@@ -167,12 +168,11 @@ async def test_delete_scan_run_rolls_up_its_own_apps_owners(db_session: AsyncSes
     app = await make_app(db_session, slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
     other_unit = await make_org_unit(db_session, name="Other Unit", parent_id=root.id)
     other_app = await make_app(db_session, slug="app-b", org_unit_id=other_unit.id)
-    older = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
-    await ingest_and_score(db_session, older.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+    serious = make_axe_payload(violations=[make_violation("r1", "serious")])
+    await score_new_scan_run(db_session, app.id, [serious], datetime(2026, 3, 1, tzinfo=UTC))
     newer = await make_scan_run(db_session, app_id=app.id, scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
     await ingest_and_score(db_session, newer.id, [make_axe_payload()])
-    elsewhere = await make_scan_run(db_session, app_id=other_app.id)
-    await ingest_and_score(db_session, elsewhere.id, [make_axe_payload()])
+    await score_new_scan_run(db_session, other_app.id, [make_axe_payload()])
 
     await scan_run_service.delete_scan_run(db_session, newer.id)
 

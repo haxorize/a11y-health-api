@@ -12,11 +12,13 @@ and `committed_session_factory`'s teardown truncates.
 
 import asyncio
 from collections.abc import Iterator
+from contextlib import AsyncExitStack
 
 import pytest
 from httpx import AsyncClient, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.pool import QueuePool
 
 from a11y_health.core.database import SessionSource, bind_session_source
 from a11y_health.models.enums import ScoreSnapshotOwnerType
@@ -64,8 +66,9 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
     # between its child-lock grant and the root cascade lets the holder queue
     # on the child first; the request then blocks on root as the cycle's last
     # waiter, and its one-shot check (engine-wide 50ms, conftest) always finds
-    # the closed cycle. The holder's own check is pushed out of the way.
-    await holder.execute(text("SET deadlock_timeout = '10s'"))
+    # the closed cycle. The holder's own check is pushed out of the way, for
+    # its transaction only, so the raise never returns to the pool with it.
+    await holder.execute(text("SET LOCAL deadlock_timeout = '10s'"))
     await owner_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, root.id)
 
     request_holds_child = asyncio.Event()
@@ -122,3 +125,18 @@ async def test_a_genuine_deadlock_loser_returns_the_retryable_409_through_the_fu
     # get_db rolled the poisoned transaction back: the reparent never persisted.
     await setup.refresh(grandchild)
     assert grandchild.parent_id == child.id
+
+
+# Runs after the race above, in file order: the holder's raised timeout must
+# end with its transaction, not ride its connection back into the pool, where
+# a later deadlock test's waiter would arm a 10s check instead of 50ms. A
+# plain SET the holder then commits turns this red; one it rolls back does not.
+async def test_the_race_leaves_every_pooled_connection_at_the_engine_deadlock_timeout(engine: AsyncEngine) -> None:
+    pool = engine.pool
+    assert isinstance(pool, QueuePool)
+    async with AsyncExitStack() as stack:
+        connections = [await stack.enter_async_context(engine.connect()) for _ in range(pool.checkedin())]
+        timeouts = [(await conn.execute(text("SHOW deadlock_timeout"))).scalar_one() for conn in connections]
+
+    assert connections
+    assert set(timeouts) == {"50ms"}

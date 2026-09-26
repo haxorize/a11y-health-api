@@ -10,12 +10,12 @@ architecture.md, "The Existence Guard and the two-tier call rule".
 """
 
 import ast
-import functools
+from collections.abc import Mapping
 
 import pytest
 
 import a11y_health
-from tests.import_graph import Module, package_edges
+from tests.import_graph import Module
 
 _PACKAGE = "a11y_health.services"
 _SCORING = {"owner", "score_snapshot"}
@@ -36,18 +36,21 @@ _ALLOWED_SIBLINGS = {
 _DECOUPLED = {"org_unit", "scan_run", "app", "brand", "page_result", "rule_finding"}
 
 
-@functools.cache
-def _service_edges() -> dict[str, tuple[Module, frozenset[str]]]:
+ServiceEdges = dict[str, tuple[Module, frozenset[str]]]
+
+
+@pytest.fixture(scope="module")
+def service_edges(source_edges: Mapping[Module, frozenset[str]]) -> ServiceEdges:
     # Keyed by the name under the package; `test_name_collisions_are_reported`
     # keeps two files from sharing one.
     return {
         module.name.removeprefix(f"{_PACKAGE}."): (module, imports)
-        for module, imports in package_edges(a11y_health).items()
+        for module, imports in source_edges.items()
         if module.name.startswith(f"{_PACKAGE}.")
     }
 
 
-def _sibling_service_imports(module_name: str) -> set[str]:
+def _sibling_service_imports(service_edges: ServiceEdges, module_name: str) -> set[str]:
     # The shared walk resolves every spelling, relative ones included, to
     # absolute names; this rule keeps the ones under the services package and
     # reads the sibling off each. A bare package import — `import
@@ -56,7 +59,7 @@ def _sibling_service_imports(module_name: str) -> set[str]:
     # is refused outright rather than filtered. The walk reports the bare
     # `from` form as the root package, and only the `import` form needs the
     # syntax tree.
-    module, imported = _service_edges()[module_name]
+    module, imported = service_edges[module_name]
     imports_package_bare = a11y_health.__name__ in imported or any(
         isinstance(node, ast.Import) and any(alias.name == _PACKAGE for alias in node.names)
         for node in ast.walk(ast.parse(module.source))
@@ -65,21 +68,21 @@ def _sibling_service_imports(module_name: str) -> set[str]:
     return {name.removeprefix(f"{_PACKAGE}.").split(".")[0] for name in imported if name.startswith(f"{_PACKAGE}.")}
 
 
-def test_the_filter_reads_a_known_sibling_import() -> None:
+def test_the_filter_reads_a_known_sibling_import(service_edges: ServiceEdges) -> None:
     # Every decoupling pin below asserts on an empty intersection, which
     # cannot tell "imports nothing from scoring" from "the walk or the filter
     # returned nothing" — and some resource services really import no sibling,
     # so the helper cannot refuse an empty set itself. One known import pins
     # the reading instead, on the principle `import_graph.assert_descends`
     # states for the walk.
-    assert "owner" in _sibling_service_imports("score_snapshot")
+    assert "owner" in _sibling_service_imports(service_edges, "score_snapshot")
 
 
-def test_every_service_module_is_classified() -> None:
+def test_every_service_module_is_classified(service_edges: ServiceEdges) -> None:
     # Both tables were hand-copied subsets once, which left three modules and
     # every future one outside any rule. Deriving the membership makes a new
     # module fail here until it is given a row in one table.
-    services = set(_service_edges())
+    services = set(service_edges)
     assert "owner" in services, "the services walk found nothing — it is not reading the package"
 
     assert not _ALLOWED_SIBLINGS.keys() & _DECOUPLED
@@ -99,11 +102,13 @@ class TestScoringModuleImports:
     # `_latest_snapshot` and `_org_subtree` as far as test_import_honesty.py is
     # concerned. This allowlist is the only thing holding that line.
     @pytest.mark.parametrize(("module_name", "allowed_siblings"), _ALLOWED_SIBLINGS.items())
-    def test_module_imports_only_allowed_siblings(self, module_name: str, allowed_siblings: set[str]) -> None:
-        assert _sibling_service_imports(module_name) <= allowed_siblings
+    def test_module_imports_only_allowed_siblings(
+        self, service_edges: ServiceEdges, module_name: str, allowed_siblings: set[str]
+    ) -> None:
+        assert _sibling_service_imports(service_edges, module_name) <= allowed_siblings
 
 
 class TestDecoupledImports:
     @pytest.mark.parametrize("module_name", sorted(_DECOUPLED))
-    def test_resource_service_does_not_import_scoring(self, module_name: str) -> None:
-        assert not _SCORING & _sibling_service_imports(module_name)
+    def test_resource_service_does_not_import_scoring(self, service_edges: ServiceEdges, module_name: str) -> None:
+        assert not _SCORING & _sibling_service_imports(service_edges, module_name)

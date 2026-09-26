@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Test conventions for this project — layout, the six conftest fixtures, factories and arrange helpers, markers, and mocking. Use when writing or moving a test, adding a fixture, reaching for a factory, deciding where a new test file goes, or setting up test infrastructure.
+description: Test conventions for this project — layout, the seven conftest fixtures, factories and arrange helpers, markers, and mocking. Use when writing or moving a test, adding a fixture, reaching for a factory, deciding where a new test file goes, or setting up test infrastructure.
 ---
 
 # Testing Conventions
@@ -12,7 +12,7 @@ Mirror the app structure — except for a **suite-wide mechanism**, a **topology
 ```
 tests/
   __init__.py              # one in every test directory except fixtures/, which holds data
-  conftest.py              # shared fixtures (engine, client, db_session, db_client, committed_session_factory, axe_payload)
+  conftest.py              # the shared fixtures, listed under Fixtures below
   test_config.py           # top-level Settings/config tests
   test_main.py             # application assembly: operation-id uniqueness, CORS by allowed origins, lifespan
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
@@ -33,6 +33,8 @@ tests/
   test_prose_shape.py      # the six prose guards, the 15,000-byte bound on every skill body and
                            # reference among them; the code-documentation skill names each
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
+  test_factories.py        # the Latest Score Snapshot readers
+  test_truncate_teardown.py  # teardown lock timeout
   fixtures/                # one sample Axe Payload (humana.com-home.json)
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
@@ -70,14 +72,15 @@ tests/
 
 ## Fixtures (from conftest.py)
 
-Six fixtures, layered:
+Seven fixtures, layered:
 
-- **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test. Its superuser requirement and the one sanctioned per-session exception are in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md)
+- **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test. Its superuser requirement and the one sanctioned exception are in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md)
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
 - **`db_client`** — `AsyncClient` with the session source bound, through `bind_session_source`, to one that hands every request `db_session`; the binding is restored on exit. For endpoints that touch the DB. That source yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why that source is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
 - **`committed_session_factory`** — factory for real-commit sessions on separate connections, for the rare test that needs one session's writes visible to another (genuine lock contention); teardown truncates every table. A test that also sends requests through `client` binds `SessionSource(engine)` with `bind_session_source`, as `test_rollup_deadlock.py` does; unbound, the non-test-database guard refuses them. The sanctioned exception to rollback isolation — see [ADR 0011](../../../docs/adr/0011-transactional-rollback-test-isolation.md)
-- **`axe_payload`** (function scope) — loads `tests/fixtures/humana.com-home.json` as a dict; used by page result tests. Function scope prevents cross-test pollution from mutations
+- **`axe_payload`** (function scope) — `tests/fixtures/humana.com-home.json`, parsed once per run; each test gets its own copy
+- **`source_edges`** (session scope) — `package_edges` over `src/`, walked once per run
 
 Every DB test uses transactional isolation — the transaction rolls back after each test, so no cleanup is needed. The one exception is tests built on `committed_session_factory`, which really commit and rely on its truncate teardown.
 

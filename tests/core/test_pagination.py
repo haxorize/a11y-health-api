@@ -63,35 +63,26 @@ async def test_paginate_no_more_pages_at_exact_limit(db_session: AsyncSession) -
     assert page.next_cursor is None
 
 
-async def test_paginate_composite_keyset_round_trip(db_session: AsyncSession) -> None:
+# Descending reads newest first, and its cursor continues into older rows
+# (reversed comparison).
+@pytest.mark.parametrize(
+    ("descending", "first_page", "second_page"),
+    [pytest.param(False, [0, 1], [2], id="ascending"), pytest.param(True, [2, 1], [0], id="descending")],
+)
+async def test_paginate_composite_keyset_round_trip(
+    db_session: AsyncSession, descending: bool, first_page: list[int], second_page: list[int]
+) -> None:
     brand = await make_brand(db_session)
     keyset = [ScoreSnapshot.snapshot_at, ScoreSnapshot.id]
     times = [datetime(2026, 1, day, tzinfo=UTC) for day in (1, 2, 3)]
     snaps = [await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=t) for t in times]
 
     stmt = select(ScoreSnapshot)
-    first = await paginate(db_session, stmt, keyset=keyset, cursor=None, limit=2)
-    second = await paginate(db_session, stmt, keyset=keyset, cursor=first.next_cursor, limit=2)
+    first = await paginate(db_session, stmt, keyset=keyset, cursor=None, limit=2, descending=descending)
+    second = await paginate(db_session, stmt, keyset=keyset, cursor=first.next_cursor, limit=2, descending=descending)
 
-    assert [s.id for s in first.items] == [snaps[0].id, snaps[1].id]
-    assert [s.id for s in second.items] == [snaps[2].id]
-    assert second.next_cursor is None
-
-
-async def test_paginate_descending_composite_keyset_round_trip(db_session: AsyncSession) -> None:
-    brand = await make_brand(db_session)
-    keyset = [ScoreSnapshot.snapshot_at, ScoreSnapshot.id]
-    times = [datetime(2026, 1, day, tzinfo=UTC) for day in (1, 2, 3)]
-    snaps = [await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=t) for t in times]
-
-    stmt = select(ScoreSnapshot)
-    first = await paginate(db_session, stmt, keyset=keyset, cursor=None, limit=2, descending=True)
-    second = await paginate(db_session, stmt, keyset=keyset, cursor=first.next_cursor, limit=2, descending=True)
-
-    # Newest first, and the cursor continues into older rows (reversed
-    # comparison).
-    assert [s.id for s in first.items] == [snaps[2].id, snaps[1].id]
-    assert [s.id for s in second.items] == [snaps[0].id]
+    assert [s.id for s in first.items] == [snaps[i].id for i in first_page]
+    assert [s.id for s in second.items] == [snaps[i].id for i in second_page]
     assert second.next_cursor is None
 
 
@@ -382,15 +373,11 @@ class TestPaginationParams:
         assert PaginationParams(limit=limit).limit == limit
 
 
-def _to_str(n: int) -> str:
-    return str(n)
-
-
 class TestPageFromCursorPage:
     def test_maps_items_and_preserves_cursor(self) -> None:
         internal = CursorPage(items=[1, 2, 3], next_cursor="cursor-xyz")
 
-        page = Page.from_cursor_page(internal, _to_str)
+        page = Page.from_cursor_page(internal, str)
 
         assert page.items == ["1", "2", "3"]
         assert page.next_cursor == "cursor-xyz"
@@ -406,7 +393,7 @@ class TestPageFromCursorPage:
     def test_empty_result_yields_no_items_and_no_cursor(self) -> None:
         internal: CursorPage[int] = CursorPage(items=[], next_cursor=None)
 
-        page = Page.from_cursor_page(internal, _to_str)
+        page = Page.from_cursor_page(internal, str)
 
         assert page.items == []
         assert page.next_cursor is None
@@ -414,7 +401,7 @@ class TestPageFromCursorPage:
     def test_absent_cursor_stays_absent(self) -> None:
         internal = CursorPage(items=[1], next_cursor=None)
 
-        page = Page.from_cursor_page(internal, _to_str)
+        page = Page.from_cursor_page(internal, str)
 
         assert page.next_cursor is None
 

@@ -1,4 +1,5 @@
 import ast
+from collections.abc import Mapping
 
 import pytest
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_app_with_org_unit, make_brand
-from tests.import_graph import package_sources, source_paths_importing
+from tests.import_graph import Module, package_sources, source_paths_importing
 
 # Message text is the observable contract — each label must match the wording
 # the entity services raised before the guard existed.
@@ -118,16 +119,12 @@ def _function_local_import_lines(source: str) -> list[int]:
 
 
 class TestTwoTierCallRule:
-    def test_not_found_raises_only_from_the_guard(self) -> None:
+    def test_not_found_raises_only_from_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
         # Constructing the error is what fixes its message text, so the pin
         # covers construction as well as raise sites — binding one to a
         # variable (or aliasing the import) before raising must not escape it.
-        import a11y_health
-
         offenders = [
-            module.name
-            for module in package_sources(a11y_health)
-            if _constructs_or_raises_not_found(ast.parse(module.source))
+            module.name for module in source_edges if _constructs_or_raises_not_found(ast.parse(module.source))
         ]
         assert offenders == [existence.__name__]
 
@@ -200,10 +197,10 @@ class TestFunctionLocalImportDetection:
 
         assert _function_local_import_lines(source) == []
 
-    def test_endpoints_never_import_the_guard(self) -> None:
+    def test_endpoints_never_import_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
         # Tier one of the call rule: endpoints read through each service's
         # named accessor; the guard is service-layer machinery.
         import a11y_health.api
 
-        offenders = source_paths_importing(a11y_health.api, _imports_existence)
+        offenders = source_paths_importing(source_edges, a11y_health.api, _imports_existence)
         assert offenders == []

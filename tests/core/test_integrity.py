@@ -1,16 +1,16 @@
 import ast
+from collections.abc import Mapping
 
 import pytest
 from sqlalchemy.exc import IntegrityError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import a11y_health
 from a11y_health.core import integrity
 from a11y_health.core.exceptions import DuplicateRootError
 from a11y_health.core.integrity import guard
 from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from tests.factories import make_org_unit
-from tests.import_graph import package_sources
+from tests.import_graph import Module
 
 
 def _root_taken() -> dict[str, DuplicateRootError]:
@@ -85,8 +85,8 @@ class TestTheGuardIsTheOnlySavepoint:
     # constraint-identity match, so a misclassified error reaches the wire
     # (ADR 0028). The walk asserts one known site, which also proves it read
     # the tree.
-    def test_no_module_but_the_guard_opens_a_savepoint(self) -> None:
-        offenders = [module.name for module in package_sources(a11y_health) if _opens_a_savepoint(module.source)]
+    def test_no_module_but_the_guard_opens_a_savepoint(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
+        offenders = [module.name for module in source_edges if _opens_a_savepoint(module.source)]
 
         assert offenders == [integrity.__name__]
 

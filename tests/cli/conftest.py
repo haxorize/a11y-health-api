@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -120,18 +121,21 @@ async def live_server(_fake_proxy: _FakeProxy, engine: AsyncEngine) -> AsyncIter
     its shutdown disposes the bound engine, which is the suite's own;
     `tests/test_main.py` runs it against an engine of its own.
     """
-    config = uvicorn.Config(_fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
+    config = uvicorn.Config(_fake_proxy, lifespan="off", log_level="warning")
     server = uvicorn.Server(config)
-    with bind_session_source(SessionSource(engine)):
+    # Bound here rather than by uvicorn, so the port is read off a socket the
+    # fixture owns instead of out of the server's internals.
+    with socket.socket() as sock, bind_session_source(SessionSource(engine)):
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
         assert session_source().engine is engine
-        serving = asyncio.create_task(server.serve())
+        serving = asyncio.create_task(server.serve(sockets=[sock]))
         try:
             async with asyncio.timeout(5):
                 while not server.started:
                     if serving.done():
                         serving.result()
                     await asyncio.sleep(0.01)
-            port = server.servers[0].sockets[0].getsockname()[1]
             yield f"http://127.0.0.1:{port}"
         finally:
             server.should_exit = True

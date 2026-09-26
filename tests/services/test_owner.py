@@ -21,7 +21,6 @@ from tests.factories import (
     DEFAULT_SNAPSHOT_AT,
     brand_snapshots,
     build_score_snapshot,
-    ingest_and_score,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -29,10 +28,10 @@ from tests.factories import (
     make_axe_payload,
     make_brand,
     make_org_unit,
-    make_scan_run,
     make_score_snapshot,
     make_violation,
     ou_snapshots,
+    score_new_scan_run,
 )
 
 
@@ -741,23 +740,11 @@ def test_score_snapshot_column_set_is_pinned() -> None:
     }
 
 
-# Arrange only: the rollup that reads this snapshot stays visible in each
-# test body.
-async def _score_new_scan_run(
-    db_session: AsyncSession,
-    app_id: int,
-    axe_payloads: list[dict],
-    scanned_at: datetime | None = None,
-) -> ScoreSnapshot:
-    sr = await make_scan_run(db_session, app_id=app_id, scanned_at=scanned_at)
-    return await ingest_and_score(db_session, sr.id, axe_payloads)
-
-
 class TestOrgUnitRollup:
     async def test_single_app_rollup_matches_app_snapshot(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Parent Org")
         app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
-        app_snapshot = await _score_new_scan_run(
+        app_snapshot = await score_new_scan_run(
             db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
@@ -774,14 +761,14 @@ class TestOrgUnitRollup:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_a.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_b.id,
             [make_axe_payload(url="https://example.com/b")],
@@ -803,7 +790,7 @@ class TestOrgUnitRollup:
         leaf = await make_org_unit(db_session, name="Leaf", parent_id=middle.id)
         app = await make_app(db_session, name="App", slug="app-leaf", org_unit_id=leaf.id)
 
-        app_snapshot = await _score_new_scan_run(
+        app_snapshot = await score_new_scan_run(
             db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, leaf.id)
@@ -820,14 +807,14 @@ class TestOrgUnitRollup:
         direct_app = await make_app(db_session, name="Direct App", slug="direct", org_unit_id=parent.id)
         nested_app = await make_app(db_session, name="Nested App", slug="nested", org_unit_id=child_ou.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             nested_app.id,
             [make_axe_payload(url="https://example.com/nested")],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, child_ou.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             direct_app.id,
             [make_axe_payload(url="https://example.com/direct", violations=[make_violation("r1", "critical")])],
@@ -847,14 +834,14 @@ class TestOrgUnitRollup:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "critical")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(url="https://example.com/b")],
@@ -886,9 +873,7 @@ class TestOrgUnitRollup:
             {"id": collided_id, "brand_id": brand.id, "org_unit_id": parent.id},
         )
 
-        await make_score_snapshot(
-            db_session, app_id=collided_id, score=0.4, snapshot_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
-        )
+        await make_score_snapshot(db_session, app_id=collided_id, score=0.4, snapshot_at=DEFAULT_SNAPSHOT_AT)
         await make_score_snapshot(
             db_session, org_unit_id=collided_id, score=0.8, snapshot_at=datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
         )
@@ -900,7 +885,7 @@ class TestOrgUnitRollup:
     async def test_higher_id_wins_when_snapshot_at_ties(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Tie Org")
         app = await make_app(db_session, name="Tie App", slug="app-tie", org_unit_id=org_unit.id)
-        tied_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        tied_at = DEFAULT_SNAPSHOT_AT
 
         await make_score_snapshot(db_session, app_id=app.id, score=0.2, snapshot_at=tied_at)
         await make_score_snapshot(db_session, app_id=app.id, score=0.8, snapshot_at=tied_at)
@@ -917,7 +902,7 @@ class TestRollupNoChangeRecompute:
     async def test_unchanged_recompute_records_nothing_new(self, db_session: AsyncSession) -> None:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-nochange", org_unit_id=org_unit.id)
-        await _score_new_scan_run(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+        await score_new_scan_run(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
 
         # deletion and reparent triggers re-run the rollup with unchanged
@@ -936,17 +921,17 @@ class TestRollupNoChangeRecompute:
         # snapshot id every trigger. Child order itself cannot be varied from
         # here (the children query returns a stable order), so the
         # order-independence half is `TestScoreAggregates`' at the value.
-        scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        scanned_at = DEFAULT_SNAPSHOT_AT
         org_unit = await make_org_unit(db_session, name="Org")
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_a.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
             scanned_at=scanned_at,
         )
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_b.id,
             [make_axe_payload(url="https://example.com/b", violations=[make_violation("r2", "moderate")])],
@@ -962,19 +947,19 @@ class TestRollupNoChangeRecompute:
         assert snapshots[0].id == first.id
 
     async def test_changed_aggregate_at_same_observation_time_replaces(self, db_session: AsyncSession) -> None:
-        scanned_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+        scanned_at = DEFAULT_SNAPSHOT_AT
         org_unit = await make_org_unit(db_session, name="Org")
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_a.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
             scanned_at=scanned_at,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_b.id,
             [make_axe_payload(url="https://example.com/b")],
@@ -996,18 +981,18 @@ class TestRollupNoChangeRecompute:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-same-mean", org_unit_id=org_unit.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
             scanned_at=latest_scanned_at,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
 
@@ -1022,15 +1007,15 @@ class TestRollupNoChangeRecompute:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-flat-trend", org_unit_id=org_unit.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
         second_scanned_at = datetime(2026, 4, 2, 12, 0, 0, tzinfo=UTC)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
@@ -1046,7 +1031,7 @@ class TestRollupNoChangeRecompute:
         brand = await make_brand(db_session, name="Humana")
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-brand", org_unit_id=org_unit.id, brand_id=brand.id)
-        await _score_new_scan_run(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
+        await score_new_scan_run(db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])])
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
 
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
@@ -1063,7 +1048,7 @@ class TestBrandRollup:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        app_snapshot = await _score_new_scan_run(
+        app_snapshot = await score_new_scan_run(
             db_session, app.id, [make_axe_payload(violations=[make_violation("r1", "serious")])]
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
@@ -1081,14 +1066,14 @@ class TestBrandRollup:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_a.id,
             [make_axe_payload(violations=[make_violation("r1", "serious")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_b.id,
             [make_axe_payload(url="https://example.com/b")],
@@ -1111,14 +1096,14 @@ class TestBrandRollup:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=ou_a.id, brand_id=brand.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=ou_b.id, brand_id=brand.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_a.id,
             [make_axe_payload(violations=[make_violation("r1", "critical")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app_b.id,
             [make_axe_payload(url="https://example.com/b")],
@@ -1137,14 +1122,14 @@ class TestBrandRollup:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-latest", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(violations=[make_violation("r1", "critical")])],
-            scanned_at=datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+            scanned_at=DEFAULT_SNAPSHOT_AT,
         )
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
-        await _score_new_scan_run(
+        await score_new_scan_run(
             db_session,
             app.id,
             [make_axe_payload(url="https://example.com/b")],

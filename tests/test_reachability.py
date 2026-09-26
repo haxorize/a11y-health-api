@@ -15,13 +15,10 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-import a11y_health
 from tests.import_graph import (
     Module,
     import_edges,
     imported_modules,
-    package_edges,
-    package_sources,
     resolved_modules,
     synthetic_module,
 )
@@ -131,21 +128,22 @@ class TestClosure:
         assert _names(reached) >= {"pkg.only_stale_imports_me", "pkg.only_fresh_imports_me"}
 
 
-def test_name_collisions_are_reported() -> None:
+def test_name_collisions_are_reported(source_edges: Mapping[Module, frozenset[str]]) -> None:
     # Two files resolving to one name: Python imports the package and the
     # module beside it is dead, which no closure keyed by name can see.
     by_name: dict[str, list[Path]] = defaultdict(list)
-    for module in package_sources(a11y_health):
+    for module in source_edges:
         by_name[module.name].append(module.path)
     collisions = {name: sorted(str(p) for p in paths) for name, paths in by_name.items() if len(paths) > 1}
     assert collisions == {}, f"two files resolve to one module name — one of them is dead: {collisions}"
 
 
-def test_every_module_is_reached_and_the_test_only_seams_are_the_named_ones() -> None:
-    edges = package_edges(a11y_health)
-    names = _names(edges)
-    production = _names(_closure(edges, PRODUCTION_ENTRIES, PRODUCTION_ENTRY_FILES))
-    from_tests = _names(_closure(edges, (), TEST_ENTRY_FILES))
+def test_every_module_is_reached_and_the_test_only_seams_are_the_named_ones(
+    source_edges: Mapping[Module, frozenset[str]],
+) -> None:
+    names = _names(source_edges)
+    production = _names(_closure(source_edges, PRODUCTION_ENTRIES, PRODUCTION_ENTRY_FILES))
+    from_tests = _names(_closure(source_edges, (), TEST_ENTRY_FILES))
     everything = production | from_tests
 
     # Each walk pinned on a non-empty shape: the app module is an entry and the

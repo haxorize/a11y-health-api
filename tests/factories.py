@@ -78,7 +78,7 @@ async def make_scan_run(
     scan_run = ScanRun(
         app_id=app_id,
         status=status,
-        scanned_at=scanned_at or datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC),
+        scanned_at=DEFAULT_SNAPSHOT_AT if scanned_at is None else scanned_at,
     )
     db.add(scan_run)
     await db.flush()
@@ -97,9 +97,6 @@ async def make_app_with_org_unit(
     # unit would violate the single-root index (ADR 0026).
     existing_root_id = await org_unit_service.get_root_id(db)
     org_unit = await make_org_unit(db, name=org_name, parent_id=existing_root_id)
-    if brand_id is None:
-        brand = await make_brand(db)
-        brand_id = brand.id
     return await make_app(db, name=app_name, slug=slug, brand_id=brand_id, org_unit_id=org_unit.id)
 
 
@@ -210,11 +207,27 @@ async def ingest_pages_and_complete(db: AsyncSession, scan_run_id: int, axe_payl
     return sr
 
 
+async def complete_new_scan_run(
+    db: AsyncSession, app_id: int, axe_payloads: list[dict], scanned_at: datetime | None = None
+) -> ScanRun:
+    sr = await make_scan_run(db, app_id=app_id, scanned_at=scanned_at)
+    return await ingest_pages_and_complete(db, sr.id, axe_payloads)
+
+
 # The final call is the act only for a test whose subject is the score compute
 # itself; a rollup test uses this to arrange an already-scored app.
 async def ingest_and_score(db: AsyncSession, scan_run_id: int, axe_payloads: list[dict]) -> ScoreSnapshot:
     sr = await ingest_pages_and_complete(db, scan_run_id, axe_payloads)
     return await compute_app_score(db, sr)
+
+
+# Arrange only, like ingest_and_score: the rollup that reads this snapshot
+# stays visible in each test body.
+async def score_new_scan_run(
+    db: AsyncSession, app_id: int, axe_payloads: list[dict], scanned_at: datetime | None = None
+) -> ScoreSnapshot:
+    sr = await make_scan_run(db, app_id=app_id, scanned_at=scanned_at)
+    return await ingest_and_score(db, sr.id, axe_payloads)
 
 
 def substitute_children_read(
@@ -245,6 +258,11 @@ async def make_page_result(
     db.add(page_result)
     await db.flush()
     return page_result
+
+
+async def make_page_result_with_parents(db: AsyncSession) -> PageResult:
+    scan_run = await make_scan_run_with_parents(db)
+    return await make_page_result(db, scan_run_id=scan_run.id)
 
 
 async def make_rule_finding(
@@ -297,34 +315,20 @@ async def make_node_finding(
     nf = NodeFinding(
         rule_finding_id=rule_finding_id,
         html=html,
-        target=target or ["div"],
+        target=["div"] if target is None else target,
         impact=impact,
         failure_summary=failure_summary,
-        checks=checks or {"any": [], "all": [], "none": []},
+        checks={"any": [], "all": [], "none": []} if checks is None else checks,
     )
     db.add(nf)
     await db.flush()
     return nf
 
 
-async def _latest_snapshot(db: AsyncSession, filter_col: Any, filter_val: int) -> ScoreSnapshot:
-    result = await db.execute(
-        select(ScoreSnapshot).where(filter_col == filter_val).order_by(ScoreSnapshot.id.desc()).limit(1)
-    )
-    return result.scalar_one()
-
-
-async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
-    return await _latest_snapshot(db, ScoreSnapshot.org_unit_id, org_unit_id)
-
-
-async def latest_brand_snapshot(db: AsyncSession, brand_id: int) -> ScoreSnapshot:
-    return await _latest_snapshot(db, ScoreSnapshot.brand_id, brand_id)
-
-
 async def _all_snapshots(db: AsyncSession, filter_col: Any, filter_val: int) -> list[ScoreSnapshot]:
-    # Ordered like Latest Score Snapshot selection (snapshot_at, then id), so
-    # tests can read [-1] as the latest.
+    # Oldest first by Latest Score Snapshot's order (observation time, ties to
+    # the higher id), so [-1] is the latest: the readers below take it there,
+    # and a test holding the whole list may too.
     result = await db.execute(
         select(ScoreSnapshot).where(filter_col == filter_val).order_by(ScoreSnapshot.snapshot_at, ScoreSnapshot.id)
     )
@@ -341,6 +345,18 @@ async def brand_snapshots(db: AsyncSession, brand_id: int) -> list[ScoreSnapshot
 
 async def app_snapshots(db: AsyncSession, app_id: int) -> list[ScoreSnapshot]:
     return await _all_snapshots(db, ScoreSnapshot.app_id, app_id)
+
+
+async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
+    return (await ou_snapshots(db, org_unit_id))[-1]
+
+
+async def latest_brand_snapshot(db: AsyncSession, brand_id: int) -> ScoreSnapshot:
+    return (await brand_snapshots(db, brand_id))[-1]
+
+
+async def latest_app_snapshot(db: AsyncSession, app_id: int) -> ScoreSnapshot:
+    return (await app_snapshots(db, app_id))[-1]
 
 
 def make_violation(rule_id: str, impact: str, *, tags: list[str] | None = None) -> dict[str, Any]:

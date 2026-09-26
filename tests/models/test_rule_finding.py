@@ -5,12 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.classification import token_to_stored_classification
 from a11y_health.models.rule_finding import RuleFinding
-from tests.factories import make_page_result, make_rule_finding, make_scan_run_with_parents
+from tests.factories import make_page_result_with_parents, make_rule_finding
 
 
 async def test_unknown_standard_classification_is_refused_at_flush(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    page = await make_page_result_with_parents(db_session)
 
     with pytest.raises(StatementError):
         await make_rule_finding(db_session, page_result_id=page.id, classifications=[{"standard": "section508"}])
@@ -27,8 +26,7 @@ async def test_unknown_standard_classification_is_refused_at_flush(db_session: A
 async def test_non_canonical_classification_is_refused_at_flush(
     db_session: AsyncSession, entry: dict[str, str]
 ) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    page = await make_page_result_with_parents(db_session)
 
     with pytest.raises(StatementError):
         await make_rule_finding(db_session, page_result_id=page.id, classifications=[entry])
@@ -46,8 +44,7 @@ async def test_invalid_containment_target_is_refused_at_query_time(db_session: A
 
 
 async def test_containment_target_is_compacted_before_comparison(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    page = await make_page_result_with_parents(db_session)
     rf = await make_rule_finding(
         db_session, page_result_id=page.id, classifications=[token_to_stored_classification("best-practice")]
     )
@@ -62,8 +59,7 @@ async def test_containment_target_is_compacted_before_comparison(db_session: Asy
 
 
 async def test_bound_entries_are_stored_in_the_compact_shape(db_session: AsyncSession) -> None:
-    scan_run = await make_scan_run_with_parents(db_session)
-    page = await make_page_result(db_session, scan_run_id=scan_run.id)
+    page = await make_page_result_with_parents(db_session)
 
     rf = await make_rule_finding(
         db_session,

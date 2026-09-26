@@ -72,7 +72,8 @@ class TestNameCollisions:
         (tree / "owner").mkdir()
         (tree / "owner" / "__init__.py").write_text("")
 
-        offenders = source_paths_importing(_fake_package(tree, "pkg"), lambda i: any("rollup" in x for x in i))
+        package = _fake_package(tree, "pkg")
+        offenders = source_paths_importing(package_edges(package), package, lambda i: any("rollup" in x for x in i))
 
         assert offenders == ["owner.py"]
 
@@ -84,9 +85,31 @@ class TestNameCollisions:
         (tree / "owner").mkdir()
         (tree / "owner" / "__init__.py").write_text(_FORBIDDEN)
 
-        offenders = source_paths_importing(_fake_package(tree, "pkg"), lambda i: any("rollup" in x for x in i))
+        package = _fake_package(tree, "pkg")
+        offenders = source_paths_importing(package_edges(package), package, lambda i: any("rollup" in x for x in i))
 
         assert offenders == ["owner/__init__.py"]
+
+
+class TestSourcePathsImporting:
+    # Edges walked from one tree, filtered to another package's root, see
+    # nothing and would report no offenders; the mismatch fails instead.
+    def test_edges_from_another_tree_fail_loudly(self, tree: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+        other = tmp_path_factory.mktemp("other")
+        (other / "__init__.py").write_text("")
+
+        with pytest.raises(AssertionError, match="different trees"):
+            source_paths_importing(package_edges(_fake_package(tree, "pkg")), _fake_package(other, "other"), bool)
+
+    def test_a_subpackage_reads_only_its_own_modules(self, tree: Path) -> None:
+        (tree / "top.py").write_text(_FORBIDDEN)
+        (tree / "sub" / "leaf.py").write_text(_FORBIDDEN)
+        edges = package_edges(_fake_package(tree, "pkg"))
+
+        sub = _fake_package(tree / "sub", "pkg.sub")
+        offenders = source_paths_importing(edges, sub, lambda i: any("rollup" in x for x in i))
+
+        assert offenders == ["leaf.py"]
 
 
 class TestPackageSources:
@@ -107,7 +130,7 @@ class TestPackageSources:
         (tmp_path / "__init__.py").write_text("")
 
         with pytest.raises(AssertionError, match="not descending"):
-            source_paths_importing(_fake_package(tmp_path, "pkg"), lambda i: True)
+            package_edges(_fake_package(tmp_path, "pkg"))
 
     def test_a_namespace_package_is_refused_rather_than_walked_as_empty(self) -> None:
         namespace = ModuleType("ghost")

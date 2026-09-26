@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.core.exceptions import DuplicateSlugError, NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.scan_run import ScanRun
-from a11y_health.models.score_snapshot import ScoreSnapshot
 from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.services import app as app_service
 from a11y_health.services import owner as owner_service
 from tests.factories import (
+    app_snapshots,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -282,8 +282,7 @@ async def test_delete_app_cascades_dependents(db_session: AsyncSession) -> None:
     await app_service.delete_app(db_session, app_id)
     scan_runs = await db_session.execute(select(ScanRun).where(ScanRun.app_id == app_id))
     assert scan_runs.scalars().all() == []
-    snapshots = await db_session.execute(select(ScoreSnapshot).where(ScoreSnapshot.app_id == app_id))
-    assert snapshots.scalars().all() == []
+    assert await app_snapshots(db_session, app_id) == []
 
 
 # The unit and the brand are given different ids, so rolling up the wrong

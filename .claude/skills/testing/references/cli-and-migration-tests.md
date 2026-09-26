@@ -19,7 +19,7 @@ Run a shipped `upgrade()`/`downgrade()` bound to `db_session` through `harness.p
 
 ## `deadlock_timeout` is superuser-set
 
-The `engine` fixture sets `deadlock_timeout = 50ms` on every connection. Don't re-set the GUC per test; raise it per session only to steer which backend Postgres picks as the deadlock victim, the way `test_rollup_deadlock.py` does.
+The `engine` fixture sets `deadlock_timeout = 50ms` on every connection. Don't re-set the GUC per test; raise it with `SET LOCAL`, for one transaction, only to steer which backend Postgres picks as the deadlock victim, the way `test_rollup_deadlock.py` does. A plain `SET` survives a commit and returns to the pool with its connection, where a later deadlock test's waiter would arm the raised check instead of 50 ms.
 
 Dev and CI connect as superuser, and the setting rides the connection startup packet, so a non-superuser test role fails **every** connection with `FATAL: permission denied to set parameter`. The escape hatch is `GRANT SET ON PARAMETER deadlock_timeout TO <role>`.
 

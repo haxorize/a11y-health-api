@@ -11,8 +11,7 @@ from collections.abc import Mapping
 
 import pytest
 
-import a11y_health
-from tests.import_graph import Module, import_edges, package_edges, synthetic_module
+from tests.import_graph import Module, import_edges, synthetic_module
 
 _FORBIDDEN_EDGES = [
     ("a11y_health.cli", "a11y_health.core.database"),
@@ -56,8 +55,7 @@ class TestCrossingDetection:
 
 
 @pytest.mark.parametrize(("importer", "target"), _FORBIDDEN_EDGES)
-def test_forbidden_edge_is_absent(importer: str, target: str) -> None:
-    edges = package_edges(a11y_health)
-    assert any(module.name.startswith(f"{importer}.") for module in edges), f"no modules found under {importer}"
+def test_forbidden_edge_is_absent(importer: str, target: str, source_edges: Mapping[Module, frozenset[str]]) -> None:
+    assert any(module.name.startswith(f"{importer}.") for module in source_edges), f"no modules found under {importer}"
 
-    assert _crossings(edges, importer, target) == []
+    assert _crossings(source_edges, importer, target) == []

@@ -14,8 +14,7 @@ assertion below can't pass by quietly finding nothing.
 
 from collections.abc import Mapping
 
-import a11y_health
-from tests.import_graph import Module, import_edges, package_edges, package_of, synthetic_module
+from tests.import_graph import Module, import_edges, package_of, synthetic_module
 
 
 def _private_gate(module: str) -> str | None:
@@ -108,8 +107,8 @@ class TestCrossingDetection:
         assert _crossings(_edges(sources)) == []
 
 
-def test_source_tree_has_no_crossings() -> None:
-    edges = package_edges(a11y_health)
-    assert any(_private_gate(module.name) for module in edges), "no private modules found — the source walk is broken"
+def test_source_tree_has_no_crossings(source_edges: Mapping[Module, frozenset[str]]) -> None:
+    found_private = any(_private_gate(module.name) for module in source_edges)
+    assert found_private, "no private modules found — the source walk is broken"
 
-    assert _crossings(edges) == []
+    assert _crossings(source_edges) == []

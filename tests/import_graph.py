@@ -22,7 +22,7 @@ Named publicly because a consumer sits in a sibling test package
 """
 
 import ast
-from collections.abc import Callable, Container, Iterable
+from collections.abc import Callable, Container, Iterable, Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -162,12 +162,14 @@ def package_edges(package: ModuleType) -> dict[Module, frozenset[str]]:
     return import_edges(modules)
 
 
-def source_paths_importing(package: ModuleType, matches: Callable[[set[str]], bool]) -> list[str]:
-    """Paths under `package`, relative and sorted, of the modules whose import
-    set satisfies `matches` — the edges with the rule left to the caller."""
+def source_paths_importing(
+    edges: Mapping[Module, frozenset[str]], package: ModuleType, matches: Callable[[set[str]], bool]
+) -> list[str]:
+    """Paths under `package`, relative and sorted, of the modules in `edges`
+    whose import set satisfies `matches` — the edges with the rule left to the
+    caller. `package` may be a subpackage of the tree `edges` came from, and
+    one from another tree fails rather than reading as no offenders (#138)."""
     root = package_root(package)
-    return sorted(
-        str(module.path.relative_to(root))
-        for module, imports in package_edges(package).items()
-        if matches(set(imports))
-    )
+    under = {module: imports for module, imports in edges.items() if module.path.is_relative_to(root)}
+    assert under, f"no module in the edges lies under {root}: the edges and the package are from different trees"
+    return sorted(str(module.path.relative_to(root)) for module, imports in under.items() if matches(set(imports)))

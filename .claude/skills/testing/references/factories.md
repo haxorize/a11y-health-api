@@ -69,15 +69,15 @@ async def make_brand(db: AsyncSession, *, name: str | None = None) -> Brand:
 
 ## The shared arrange helpers
 
-Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored App. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one.
+Two arrange helpers own the "ingest these Axe Payloads, complete the run" core every scoring and orchestration test shares: `ingest_pages_and_complete`, and `ingest_and_score` on top of it, with `complete_new_scan_run` and `score_new_scan_run` making the run first. They are arrange only: the shared factory never owns a subject, so what a test invokes after arrange completes (the orchestration handler, a rollup call) stays visible at the test's own call site. `ingest_and_score`'s final call is the act only for a test whose subject is the score compute itself; a rollup test uses it to arrange an already-scored App. A new scoring or rollup tail is a new helper name, never a mode flag on an existing one.
 
 `DEFAULT_SCORE_AGGREGATES` and `DEFAULT_SNAPSHOT_AT` are the one home of the snapshot defaults — the Score Aggregates and the Observation Time: `build_score_snapshot` (not persisted) and `make_score_snapshot` (persisted) both read their keyword defaults off them, and a test that has to build a raw `ScoreSnapshot` row (one `owned()` cannot express) spreads `DEFAULT_SCORE_AGGREGATES._asdict()` in beside `snapshot_at=DEFAULT_SNAPSHOT_AT` rather than restating the values.
 
 ## Query helpers
 
-For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`:
+For test assertions that query derived state (e.g., checking rollup snapshots), add query helpers to `factories.py`. The snapshot readers share one ordering, Latest Score Snapshot's (observation time, ties to the higher id), and each `latest_*` reader is the last element of its owner's list, so the two can never disagree; `tests/test_factories.py` holds them to it. Read an owner's snapshots through these rather than an inline `select(ScoreSnapshot)`:
 
 ```python
 async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapshot:
-    return await _latest_snapshot(db, ScoreSnapshot.org_unit_id, org_unit_id)
+    return (await ou_snapshots(db, org_unit_id))[-1]
 ```

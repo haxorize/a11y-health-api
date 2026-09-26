@@ -8,8 +8,9 @@
 # and CI each export the same variable.
 export UV_LOCKED := 1
 
-# The revision `migrate-roundtrip` downgrades to, and the floor CI's
-# migration-drift job gets by invoking that target rather than carrying a copy.
+# The revision `migrate-roundtrip` downgrades to. No recipe expands it:
+# test_downgrade_floor.py reads this line, for the roundtrip and for the
+# migration harness, which refuses to walk below it.
 #
 # b362121027a0 is the deepest revision the roundtrip can reach: its own
 # downgrade() raises NotImplementedError, so it is downgraded *to* and never
@@ -81,9 +82,10 @@ migrate-create:
 migrate-downgrade:
 	uv run alembic downgrade -1
 
-# Runs against a scratch database the script mints per run, never DATABASE_URL.
+# Runs against an empty per-run test database, never DATABASE_URL. The suite
+# runs the same test; this target is the one CI's migration-drift job names.
 migrate-roundtrip:
-	./scripts/migrate_roundtrip.sh $(DOWNGRADE_FLOOR)
+	uv run pytest tests/migrations/test_downgrade_floor.py::test_the_revisions_above_the_floor_reverse
 
 openapi:
 	uv run python scripts/export_openapi.py

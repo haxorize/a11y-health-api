@@ -21,20 +21,18 @@ from tests.factories import (
     make_score_snapshot,
     ou_snapshots,
 )
-from tests.migrations.harness import load_migration, run_downgrade, run_upgrade
+from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
 
-migration = load_migration("b362121027a0_remove_legacy_duplicate_rollup_snapshots.py")
-enforcement = load_migration("8b3a1162eb95_add_per_owner_rollup_snapshot_uniqueness_indexes.py")
+migration = load_migration(DUPLICATE_CLEANUP)
 
 _OBSERVED_AT = datetime(2026, 3, 1, 9, 0, 0, tzinfo=UTC)
 
 
-# The cleanup ran before #98's uniqueness enforcement existed; step the schema
-# back through the shipped #98 downgrade or the legacy duplicates seeded here
-# would violate the new indexes.
+# The cleanup ran before #98's uniqueness enforcement existed, so the legacy
+# duplicates seeded here need the world without its indexes.
 @pytest.fixture(autouse=True)
-async def _pre_enforcement_db(db_session: AsyncSession) -> None:
-    await run_downgrade(db_session, enforcement)
+async def _pre_cleanup_db(db_session: AsyncSession) -> None:
+    await restore_world(db_session, DUPLICATE_CLEANUP, skips=(DUPLICATE_CLEANUP,))
 
 
 async def test_identical_org_unit_duplicates_collapse_to_max_id_row(db_session: AsyncSession) -> None:

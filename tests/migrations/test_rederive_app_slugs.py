@@ -7,15 +7,25 @@ finals, so `uq_app_slug` never sees a transient collision. That logic only bites
 against real colliding rows in a real database, which needs a harness that runs
 the shipped `upgrade()` — not a reimplementation of it. Harness mechanics live
 in tests/migrations/harness.py.
+
+The walk to this revision's world skips the #97 duplicate cleanup and this
+repair itself: both downgrades raise, and both rewrite rows without changing
+the schema.
 """
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories import make_app, make_brand, make_org_unit
-from tests.migrations.harness import load_migration, run_upgrade
+from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
 
-migration = load_migration("48770eba4885_rederive_app_slugs_from_names.py")
+migration = load_migration("48770eba4885")
+
+
+@pytest.fixture(autouse=True)
+async def _pre_repair_db(db_session: AsyncSession) -> None:
+    await restore_world(db_session, migration.revision, skips=(DUPLICATE_CLEANUP, migration.revision))
 
 
 async def test_migration_reslugs_transiently_colliding_rows(db_session: AsyncSession) -> None:
@@ -43,10 +53,14 @@ async def test_migration_no_op_when_all_slugs_already_derived(db_session: AsyncS
     org_unit = await make_org_unit(db_session)
     brand = await make_brand(db_session)
     app = await make_app(db_session, name="foo", slug="foo", org_unit_id=org_unit.id, brand_id=brand.id)
+    locate = text("SELECT ctid FROM app WHERE id = :id")
+    before = (await db_session.execute(locate, {"id": app.id})).scalar_one()
 
-    # Nothing changes, so the `if changing:` block is skipped entirely — no
-    # UPDATE.
     await run_upgrade(db_session, migration)
 
-    row = (await db_session.execute(text("SELECT name, slug FROM app WHERE id = :id"), {"id": app.id})).one()
-    assert (row.name, row.slug) == ("foo", "foo")
+    # An UPDATE writes a new row version at a new ctid even when it rewrites a
+    # value to itself, so an unmoved ctid is the proof that nothing wrote the
+    # row. The values alone cannot say it: a rewrite of every slug to its own
+    # derived form leaves them identical. Reds when `changing` takes every row.
+    after = (await db_session.execute(locate, {"id": app.id})).scalar_one()
+    assert after == before

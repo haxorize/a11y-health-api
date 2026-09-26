@@ -116,8 +116,8 @@ make migrate-create msg="add users table"
 make migrate-downgrade
 
 # Upgrade, downgrade to DOWNGRADE_FLOOR, and upgrade again over the revisions
-# above the floor — what CI's migration-drift job runs. Uses a scratch database
-# it creates and drops, never DATABASE_URL; see the Makefile comment beside it
+# above the floor — what CI's migration-drift job runs. A test over an empty
+# per-run test database, never DATABASE_URL; see the Makefile comment beside it
 make migrate-roundtrip
 ```
 

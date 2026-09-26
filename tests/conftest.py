@@ -71,16 +71,18 @@ async def _drop(conn: AsyncConnection, name: str) -> None:
     await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
 
 
-def per_run_test_database_name() -> str:
+def per_run_test_database_name(suffix: str = "") -> str:
     # Suffixed with the pid because `_per_run_test_database` drops and recreates
     # it, so two runs sharing one name would drop each other's schema — and the
     # pre-commit hook runs the suite on every commit while the developer may be
-    # running `make test` in another terminal.
-    return f"{make_url(settings.TEST_DATABASE_URL).database}_{os.getpid()}"
+    # running `make test` in another terminal. `suffix` separates a second
+    # database within one run from the `engine` fixture's, which it would
+    # otherwise drop.
+    return f"{make_url(settings.TEST_DATABASE_URL).database}_{os.getpid()}{suffix}"
 
 
 @asynccontextmanager
-async def _per_run_test_database() -> AsyncIterator[str]:
+async def _per_run_test_database(suffix: str = "") -> AsyncIterator[str]:
     """Yields the URL of a database that exists for the block and not after.
 
     One seam for the whole lifecycle, so a caller never handles the admin URL
@@ -88,7 +90,7 @@ async def _per_run_test_database() -> AsyncIterator[str]:
     something else.
     """
     template = make_url(settings.TEST_DATABASE_URL)
-    name = per_run_test_database_name()
+    name = per_run_test_database_name(suffix)
     # The identifier cannot be a bound parameter the way the datname filter in
     # _drop is. Double-quoting neutralizes every metacharacter except a quote,
     # which would escape it — so the quote is what this refuses, once, covering
@@ -125,6 +127,14 @@ async def engine() -> AsyncIterator[AsyncEngine]:
             # Before the context manager's drop: DROP DATABASE fails while a
             # backend is attached, and this pool holds them.
             await eng.dispose()
+
+
+@pytest.fixture
+async def empty_database_url() -> AsyncIterator[str]:
+    # A database with no schema at all, for alembic to build from the base: the
+    # `engine` fixture's database already holds the metadata's tables.
+    async with _per_run_test_database(suffix="_empty") as url:
+        yield url
 
 
 @pytest.fixture

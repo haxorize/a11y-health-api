@@ -1,6 +1,6 @@
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
@@ -18,7 +18,9 @@ from a11y_health.models import *  # noqa: F403 — ensure all models are registe
 from tests._declaration_honesty import (
     DeclarationHonestyShim,
     instrument_rollup_raisers,
-    stale_rollup_declaration_message,
+    pytest_deselected,  # noqa: F401 — the session gate's hooks, registered by name
+    pytest_runtest_logreport,  # noqa: F401
+    pytest_sessionfinish,  # noqa: F401
 )
 from tests._non_test_database import allow_maintenance_engine, install_non_test_database_guard
 from tests.factories import SessionFactory
@@ -32,56 +34,6 @@ instrument_rollup_raisers()
 # opened from inside a test. The invariant it holds, and why CI's env value was
 # not enough on its own, are tests/_non_test_database.py.
 install_non_test_database_guard()
-
-
-# The reverse direction of ADR 0033 (#121): an operation still declaring the
-# retryable concurrent_rollup mode after its rollup call is removed. Only a
-# green full run observes every rollup-triggering variant, so any narrowing —
-# positional paths, --ignore, deselection, or a mode that executes no tests
-# (collect/setup-only, --fixtures) — skips the diff rather than failing
-# operations the subset never drove. Deselection and execution are tracked by
-# this conftest's own hooks below, not another plugin's bookkeeping. Residuals
-# (recorded in ADR 0033): narrowing the gate doesn't recognize would diff a
-# starved observed set, and an explicit `pytest tests` reads as narrowed and
-# skips the check.
-#
-# Failure sets session.exitstatus instead of raising pytest.exit: wrap_session
-# returns the mutated value, and an exception here would abort the terminal
-# reporter's sessionfinish wrapper before it prints the run summary.
-_deselected = False
-_tests_ran = 0
-
-
-def pytest_deselected(items: Sequence[pytest.Item]) -> None:
-    global _deselected
-    if items:
-        _deselected = True
-
-
-def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    global _tests_ran
-    if report.when == "call":
-        _tests_ran += 1
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    config = session.config
-    reporter = config.pluginmanager.get_plugin("terminalreporter")
-    narrowed = (
-        reporter is None
-        or _deselected
-        or not _tests_ran
-        or config.getoption("file_or_dir")
-        or config.getoption("ignore")
-        or config.getoption("ignore_glob")
-    )
-    if exitstatus != 0 or narrowed:
-        return
-    message = stale_rollup_declaration_message(app)
-    if message is not None:
-        reporter.write_sep("!", message, red=True)
-        session.exitstatus = 1
 
 
 @asynccontextmanager

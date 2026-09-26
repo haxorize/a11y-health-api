@@ -21,6 +21,8 @@ tests/
   test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
   test_sibling_imports.py  # sibling-import rules: which modules may import which siblings — services/ today
+  test_forbidden_edges.py  # package import edges that must not exist
+  test_architecture_citations.py  # cited docs/architecture.md headings exist
   test_shared_skill_lock.py  # each shared skill copy matches its hash in skills-sync.lock (ADR 0001)
   test_reachability.py     # every source module is reached from an entry point (ADR 0039)
   test_workflow_parity.py  # CI's lint steps vs `make lint`
@@ -28,15 +30,13 @@ tests/
                            # staged tree, and neither the working tree nor the index moves
   _non_test_database.py    # refuses any connection the suite opens to DATABASE_URL's database
   test_non_test_database.py  # its own suite: the rule, and that conftest armed it
-  test_prose_shape.py      # the six prose guards: code-prose wrap (the half W505 can't see), one-line
-                           # markdown blocks (ADR 0040), American spelling (ADR 0041), the DOMAIN.md
-                           # definition word ceiling (ADR 0018), the docs/architecture.md word band and
-                           # em-dash cap (#148), and the 15,000-byte bound on every skill body and
-                           # reference
+  test_prose_shape.py      # the six prose guards, the 15,000-byte bound on every skill body and
+                           # reference among them; the code-documentation skill names each
   factories.py             # the data factories, arrange helpers, and query helpers every suite shares
   fixtures/                # one sample Axe Payload (humana.com-home.json)
   api/
     test_health.py          # tests for api/v1/endpoints/health.py
+    test_deps.py            # api/deps.py's session scope
     test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
                             # three. Its two scan-run routers share test_scan_runs.py; pages_router
                             # is test_pages.py; a nested read takes its own file

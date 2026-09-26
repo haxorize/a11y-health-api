@@ -12,10 +12,10 @@ every sibling, so which modules should reach a private sibling is
 assertion below can't pass by quietly finding nothing.
 """
 
-from collections.abc import Iterable
+from collections.abc import Mapping
 
 import a11y_health
-from tests.import_graph import imported_modules, package_of, package_sources, packages_in
+from tests.import_graph import Module, import_edges, package_edges, package_of, synthetic_module
 
 
 def _private_gate(module: str) -> str | None:
@@ -39,79 +39,77 @@ def _may_reach(importer: str, gate: str) -> bool:
     return package == package_of(importer) or package == importer
 
 
-def _crossings(sources: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
-    """(importer, gate) pairs where one of `sources`' private modules or
-    packages is reached from outside the package that owns it.
-
-    Takes (module name, source) pairs rather than a mapping: two files can
-    resolve to one module name, and a mapping drops one of them (#138).
-    """
-    modules = list(sources)
-    packages = packages_in(name for name, _ in modules)
-    gates = {gate for name, _ in modules if (gate := _private_gate(name)) is not None}
+def _crossings(edges: Mapping[Module, frozenset[str]]) -> list[tuple[str, str]]:
+    """(importer, gate) pairs where one of the tree's private modules or
+    packages is reached from outside the package that owns it."""
+    gates = {gate for module in edges if (gate := _private_gate(module.name)) is not None}
     found = {
-        (importer, gate)
-        for importer, source in modules
-        for imported in imported_modules(source, importer, packages)
-        if (gate := _private_gate(imported)) in gates and not _may_reach(importer, gate)
+        (module.name, gate)
+        for module, imports in edges.items()
+        for imported in imports
+        if (gate := _private_gate(imported)) in gates and not _may_reach(module.name, gate)
     }
     return sorted(found)
+
+
+def _edges(sources: Mapping[str, str]) -> dict[Module, frozenset[str]]:
+    return import_edges(synthetic_module(name, source) for name, source in sources.items())
 
 
 class TestCrossingDetection:
     def test_private_module_imported_from_another_package_is_a_crossing(self) -> None:
         sources = {"pkg.a._private": "", "pkg.b.consumer": "from pkg.a._private import thing"}
 
-        assert _crossings(sources.items()) == [("pkg.b.consumer", "pkg.a._private")]
+        assert _crossings(_edges(sources)) == [("pkg.b.consumer", "pkg.a._private")]
 
     def test_private_module_named_through_its_package_is_a_crossing(self) -> None:
         # `from pkg.a import _private` reaches the same module by the other
         # spelling.
         sources = {"pkg.a._private": "", "pkg.b.consumer": "from pkg.a import _private"}
 
-        assert _crossings(sources.items()) == [("pkg.b.consumer", "pkg.a._private")]
+        assert _crossings(_edges(sources)) == [("pkg.b.consumer", "pkg.a._private")]
 
     def test_package_sibling_may_import_a_private_module(self) -> None:
         sources = {"pkg.a._private": "", "pkg.a.sibling": "from pkg.a._private import thing"}
 
-        assert _crossings(sources.items()) == []
+        assert _crossings(_edges(sources)) == []
 
     def test_public_module_may_be_imported_from_anywhere(self) -> None:
         sources = {"pkg.a.public": "", "pkg.b.consumer": "from pkg.a.public import thing"}
 
-        assert _crossings(sources.items()) == []
+        assert _crossings(_edges(sources)) == []
 
     def test_package_init_may_import_its_own_private_member(self) -> None:
         # A package's `__init__` *is* the package, and re-exporting through it
         # is the reason a private member exists at all.
         sources = {"pkg.a": "from pkg.a._private import Thing", "pkg.a._private": ""}
 
-        assert _crossings(sources.items()) == []
+        assert _crossings(_edges(sources)) == []
 
     def test_module_inside_a_private_package_is_a_crossing(self) -> None:
         # The gate is the outermost private name on the path, not the leaf.
         sources = {"pkg._priv": "", "pkg._priv.impl": "", "other.consumer": "from pkg._priv.impl import X"}
 
-        assert _crossings(sources.items()) == [("other.consumer", "pkg._priv")]
+        assert _crossings(_edges(sources)) == [("other.consumer", "pkg._priv")]
 
     def test_private_package_is_open_to_its_own_package(self) -> None:
         sources = {"pkg._priv": "", "pkg._priv.impl": "", "pkg.consumer": "from pkg._priv.impl import X"}
 
-        assert _crossings(sources.items()) == []
+        assert _crossings(_edges(sources)) == []
 
     def test_relative_import_across_packages_is_a_crossing(self) -> None:
         sources = {"pkg.a._private": "", "pkg.b.consumer": "from ..a._private import thing"}
 
-        assert _crossings(sources.items()) == [("pkg.b.consumer", "pkg.a._private")]
+        assert _crossings(_edges(sources)) == [("pkg.b.consumer", "pkg.a._private")]
 
     def test_relative_import_within_a_package_is_allowed(self) -> None:
         sources = {"pkg.a._private": "", "pkg.a.sibling": "from ._private import thing"}
 
-        assert _crossings(sources.items()) == []
+        assert _crossings(_edges(sources)) == []
 
 
 def test_source_tree_has_no_crossings() -> None:
-    modules = package_sources(a11y_health)
-    assert any(_private_gate(module.name) for module in modules), "no private modules found — the source walk is broken"
+    edges = package_edges(a11y_health)
+    assert any(_private_gate(module.name) for module in edges), "no private modules found — the source walk is broken"
 
-    assert _crossings((module.name, module.source) for module in modules) == []
+    assert _crossings(edges) == []

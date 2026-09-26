@@ -11,9 +11,10 @@ point (`test_reachability`), which modules import the classification vocabulary
 that quietly missed an import spelling would weaken every rule sharing it at
 once.
 
-The tree walk is `package_sources`, and `source_paths_importing` is that walk
-with the rule left to the caller, for the guards that only need the offending
-paths.
+The tree walk is `package_sources`; `package_edges` reads every module's
+imports off it once, and each guard applies its rule to that mapping.
+`source_paths_importing` is the mapping with the rule left to the caller, for
+the guards that only need the offending paths.
 
 Named publicly because a consumer sits in a sibling test package
 (`tests/core/test_existence.py`), which a private name would shut out — see
@@ -31,6 +32,12 @@ class Module(NamedTuple):
     path: Path
     name: str
     source: str
+
+
+def synthetic_module(name: str, source: str = "") -> Module:
+    """A module that exists only as a name and a source, for a guard's own
+    cases."""
+    return Module(Path("/fake") / name.replace(".", "/"), name, source)
 
 
 def module_name(path: Path, root: Path, root_name: str) -> str:
@@ -133,19 +140,34 @@ def package_sources(package: ModuleType) -> list[Module]:
     ]
 
 
+def import_edges(modules: Iterable[Module]) -> dict[Module, frozenset[str]]:
+    """Each module's `imported_modules`, relative spellings resolved against
+    the tree `modules` form. The seam under `package_edges`, for a caller that
+    builds its modules rather than walking a package.
+
+    Keyed by `Module`, never by name, for the reason `package_sources` is a
+    list (#138).
+    """
+    modules = list(modules)
+    packages = packages_in(module.name for module in modules)
+    return {module: frozenset(imported_modules(module.source, module.name, packages)) for module in modules}
+
+
+def package_edges(package: ModuleType) -> dict[Module, frozenset[str]]:
+    """What every module under `package` imports: the tree walked and read
+    once, descent pinned, relative spellings resolved. Each topology guard
+    supplies only its rule over the mapping."""
+    modules = package_sources(package)
+    assert_descends(modules, package_root(package))
+    return import_edges(modules)
+
+
 def source_paths_importing(package: ModuleType, matches: Callable[[set[str]], bool]) -> list[str]:
     """Paths under `package`, relative and sorted, of the modules whose import
-    set satisfies `matches` — the walk with the rule left to the caller.
-
-    Resolving relative spellings needs the whole tree read first, which is why
-    this walks rather than testing one file at a time.
-    """
+    set satisfies `matches` — the edges with the rule left to the caller."""
     root = package_root(package)
-    modules = package_sources(package)
-    packages = packages_in(module.name for module in modules)
-    assert_descends(modules, root)
     return sorted(
         str(module.path.relative_to(root))
-        for module in modules
-        if matches(imported_modules(module.source, module.name, packages))
+        for module, imports in package_edges(package).items()
+        if matches(set(imports))
     )

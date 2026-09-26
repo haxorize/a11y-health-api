@@ -1,3 +1,5 @@
+import ast
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -14,10 +16,12 @@ from a11y_health.core.exceptions import NotFoundError
 from a11y_health.models.app import App
 from a11y_health.services import owner, scoring_orchestration
 from tests._declaration_honesty import (
-    _OBSERVED_ROLLUP_OPERATIONS,
     DeclarationHonestyShim,
     _operations_declaring,
     _request_scope,
+    observation_scope,
+    record_observation,
+    run_was_narrowed,
     stale_rollup_declaration_message,
 )
 from tests.factories import (
@@ -67,12 +71,61 @@ def test_no_src_caller_binds_a_rollup_raiser_by_from_import() -> None:
     assert not offenders, f"rollup raisers must be called as owner attributes, not from-imported: {offenders}"
 
 
+_RAISE_PATH = frozenset({"_concurrent_rollup_error", "ConcurrentRollupError"})
+
+
+def _rollup_raisers(source: str) -> set[str]:
+    """The public module-level functions in `source` that reach the rollup
+    raise path, directly or through other functions in the same module."""
+    functions = {
+        node.name: {name.id for name in ast.walk(node) if isinstance(name, ast.Name)}
+        for node in ast.parse(source).body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    reaching = {name for name, names in functions.items() if names & _RAISE_PATH}
+    while grown := {name for name, names in functions.items() if names & reaching} - reaching:
+        reaching |= grown
+    return {name for name in reaching if not name.startswith("_")}
+
+
+class TestRollupRaiserNaming:
+    # The instrumentation wraps only `rollup*` names on the Owner Dispatcher,
+    # so a public function reaching the rollup raise path under another name
+    # is instrumented by nothing (ADR 0033 residual). Walking the call graph
+    # inside the module finds every such function.
+    def test_a_public_function_reaching_the_raise_path_under_another_name_is_reported(self) -> None:
+        source = (
+            "def _concurrent_rollup_error(owner_type, owner_id): ...\n"
+            "async def _apply_rollup(session):\n"
+            "    raise _concurrent_rollup_error(1, 2)\n"
+            "async def rollup(session):\n"
+            "    await _apply_rollup(session)\n"
+            "async def recompute_ancestors(session):\n"
+            "    await _apply_rollup(session)\n"
+            "async def list_scores(session): ...\n"
+        )
+
+        assert _rollup_raisers(source) == {"rollup", "recompute_ancestors"}
+
+    def test_a_direct_raise_of_the_error_class_is_the_raise_path_too(self) -> None:
+        source = "def refresh():\n    raise ConcurrentRollupError(Owner, 1)\n"
+
+        assert _rollup_raisers(source) == {"refresh"}
+
+    def test_every_public_raiser_on_the_owner_dispatcher_carries_the_convention(self) -> None:
+        raisers = _rollup_raisers(inspect.getsource(owner))
+        assert "rollup" in raisers, "the call-graph walk found no raiser — it is not reading the raise path"
+
+        assert sorted(name for name in raisers if not name.startswith("rollup")) == []
+
+
 # Enforcement depth is the suite's coverage of rollup-triggering variants, so
 # each known rollup-triggering operation gets an explicit canary driving its
-# triggering variant over HTTP — discarding the key first proves this test's
-# own request was observed, not an earlier test's. A canary fails if the
-# variant stops triggering rollups (coverage lost) or, via the raise-site
-# assert, if the operation drops its concurrent_rollup declaration.
+# triggering variant over HTTP — the observation scope clears the key first, so
+# it proves this test's own request was observed, not an earlier test's. A
+# canary fails if the variant stops triggering rollups (coverage lost) or, via
+# the raise-site assert, if the operation drops its concurrent_rollup
+# declaration.
 class TestRollupObservationCanaries:
     # Keys use the matched route's own template — the app's include mode
     # doesn't expose the /api/v1 mount prefix to the route object at handler
@@ -80,51 +133,51 @@ class TestRollupObservationCanaries:
     async def test_app_delete(self, db_client: AsyncClient, db_session: AsyncSession) -> None:
         app_row = await make_app_with_org_unit(db_session, slug="canary-app-delete")
         key = ("DELETE", "/apps/{app_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        with observation_scope(key) as observation:
+            response = await db_client.delete(f"/api/v1/apps/{app_row.id}")
 
-        response = await db_client.delete(f"/api/v1/apps/{app_row.id}")
         assert response.status_code == 204
-        assert key in _OBSERVED_ROLLUP_OPERATIONS
+        assert observation.observed
 
     async def test_app_reassignment(self, db_client: AsyncClient, db_session: AsyncSession) -> None:
         app_row = await make_app_with_org_unit(db_session, slug="canary-app-reassign")
         target = await make_org_unit(db_session, name="Canary Target", parent_id=app_row.org_unit_id)
         key = ("PATCH", "/apps/{app_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        with observation_scope(key) as observation:
+            response = await db_client.patch(f"/api/v1/apps/{app_row.id}", json={"org_unit_id": target.id})
 
-        response = await db_client.patch(f"/api/v1/apps/{app_row.id}", json={"org_unit_id": target.id})
         assert response.status_code == 200
-        assert key in _OBSERVED_ROLLUP_OPERATIONS
+        assert observation.observed
 
     async def test_org_unit_reparenting(self, db_client: AsyncClient, db_session: AsyncSession) -> None:
         root = await make_org_unit(db_session, name="Canary Root")
         new_parent = await make_org_unit(db_session, name="Canary Parent", parent_id=root.id)
         child = await make_org_unit(db_session, name="Canary Child", parent_id=root.id)
         key = ("PATCH", "/org-units/{org_unit_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        with observation_scope(key) as observation:
+            response = await db_client.patch(f"/api/v1/org-units/{child.id}", json={"parent_id": new_parent.id})
 
-        response = await db_client.patch(f"/api/v1/org-units/{child.id}", json={"parent_id": new_parent.id})
         assert response.status_code == 200
-        assert key in _OBSERVED_ROLLUP_OPERATIONS
+        assert observation.observed
 
     async def test_scan_run_completion(self, db_client: AsyncClient, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session, slug="canary-run-complete")
         await make_page_result(db_session, scan_run_id=scan_run.id)
         key = ("PATCH", "/scan-runs/{scan_run_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        with observation_scope(key) as observation:
+            response = await db_client.patch(f"/api/v1/scan-runs/{scan_run.id}", json={"status": "completed"})
 
-        response = await db_client.patch(f"/api/v1/scan-runs/{scan_run.id}", json={"status": "completed"})
         assert response.status_code == 200
-        assert key in _OBSERVED_ROLLUP_OPERATIONS
+        assert observation.observed
 
     async def test_scan_run_delete(self, db_client: AsyncClient, db_session: AsyncSession) -> None:
         scan_run = await make_scan_run_with_parents(db_session, slug="canary-run-delete")
         key = ("DELETE", "/scan-runs/{scan_run_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        with observation_scope(key) as observation:
+            response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")
 
-        response = await db_client.delete(f"/api/v1/scan-runs/{scan_run.id}")
         assert response.status_code == 204
-        assert key in _OBSERVED_ROLLUP_OPERATIONS
+        assert observation.observed
 
 
 def _not_found_raising_app(include_responses: dict[int | str, dict[str, object]] | None) -> FastAPI:
@@ -168,14 +221,12 @@ class TestIncludeLevelDeclarations:
         # The raise-site assert must pass; the session=None crash that follows
         # proves the rollup itself was reached (contrast the undeclared test
         # below, which never gets past the assert).
-        try:
-            with _request_scope(scope), pytest.raises(AttributeError):
-                await scoring_orchestration.on_app_latest_snapshot_changed(None, _AN_APP)  # ty: ignore[invalid-argument-type]
-        finally:
-            # The observed set is module-global and feeds the sessionfinish
-            # stale-diff; a leaked synthetic key would mask a same-keyed stale
-            # declaration.
-            _OBSERVED_ROLLUP_OPERATIONS.discard(("PATCH", "/widgets/{widget_id}"))
+        with (
+            observation_scope(("PATCH", "/widgets/{widget_id}"), synthetic=True),
+            _request_scope(scope),
+            pytest.raises(AttributeError),
+        ):
+            await scoring_orchestration.on_app_latest_snapshot_changed(None, _AN_APP)  # ty: ignore[invalid-argument-type]
 
     async def test_undeclared_mode_behind_include_still_fails(self) -> None:
         widget_app = _not_found_raising_app(None)
@@ -184,12 +235,81 @@ class TestIncludeLevelDeclarations:
             await _get_widget_through_shim(widget_app)
 
 
+class TestObservationScope:
+    # The observed set feeds the session-finish stale diff, so a synthetic
+    # observation that outlives its test masks a same-keyed stale declaration.
+    # Dropping the scope's restore reds the first case.
+    def test_a_synthetic_observation_does_not_outlive_its_scope(self) -> None:
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        key = ("GET", "/widgets/{widget_id}")
+
+        with observation_scope(key, synthetic=True):
+            record_observation(key)
+
+        assert stale_rollup_declaration_message(widget_app) is not None
+
+    def test_a_real_observation_is_kept(self) -> None:
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        key = ("GET", "/widgets/{widget_id}")
+
+        try:
+            with observation_scope(key) as observation:
+                record_observation(key)
+            assert observation.observed
+            assert stale_rollup_declaration_message(widget_app) is None
+        finally:
+            with observation_scope(key, synthetic=True):
+                pass
+
+    def test_a_scope_that_observes_nothing_leaves_an_earlier_observation_standing(self) -> None:
+        # A canary whose request stops reaching the rollup fails on its own;
+        # it must not also erase what an earlier test observed.
+        widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
+        key = ("GET", "/widgets/{widget_id}")
+
+        with observation_scope(key, synthetic=True):
+            record_observation(key)
+            with observation_scope(key) as observation:
+                pass
+            assert not observation.observed
+            assert stale_rollup_declaration_message(widget_app) is None
+
+
+class _Options:
+    def __init__(self, **values: object) -> None:
+        self._values = values
+
+    def getoption(self, name: str) -> object:
+        return self._values.get(name)
+
+
+class TestRunWasNarrowed:
+    # The gate diffs only after a complete run; each narrowing on its own
+    # skips it, and a plain run with tests executed does not.
+    def test_a_complete_run_is_not_narrowed(self) -> None:
+        assert not run_was_narrowed(_Options(file_or_dir=[]), deselected=False, tests_ran=3)
+
+    @pytest.mark.parametrize(
+        ("options", "deselected", "tests_ran"),
+        [
+            (_Options(file_or_dir=["tests/api"]), False, 3),
+            (_Options(ignore=["tests/cli"]), False, 3),
+            (_Options(ignore_glob=["*_cli.py"]), False, 3),
+            (_Options(), True, 3),
+            (_Options(), False, 0),
+        ],
+        ids=["positional-path", "ignore", "ignore-glob", "deselection", "nothing-executed"],
+    )
+    def test_each_narrowing_skips_the_diff(self, options: _Options, deselected: bool, tests_ran: int) -> None:
+        assert run_was_narrowed(options, deselected=deselected, tests_ran=tests_ran)
+
+
 # The reverse direction of ADR 0033 (#121): a stale concurrent_rollup
 # declaration — the rollup call removed, the retryable 409 still declared — is
-# caught by a full-suite sessionfinish diff in conftest.py. These tests pin its
-# declared side: every operation whose effective declaration carries the code,
-# keyed (method, route template) like _OBSERVED_ROLLUP_OPERATIONS. They are
-# load-bearing for a second reason: each builds its declaration through
+# caught by the full-suite sessionfinish diff in _declaration_honesty.py. These
+# tests pin its declared side: every operation whose effective declaration
+# carries the code, keyed (method, route template) like the observation ledger.
+# They are load-bearing for a second reason: each builds its declaration through
 # error_responses() and reads it back through the audit, which makes them the
 # round-trip pin on the ERROR_CODES_KEY seam — the guard that catches the
 # declaration's *shape* drifting while writer and reader still agree on the
@@ -221,13 +341,10 @@ class TestOperationsDeclaring:
     def test_stale_message_names_only_unobserved_declarers(self) -> None:
         widget_app = _not_found_raising_app(error_responses(ErrorCode.CONCURRENT_ROLLUP))
         key = ("GET", "/widgets/{widget_id}")
-        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
-        try:
+        with observation_scope(key, synthetic=True):
             message = stale_rollup_declaration_message(widget_app)
             assert message is not None
             assert "GET /widgets/{widget_id}" in message
 
-            _OBSERVED_ROLLUP_OPERATIONS.add(key)
+            record_observation(key)
             assert stale_rollup_declaration_message(widget_app) is None
-        finally:
-            _OBSERVED_ROLLUP_OPERATIONS.discard(key)

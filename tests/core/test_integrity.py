@@ -1,11 +1,16 @@
+import ast
+
 import pytest
 from sqlalchemy.exc import IntegrityError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import a11y_health
+from a11y_health.core import integrity
 from a11y_health.core.exceptions import DuplicateRootError
 from a11y_health.core.integrity import guard
 from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from tests.factories import make_org_unit
+from tests.import_graph import package_sources
 
 
 def _root_taken() -> dict[str, DuplicateRootError]:
@@ -69,3 +74,21 @@ async def test_mutation_outside_guard_would_not_be_protected(db_session: AsyncSe
             pass
     with pytest.raises(PendingRollbackError):
         await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
+
+
+def _opens_a_savepoint(source: str) -> bool:
+    return any(isinstance(node, ast.Attribute) and node.attr == "begin_nested" for node in ast.walk(ast.parse(source)))
+
+
+class TestTheGuardIsTheOnlySavepoint:
+    # A hand-rolled `begin_nested` catches the violation without the guard's
+    # constraint-identity match, so a misclassified error reaches the wire
+    # (ADR 0028). The walk asserts one known site, which also proves it read
+    # the tree.
+    def test_no_module_but_the_guard_opens_a_savepoint(self) -> None:
+        offenders = [module.name for module in package_sources(a11y_health) if _opens_a_savepoint(module.source)]
+
+        assert offenders == [integrity.__name__]
+
+    def test_a_savepoint_opened_through_any_session_is_detected(self) -> None:
+        assert _opens_a_savepoint("async def f(db):\n    async with db.begin_nested():\n        pass\n")

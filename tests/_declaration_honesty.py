@@ -2,7 +2,8 @@
 an operation declared, the ASGI shim that checks every observed error response
 against it, and the instrumentation that catches the one mode responses never
 show organically (rollup-race 409s) at its raise site — the Owner Dispatcher's
-rollup entrypoint.
+rollup entrypoint — and the session gate that diffs what that instrumentation
+observed against what is declared once a full run finishes.
 
 The charter is closed: this mechanism, nothing else. The audit lives here rather
 than in `error_contract` because no production code consumes it; what crosses
@@ -15,11 +16,13 @@ See `docs/architecture.md` ("How errors become HTTP status codes").
 """
 
 import functools
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Protocol
 
+import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import ValidationError
@@ -29,6 +32,7 @@ from a11y_health.core.error_contract import (
     ErrorBody,
     ErrorCode,
 )
+from a11y_health.main import app
 from a11y_health.services import owner
 
 # 4xx statuses FastAPI/Starlette produce themselves (405 method-not-allowed,
@@ -130,11 +134,39 @@ _current_request_scope: ContextVar[Any] = ContextVar("_current_request_scope", d
 _OBSERVED_ROLLUP_OPERATIONS: set[tuple[str, str]] = set()
 
 
+def record_observation(key: tuple[str, str]) -> None:
+    _OBSERVED_ROLLUP_OPERATIONS.add(key)
+
+
+@dataclass
+class Observation:
+    observed: bool = False
+
+
+@contextmanager
+def observation_scope(key: tuple[str, str], *, synthetic: bool = False) -> Iterator[Observation]:
+    """Clear `key` for the block, so what the yielded `Observation` reports
+    once the block exits is the block's own doing, then restore it. An
+    observation made in the block survives only when it is real: a synthetic
+    one would mask a same-keyed stale declaration at session finish.
+    """
+    earlier = key in _OBSERVED_ROLLUP_OPERATIONS
+    _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+    observation = Observation()
+    try:
+        yield observation
+    finally:
+        observation.observed = key in _OBSERVED_ROLLUP_OPERATIONS
+        _OBSERVED_ROLLUP_OPERATIONS.discard(key)
+        if earlier or (observation.observed and not synthetic):
+            _OBSERVED_ROLLUP_OPERATIONS.add(key)
+
+
 def stale_rollup_declaration_message(app: Any) -> str | None:
     """The reverse direction of ADR 0033 (#121): the failure text naming every
     operation that declares the retryable concurrent_rollup mode without any
     test having observed it reach a rollup, or None when none is stale. Only
-    meaningful after a full suite run — conftest's sessionfinish hook owns that
+    meaningful after a full suite run — `pytest_sessionfinish` below owns that
     gating.
     """
     stale = _operations_declaring(app, ErrorCode.CONCURRENT_ROLLUP) - _OBSERVED_ROLLUP_OPERATIONS
@@ -180,7 +212,7 @@ def _enforcing(raiser: Any) -> Any:
         route = scope.get("route") if scope is not None else None
         if route is not None:
             _assert_raisable_mode_declared(scope["method"], route, ErrorCode.CONCURRENT_ROLLUP, app=scope.get("app"))
-            _OBSERVED_ROLLUP_OPERATIONS.add(_operation_key(scope["method"], route))
+            record_observation(_operation_key(scope["method"], route))
         return await raiser(*args, **kwargs)
 
     return wrapper
@@ -213,3 +245,59 @@ class DeclarationHonestyShim:
 
         with _request_scope(scope):
             await self.inner(scope, receive, send_wrapper)
+
+
+# The reverse direction of ADR 0033 (#121): an operation still declaring the
+# retryable concurrent_rollup mode after its rollup call is removed. Only a
+# green full run observes every rollup-triggering variant, so any narrowing —
+# positional paths, --ignore, deselection, or a mode that executes no tests
+# (collect/setup-only, --fixtures) — skips the diff rather than failing
+# operations the subset never drove. Deselection and execution are tracked by
+# the hooks below, not another plugin's bookkeeping. Residuals (recorded in
+# ADR 0033): narrowing the gate doesn't recognize would diff a starved observed
+# set, and an explicit `pytest tests` reads as narrowed and skips the check.
+#
+# The hooks run because conftest imports them by name.
+_deselected = False
+_tests_ran = 0
+
+
+class _Options(Protocol):
+    def getoption(self, name: str) -> Any: ...
+
+
+def run_was_narrowed(config: _Options, *, deselected: bool, tests_ran: int) -> bool:
+    return (
+        deselected
+        or not tests_ran
+        or any(config.getoption(option) for option in ("file_or_dir", "ignore", "ignore_glob"))
+    )
+
+
+def pytest_deselected(items: Sequence[pytest.Item]) -> None:
+    global _deselected
+    if items:
+        _deselected = True
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    global _tests_ran
+    if report.when == "call":
+        _tests_ran += 1
+
+
+# Failure sets session.exitstatus instead of raising pytest.exit: wrap_session
+# returns the mutated value, and an exception here would abort the terminal
+# reporter's sessionfinish wrapper before it prints the run summary.
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    config = session.config
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if exitstatus != 0 or reporter is None:
+        return
+    if run_was_narrowed(config, deselected=_deselected, tests_ran=_tests_ran):
+        return
+    message = stale_rollup_declaration_message(app)
+    if message is not None:
+        reporter.write_sep("!", message, red=True)
+        session.exitstatus = 1

@@ -1,5 +1,4 @@
 import ast
-from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -15,7 +14,7 @@ from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_app_with_org_unit, make_brand
-from tests.import_graph import source_paths_importing
+from tests.import_graph import package_sources, source_paths_importing
 
 # Message text is the observable contract — each label must match the wording
 # the entity services raised before the guard existed.
@@ -106,6 +105,18 @@ def _imports_existence(imports: set[str]) -> bool:
     return existence.__name__ in imports
 
 
+def _function_local_import_lines(source: str) -> list[int]:
+    return sorted(
+        {
+            node.lineno
+            for func in ast.walk(ast.parse(source))
+            if isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef)
+            for node in ast.walk(func)
+            if isinstance(node, ast.Import | ast.ImportFrom)
+        }
+    )
+
+
 class TestTwoTierCallRule:
     def test_not_found_raises_only_from_the_guard(self) -> None:
         # Constructing the error is what fixes its message text, so the pin
@@ -113,34 +124,81 @@ class TestTwoTierCallRule:
         # variable (or aliasing the import) before raising must not escape it.
         import a11y_health
 
-        package_root = Path(a11y_health.__file__).parent
-        offenders = sorted(
-            str(path.relative_to(package_root))
-            for path in package_root.rglob("*.py")
-            if _constructs_or_raises_not_found(ast.parse(path.read_text()))
-        )
-        assert offenders == ["core/existence.py"]
+        offenders = [
+            module.name
+            for module in package_sources(a11y_health)
+            if _constructs_or_raises_not_found(ast.parse(module.source))
+        ]
+        assert offenders == [existence.__name__]
 
     def test_services_have_no_function_local_imports(self) -> None:
         # Function-local imports in services existed only to dodge the import
         # cycles the guard removed; one reappearing means a service is reaching
-        # into a sibling again instead of calling the guard. Only imports inside
-        # function bodies count — an indented top-level import (TYPE_CHECKING,
-        # try/except) is not that pattern.
+        # into a sibling again instead of calling the guard.
         import a11y_health.services
 
-        services_root = Path(a11y_health.services.__file__).parent
-        offenders = sorted(
-            {
-                f"{path.relative_to(services_root)}:{node.lineno}"
-                for path in services_root.rglob("*.py")
-                for func in ast.walk(ast.parse(path.read_text()))
-                if isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef)
-                for node in ast.walk(func)
-                if isinstance(node, ast.Import | ast.ImportFrom)
-            }
-        )
+        offenders = [
+            f"{module.name}:{line}"
+            for module in package_sources(a11y_health.services)
+            for line in _function_local_import_lines(module.source)
+        ]
         assert offenders == []
+
+
+class TestNotFoundDetection:
+    # A second raise site fails the walk above only if the detector sees it in
+    # every spelling a service could write it in.
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "from a11y_health.core.exceptions import NotFoundError\nraise NotFoundError(App, 1)\n",
+            "from a11y_health.core import exceptions\nraise exceptions.NotFoundError(App, 1)\n",
+            "from a11y_health.core.exceptions import NotFoundError as Missing\nerror = Missing(App, 1)\nraise error\n",
+        ],
+        ids=["direct", "attribute", "aliased-and-bound"],
+    )
+    def test_a_second_site_is_detected(self, source: str) -> None:
+        assert _constructs_or_raises_not_found(ast.parse(source))
+
+    def test_a_module_that_only_catches_it_is_not_a_site(self) -> None:
+        source = "try:\n    pass\nexcept NotFoundError:\n    pass\n"
+
+        assert not _constructs_or_raises_not_found(ast.parse(source))
+
+
+class TestFunctionLocalImportDetection:
+    # The repo-wide assertion above is on an empty list, so the detector
+    # carries its own known-bad. Narrowing its descent to a function's direct
+    # children reds the nested case.
+    def test_an_import_nested_inside_a_function_body_is_reported(self) -> None:
+        source = (
+            "def load():\n"
+            "    import json\n"
+            "    if True:\n"
+            "        from a11y_health.services import owner\n"
+            "async def fetch():\n"
+            "    try:\n"
+            "        import os\n"
+            "    except ImportError:\n"
+            "        pass\n"
+        )
+
+        assert _function_local_import_lines(source) == [2, 4, 7]
+
+    def test_an_indented_top_level_import_is_permitted(self) -> None:
+        # TYPE_CHECKING and try/except blocks indent an import without putting
+        # it in a function body, which is not the pattern the rule exists for.
+        source = (
+            "from typing import TYPE_CHECKING\n"
+            "if TYPE_CHECKING:\n"
+            "    from a11y_health.services import owner\n"
+            "try:\n"
+            "    import orjson\n"
+            "except ImportError:\n"
+            "    orjson = None\n"
+        )
+
+        assert _function_local_import_lines(source) == []
 
     def test_endpoints_never_import_the_guard(self) -> None:
         # Tier one of the call rule: endpoints read through each service's

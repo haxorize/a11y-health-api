@@ -12,18 +12,18 @@ rather than a quiet drift (ADR 0039).
 """
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 import a11y_health
 from tests.import_graph import (
     Module,
-    assert_descends,
+    import_edges,
     imported_modules,
-    package_root,
+    package_edges,
     package_sources,
-    packages_in,
     resolved_modules,
+    synthetic_module,
 )
 
 REPO = Path(__file__).resolve().parent.parent
@@ -49,7 +49,9 @@ TEST_ENTRY_FILES = tuple(sorted((REPO / "tests").rglob("*.py")))
 REACHABLE_ONLY_FROM_TESTS: frozenset[str] = frozenset()
 
 
-def _closure(modules: Iterable[Module], entry_names: Iterable[str], entry_files: Iterable[Path]) -> set[Module]:
+def _closure(
+    edges: Mapping[Module, frozenset[str]], entry_names: Iterable[str], entry_files: Iterable[Path]
+) -> set[Module]:
     """The modules reached, transitively, from the entries.
 
     Keyed by `Module`, never by name: two files can resolve to one name (#138),
@@ -58,9 +60,8 @@ def _closure(modules: Iterable[Module], entry_names: Iterable[str], entry_files:
     failure, since the file Python does not import is dead by construction.
     """
     by_name: dict[str, list[Module]] = defaultdict(list)
-    for module in modules:
+    for module in edges:
         by_name[module.name].append(module)
-    packages = packages_in(by_name)
 
     reached: set[Module] = set()
     frontier: set[str] = set()
@@ -73,7 +74,7 @@ def _closure(modules: Iterable[Module], entry_names: Iterable[str], entry_files:
             if module in reached:
                 continue
             reached.add(module)
-            frontier |= resolved_modules(imported_modules(module.source, name, packages), by_name)
+            frontier |= resolved_modules(edges[module], by_name)
     return reached
 
 
@@ -81,29 +82,35 @@ def _names(modules: Iterable[Module]) -> frozenset[str]:
     return frozenset(module.name for module in modules)
 
 
-def _module(name: str, source: str = "") -> Module:
-    return Module(Path("/fake") / name.replace(".", "/"), name, source)
-
-
 class TestClosure:
     # The detector's own cases, on synthetic modules, so the repo-wide
     # assertion below cannot pass by quietly reaching nothing.
     def test_reaching_a_submodule_reaches_its_packages(self) -> None:
-        modules = [_module("pkg"), _module("pkg.sub"), _module("pkg.sub.leaf"), _module("pkg.other")]
+        modules = [
+            synthetic_module("pkg"),
+            synthetic_module("pkg.sub"),
+            synthetic_module("pkg.sub.leaf"),
+            synthetic_module("pkg.other"),
+        ]
 
-        assert _names(_closure(modules, {"pkg.sub.leaf"}, ())) == {"pkg", "pkg.sub", "pkg.sub.leaf"}
+        assert _names(_closure(import_edges(modules), {"pkg.sub.leaf"}, ())) == {"pkg", "pkg.sub", "pkg.sub.leaf"}
 
     def test_an_import_is_followed_and_an_unimported_module_is_not_reached(self) -> None:
-        modules = [_module("pkg"), _module("pkg.a", "from pkg import b\n"), _module("pkg.b"), _module("pkg.dead")]
+        modules = [
+            synthetic_module("pkg"),
+            synthetic_module("pkg.a", "from pkg import b\n"),
+            synthetic_module("pkg.b"),
+            synthetic_module("pkg.dead"),
+        ]
 
-        assert _names(_closure(modules, {"pkg.a"}, ())) == {"pkg", "pkg.a", "pkg.b"}
+        assert _names(_closure(import_edges(modules), {"pkg.a"}, ())) == {"pkg", "pkg.a", "pkg.b"}
 
     def test_an_entry_file_outside_the_package_seeds_the_walk(self, tmp_path: Path) -> None:
         script = tmp_path / "run.py"
         script.write_text("from pkg.a import go\n")
-        modules = [_module("pkg"), _module("pkg.a"), _module("pkg.dead")]
+        modules = [synthetic_module("pkg"), synthetic_module("pkg.a"), synthetic_module("pkg.dead")]
 
-        assert _names(_closure(modules, (), (script,))) == {"pkg", "pkg.a"}
+        assert _names(_closure(import_edges(modules), (), (script,))) == {"pkg", "pkg.a"}
 
     def test_both_files_behind_one_name_are_read(self) -> None:
         # A stale `owner.py` beside a new `owner/__init__.py`: whichever file
@@ -111,14 +118,14 @@ class TestClosure:
         stale = Module(Path("/fake/pkg/owner.py"), "pkg.owner", "from pkg import only_stale_imports_me\n")
         fresh = Module(Path("/fake/pkg/owner/__init__.py"), "pkg.owner", "from pkg import only_fresh_imports_me\n")
         modules = [
-            _module("pkg"),
+            synthetic_module("pkg"),
             stale,
             fresh,
-            _module("pkg.only_stale_imports_me"),
-            _module("pkg.only_fresh_imports_me"),
+            synthetic_module("pkg.only_stale_imports_me"),
+            synthetic_module("pkg.only_fresh_imports_me"),
         ]
 
-        reached = _closure(modules, {"pkg.owner"}, ())
+        reached = _closure(import_edges(modules), {"pkg.owner"}, ())
 
         assert {stale, fresh} <= reached
         assert _names(reached) >= {"pkg.only_stale_imports_me", "pkg.only_fresh_imports_me"}
@@ -135,11 +142,10 @@ def test_name_collisions_are_reported() -> None:
 
 
 def test_every_module_is_reached_and_the_test_only_seams_are_the_named_ones() -> None:
-    modules = package_sources(a11y_health)
-    assert_descends(modules, package_root(a11y_health))
-    names = _names(modules)
-    production = _names(_closure(modules, PRODUCTION_ENTRIES, PRODUCTION_ENTRY_FILES))
-    from_tests = _names(_closure(modules, (), TEST_ENTRY_FILES))
+    edges = package_edges(a11y_health)
+    names = _names(edges)
+    production = _names(_closure(edges, PRODUCTION_ENTRIES, PRODUCTION_ENTRY_FILES))
+    from_tests = _names(_closure(edges, (), TEST_ENTRY_FILES))
     everything = production | from_tests
 
     # Each walk pinned on a non-empty shape: the app module is an entry and the

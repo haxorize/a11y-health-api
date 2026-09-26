@@ -17,8 +17,8 @@ import pytest
 import a11y_health
 from tests.import_graph import (
     assert_descends,
-    imported_modules,
     module_name,
+    package_edges,
     package_of,
     package_root,
     package_sources,
@@ -48,6 +48,10 @@ def tree(tmp_path: Path) -> Path:
 
 def _names_at(root: Path, name: str) -> set[str]:
     return {module.name for module in package_sources(_fake_package(root, name))}
+
+
+def _edges_by_name(root: Path) -> dict[str, frozenset[str]]:
+    return {module.name: imports for module, imports in package_edges(_fake_package(root, "pkg")).items()}
 
 
 class TestNameCollisions:
@@ -125,11 +129,30 @@ class TestRealPackagesStillResolve:
     def test_relative_imports_resolve_against_the_walked_names(self, tree: Path) -> None:
         (tree / "sub" / "sibling.py").write_text("")
         (tree / "sub" / "user.py").write_text("from . import sibling\n")
-        modules = package_sources(_fake_package(tree, "pkg"))
-        packages = packages_in(module.name for module in modules)
-        user = next(m for m in modules if m.name == "pkg.sub.user")
 
-        assert "pkg.sub.sibling" in imported_modules(user.source, user.name, packages)
+        assert "pkg.sub.sibling" in _edges_by_name(tree)["pkg.sub.user"]
+
+
+class TestPackageEdges:
+    # The recipe every topology guard needs — walk, pin descent, learn which
+    # names are packages, read each module's imports against that — composed
+    # once. Reading a package as a leaf is the step a hand-rolled recipe drops.
+    def test_a_package_init_resolves_one_dot_to_itself(self, tree: Path) -> None:
+        (tree / "sub" / "__init__.py").write_text("from . import sibling\n")
+        (tree / "sub" / "sibling.py").write_text("")
+
+        assert _edges_by_name(tree)["pkg.sub"] >= {"pkg.sub", "pkg.sub.sibling"}
+
+    def test_every_walked_module_is_a_key(self, tree: Path) -> None:
+        (tree / "sub" / "deep.py").write_text("import os\n")
+
+        assert set(_edges_by_name(tree)) == {"pkg", "pkg.sub", "pkg.sub.deep"}
+
+    def test_a_tree_that_does_not_descend_fails_loudly(self, tmp_path: Path) -> None:
+        (tmp_path / "__init__.py").write_text("")
+
+        with pytest.raises(AssertionError, match="not descending"):
+            package_edges(_fake_package(tmp_path, "pkg"))
 
 
 class TestNamePieces:

@@ -13,7 +13,7 @@ FastAPI + async SQLAlchemy + PostgreSQL. Python 3.14.
 
 Postgres running at `localhost:5432/a11y_health`. See `.env.example` for the 4 settings an operator sets, which are all of `Settings`; `PROJECT_NAME`, `VERSION` and `API_V1_PREFIX` are module constants in `src/a11y_health/config.py`, because each reaches the committed `openapi.json`.
 
-Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives.
+Postgres **15** specifically (`brew install postgresql@15`) — CI's service container and the sibling UI's e2e job both run `postgres:15`, and a bare `brew install postgresql` installs 18 today, which diverges from what the suite is measured against. ADR 0013 owns the PostgreSQL dependency but records no version, so this line is where the major lives. The floor is 14, because `get_ancestors` in `services/org_unit.py` uses a recursive CTE's `CYCLE` clause, which PostgreSQL added in 14.
 
 `make` on PATH — the hook runs `make lint`, `make openapi-check` and `make test`, so a machine without it (a slim container, macOS without the Xcode command line tools) fails the hook after the worktree is built. Apple's GNU Make 3.81 is enough; there is no version floor.
 

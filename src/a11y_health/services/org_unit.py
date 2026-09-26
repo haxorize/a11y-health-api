@@ -94,12 +94,14 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
     cte = cte.union_all(select(parent, (cte.c.depth + 1).label("depth")).where(parent.id == cte.c.parent_id))
     # The depth differs every iteration, so a `union` would never see a repeat
     # row on a committed cycle. CYCLE stops the walk at the first repeated id
-    # and flags that closing row, which is dropped below.
-    cte = cte.suffix_with("CYCLE id SET is_cycle USING path", dialect="postgresql")
+    # and flags that closing row, which is dropped below. CYCLE needs
+    # PostgreSQL 14 or later. The flag is read unqualified: only the CTE
+    # carries it, so the read survives the CTE being aliased.
+    cte = cte.suffix_with("CYCLE id SET is_cycle USING path")
     result = await session.execute(
         select(OrgUnit)
         .join(cte, OrgUnit.id == cte.c.id)
-        .where(OrgUnit.id != org_unit_id, not_(literal_column(f"{cte.name}.is_cycle")))
+        .where(OrgUnit.id != org_unit_id, not_(literal_column("is_cycle")))
         .order_by(cte.c.depth)
     )
     return list(result.scalars().all())

@@ -12,6 +12,7 @@ vocabulary the dispatcher owns, not per-owner variation (ADR 0037, #136
 amendment). See `docs/architecture.md` ("The scoring & rollup model").
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
 from math import fsum
@@ -37,6 +38,8 @@ from a11y_health.models.score_snapshot import (
 )
 from a11y_health.services._latest_snapshot import select_latest_snapshots
 from a11y_health.services._org_subtree import select_descendant_ids
+
+logger = logging.getLogger(__name__)
 
 type ChildrenRead = Callable[[AsyncSession, int], Awaitable[list[ScoreSnapshot]]]
 type ParentLookup = Callable[[AsyncSession, int], Awaitable[int | None]]
@@ -420,3 +423,12 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
         if rollup_spec.cascade_parent is None:
             return
         current = await rollup_spec.cascade_parent(session, current)
+    if current is not None:
+        # The members already rolled up read each other's old snapshots, so
+        # one of them is left stale; the warning is the only trace of it.
+        logger.warning(
+            "Rollup of %s %s stopped at a committed cycle: %s was already rolled up (#176)",
+            owner_type.value,
+            owner_id,
+            current,
+        )

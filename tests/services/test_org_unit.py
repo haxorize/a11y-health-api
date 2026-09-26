@@ -294,7 +294,8 @@ async def test_reparent_rollup_terminates_on_a_committed_cycle(db_session: Async
     # Written past the reparent guard, the way #176's race commits one.
     await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
 
-    # A cascade that climbs the cycle forever cancels here instead of hanging.
+    # An Org Unit Rollup that climbs the cycle forever cancels here
+    # instead of hanging.
     async with asyncio.timeout(5):
         await org_unit_service.update_org_unit(db_session, leaf.id, OrgUnitUpdate(parent_id=child.id))
 

@@ -1,13 +1,15 @@
+import logging
 from datetime import UTC, datetime
 
 import pytest
 from pytest import approx
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError, NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
+from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.score_snapshot import (
     CK_SCORE_SNAPSHOT_OWNER,
     UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
@@ -155,6 +157,25 @@ async def test_rollup_refuses_an_app_owner(db_session: AsyncSession) -> None:
     # APP snapshots come from scoring; reaching a rollup with one is a bug.
     with pytest.raises(ValueError, match="scoring"):
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.APP, 1)
+
+
+async def test_rollup_on_a_committed_cycle_warns_where_it_stops(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = await make_org_unit(db_session, name="Root")
+    child = await make_org_unit(db_session, name="Child", parent_id=root.id)
+    app = await make_app(db_session, org_unit_id=child.id)
+    await make_score_snapshot(db_session, app_id=app.id, score=0.6)
+    # Written past the reparent guard, the way #176's race commits one.
+    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+
+    with caplog.at_level(logging.WARNING, logger=owner_service.__name__):
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, child.id)
+
+    [record] = caplog.records
+    assert record.getMessage() == (
+        f"Rollup of org_unit {child.id} stopped at a committed cycle: {child.id} was already rolled up (#176)"
+    )
 
 
 async def test_list_latest_scores_returns_one_latest_snapshot_per_app(db_session: AsyncSession) -> None:

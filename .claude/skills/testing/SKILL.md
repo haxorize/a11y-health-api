@@ -84,12 +84,12 @@ Every DB test uses transactional isolation — the transaction rolls back after 
 ## Writing endpoint tests
 
 ```python
-async def test_create_scan(db_client: AsyncClient) -> None:
-    response = await db_client.post("/api/v1/scans", json={"url": "https://example.com"})
+async def test_create_org_unit(db_client: AsyncClient) -> None:
+    response = await db_client.post("/api/v1/org-units", json={"name": "Digital"})
     assert response.status_code == 201
     data = response.json()
-    assert data["url"] == "https://example.com"
-    assert "scan_id" in data
+    assert data["name"] == "Digital"
+    assert data["parent_id"] is None
 ```
 
 - Use `db_client` when the endpoint reads/writes the database
@@ -104,10 +104,10 @@ async def test_create_scan(db_client: AsyncClient) -> None:
 Test services directly with `db_session` when you want to bypass HTTP:
 
 ```python
-async def test_create_scan_service(db_session: AsyncSession) -> None:
-    scan = await scan_service.create(db_session, url="https://example.com")
-    assert scan.url == "https://example.com"
-    assert scan.scan_id is not None
+async def test_create_org_unit_service(db_session: AsyncSession) -> None:
+    org_unit = await org_unit_service.create_org_unit(db_session, OrgUnitCreate(name="Digital"))
+    assert org_unit.name == "Digital"
+    assert org_unit.id is not None
 ```
 
 ## Arrange with a factory, compute the expectation yourself

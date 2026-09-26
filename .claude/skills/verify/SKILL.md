@@ -43,5 +43,5 @@ Drop the database and kill the server when done.
 ## Gotchas
 
 - **Brands are seeded by migrations** (Humana=1, CenterWell, Go365, CarePlus, Reliance) and are API-read-only — no POST /brands.
-- **Single-root Org Unit invariant**: exactly one parentless org unit; create children under the existing root (`GET /api/v1/org-units` returns a plain list, not a Page).
+- **Single-root Org Unit invariant**: at most one parentless org unit (none before onboarding, or once the root is deleted); create children under the existing root (`GET /api/v1/org-units` returns a plain list, not a Page).
 - Table names are singular (`brand`, `org_unit`, `score_snapshot`) for direct psql seeding/inspection.

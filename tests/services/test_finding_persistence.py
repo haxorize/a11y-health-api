@@ -44,28 +44,43 @@ async def test_violations_stored_as_rule_findings(db_session: AsyncSession, page
     assert v.help_url == "https://dequeuniversity.com/rules/axe/4.10/svg-img-alt?application=playwright"
 
 
-async def test_node_findings_stored(db_session: AsyncSession, page_result: PageResult) -> None:
+async def test_node_findings_stored(db_session: AsyncSession, axe_payload: dict[str, Any]) -> None:
+    # Red when the mint transposes any two check buckets. Every stored node in
+    # the fixture carries empty `all` and `none`, so the node under test gets a
+    # distinct check in each, or an all/none swap would pass unseen.
+    source = axe_payload["findings"]["violations"][0]["nodes"][0]
+    source["all"] = [{**source["any"][0], "id": "pinned-all-check"}]
+    source["none"] = [{**source["any"][0], "id": "pinned-none-check"}]
+    scan_run = await make_scan_run_with_parents(db_session)
+    page_result = await create_page_result(db_session, scan_run.id, axe_payload)
+
     stmt = select(RuleFinding).where(
         RuleFinding.page_result_id == page_result.id,
-        RuleFinding.type == FindingType.VIOLATION,
+        RuleFinding.rule_id == "svg-img-alt",
     )
     result = await db_session.execute(stmt)
-    violation = result.scalars().first()
-    assert violation is not None
+    violation = result.scalars().one()
 
-    stmt = select(NodeFinding).options(undefer(NodeFinding.checks)).where(NodeFinding.rule_finding_id == violation.id)
+    stmt = (
+        select(NodeFinding)
+        .options(undefer(NodeFinding.checks))
+        .where(NodeFinding.rule_finding_id == violation.id)
+        .order_by(NodeFinding.id)
+    )
     result = await db_session.execute(stmt)
     nodes = result.scalars().all()
 
     assert len(nodes) == 3
     node = nodes[0]
     assert "<svg" in node.html
-    assert isinstance(node.target, list)
+    assert node.target == source["target"]
     assert node.impact == Impact.SERIOUS
-    assert node.failure_summary is not None
-    assert "any" in node.checks
-    assert "all" in node.checks
-    assert "none" in node.checks
+    assert node.failure_summary == source["failureSummary"]
+
+    def check_ids(checks: dict[str, Any]) -> dict[str, list[str]]:
+        return {bucket: [check["id"] for check in checks[bucket]] for bucket in ("any", "all", "none")}
+
+    assert check_ids(node.checks) == check_ids(source)
 
 
 async def test_classifications_extracted(db_session: AsyncSession, page_result: PageResult) -> None:

@@ -61,9 +61,9 @@ def refuse_non_test_database(database: str | None) -> None:
 
 def install_non_test_database_guard() -> None:
     """Registered on the `Engine` class rather than on one engine object,
-    because the leak this catches is code reaching `core.database`'s
-    module-level engine *or* building its own from the same setting, and
-    pinning one object would see only the first.
+    because the leak this catches is code reaching the default session
+    source's engine *or* building its own from the same setting, and pinning
+    one object would see only the first.
     """
     if event.contains(Engine, "do_connect", _refuse_on_connect):
         return

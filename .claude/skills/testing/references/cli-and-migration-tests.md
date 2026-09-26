@@ -25,4 +25,4 @@ Dev and CI connect as superuser, and the setting rides the connection startup pa
 
 ## Swapping an attribute from a session-scoped fixture
 
-`monkeypatch` and `mocker` are both function-scoped, so a session-scoped fixture cannot request either. Swap inside a `pytest.MonkeyPatch.context()` wrapped around the fixture's `yield` instead. The session source needs neither: `bind_session_source` is itself a context manager that restores the previous source on exit, and `tests/cli/conftest.py`'s `live_server` wraps its `yield` in it.
+`monkeypatch` and `mocker` are both function-scoped, so a session-scoped fixture cannot request either. For the session source, wrap the fixture's `yield` in `bind_session_source`, a context manager that restores the previous source on exit, as `tests/cli/conftest.py`'s `live_server` does. For any other attribute, wrap the `yield` in a `pytest.MonkeyPatch.context()`; no fixture in the suite needs one today.

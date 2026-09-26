@@ -119,7 +119,7 @@ if data.status == ScanRunStatus.COMPLETED:
 
 ## Database sessions
 
-`get_db` yields an `AsyncSession` from the session source that auto-commits on success and rolls back on exception. Endpoints receive it via `Depends(get_db)`. Session uses `expire_on_commit=False`. The source (`session_source()`) is read at call time by `get_db` and the lifespan, and `bind_session_source` is the one place to point both at another engine; never import the engine by value.
+`get_db` yields an `AsyncSession` from the session source that auto-commits on success and rolls back on exception. Endpoints receive it via `Depends(get_db)`. Session uses `expire_on_commit=False`. The source (`session_source()`) is read at call time by `get_db` and the lifespan. Read it the same way anywhere else: code that captures `session_source()` or its engine at import time keeps the source bound then and never sees a later rebinding (ADR 0011).
 
 ## Config
 

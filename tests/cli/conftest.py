@@ -116,9 +116,9 @@ async def live_server(_fake_proxy: _FakeProxy, engine: AsyncEngine) -> AsyncIter
     `committed_session_factory` for the truncate at teardown (ADR 0011). Over
     a socket an undeclared mode does not surface as the shim's assertion
     text: the status line is on the wire before the shim asserts on the body,
-    so the client sees a torn connection instead. Lifespan is off, as it is
-    under `ASGITransport`; `tests/test_main.py` runs it against the test
-    engine.
+    so the client sees a torn connection instead. Lifespan is off, because
+    its shutdown disposes the bound engine, which is the suite's own;
+    `tests/test_main.py` runs it against an engine of its own.
     """
     config = uvicorn.Config(_fake_proxy, host="127.0.0.1", port=0, lifespan="off", log_level="warning")
     server = uvicorn.Server(config)

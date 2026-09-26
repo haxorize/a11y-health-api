@@ -3,7 +3,8 @@
 A handler that drops `limit=pagination.limit` type-checks clean and serves
 the service default, so `?limit=1` is ignored with nothing else red. The
 paging mechanics are proven in tests/core/test_pagination.py; this pins only
-the forwarding, on each listing no router file already sends a `limit` to.
+the forwarding, on each listing that no other test under tests/api already
+requests with a `limit`.
 """
 
 from collections.abc import Awaitable, Callable
@@ -63,7 +64,7 @@ async def _two_latest_scores(db: AsyncSession) -> Listing:
     return "/api/v1/scores/latest", {"owner_type": "app"}
 
 
-async def _two_scan_run_pages(db: AsyncSession) -> Listing:
+async def _two_page_results(db: AsyncSession) -> Listing:
     scan_run = await make_scan_run_with_parents(db)
     await make_page_result(db, scan_run_id=scan_run.id, url="https://example.com/a")
     await make_page_result(db, scan_run_id=scan_run.id, url="https://example.com/b")
@@ -78,7 +79,7 @@ async def _two_scan_run_pages(db: AsyncSession) -> Listing:
         _two_org_unit_scores,
         _two_brand_scores,
         _two_latest_scores,
-        _two_scan_run_pages,
+        _two_page_results,
     ],
 )
 async def test_listing_forwards_limit(

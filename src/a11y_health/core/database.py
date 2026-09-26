@@ -29,9 +29,6 @@ def enum_values(e: type[enum.Enum]) -> list[str]:
 
 
 class SessionSource:
-    """Where this process's connections come from: one engine, and the
-    transaction each request's session runs in."""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -57,7 +54,7 @@ def session_source() -> SessionSource:
 
 
 # The one rebinding point: the suite points the application at its own
-# database here, and restores the previous source on exit.
+# database here.
 @contextmanager
 def bind_session_source(source: SessionSource) -> Iterator[None]:
     global _session_source

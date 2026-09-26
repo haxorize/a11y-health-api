@@ -47,9 +47,9 @@ async def test_create_scan_run(db_session: AsyncSession) -> None:
     assert scan_run.created_at is not None
 
 
-# Reds if the create path re-reads its row: the INSERT's RETURNING carries the
-# timestamps, and the App is already in the identity map, so the insert is the
-# whole write.
+# Reds if the create path re-reads its whole row: the INSERT's RETURNING carries
+# the timestamps, and the App is already in the identity map, so the one read
+# after the insert is of scanned_at, which Postgres normalizes to UTC.
 async def test_create_scan_run_takes_its_timestamps_from_the_insert(db_session: AsyncSession) -> None:
     app = await make_app_with_org_unit(db_session)
     async with recorded_statements(db_session) as statements:
@@ -58,7 +58,8 @@ async def test_create_scan_run_takes_its_timestamps_from_the_insert(db_session: 
         )
     returned = (scan_run.created_at, scan_run.updated_at)
 
-    assert len(statements) == 1
+    assert len(statements) == 2
+    assert "created_at" not in statements[1]
     stored = await db_session.execute(select(ScanRun.created_at, ScanRun.updated_at).where(ScanRun.id == scan_run.id))
     assert returned == tuple(stored.one())
 

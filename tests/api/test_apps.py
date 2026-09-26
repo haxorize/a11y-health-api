@@ -28,6 +28,11 @@ async def test_create_app(db_client: AsyncClient, db_session: AsyncSession) -> N
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
+    # db_client shares one session across requests; expiring it makes the GET
+    # read the row, as production's per-request session would.
+    db_session.expire_all()
+    fetched = await db_client.get(f"/api/v1/apps/{data['id']}")
+    assert data == fetched.json()
 
 
 async def test_create_app_invalid_brand(db_client: AsyncClient, db_session: AsyncSession) -> None:

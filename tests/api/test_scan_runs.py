@@ -1,3 +1,4 @@
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,21 @@ async def test_create_scan_run(db_client: AsyncClient, db_session: AsyncSession)
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
+
+
+@pytest.mark.parametrize("scanned_at", ["2026-04-01T12:00:00", "2026-04-01T17:00:00+05:00"])
+async def test_create_scan_run_body_matches_get(
+    db_client: AsyncClient, db_session: AsyncSession, scanned_at: str
+) -> None:
+    app = await make_app_with_org_unit(db_session)
+
+    created = await db_client.post(f"/api/v1/apps/{app.id}/scan-runs", json={"scanned_at": scanned_at})
+    # db_client shares one session across requests; expiring it makes the GET
+    # read the row, as production's per-request session would.
+    db_session.expire_all()
+    fetched = await db_client.get(f"/api/v1/scan-runs/{created.json()['id']}")
+
+    assert created.json() == fetched.json()
 
 
 async def test_create_scan_run_invalid_app(db_client: AsyncClient) -> None:

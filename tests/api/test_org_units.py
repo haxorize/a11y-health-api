@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
 
 
-async def test_create_org_unit(db_client: AsyncClient) -> None:
+async def test_create_org_unit(db_client: AsyncClient, db_session: AsyncSession) -> None:
     response = await db_client.post(
         "/api/v1/org-units",
         json={"name": "Humana"},
@@ -16,6 +16,11 @@ async def test_create_org_unit(db_client: AsyncClient) -> None:
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
+    # db_client shares one session across requests; expiring it makes the GET
+    # read the row, as production's per-request session would.
+    db_session.expire_all()
+    fetched = await db_client.get(f"/api/v1/org-units/{data['id']}")
+    assert data == fetched.json()
 
 
 async def test_create_org_unit_with_invalid_parent(db_client: AsyncClient) -> None:

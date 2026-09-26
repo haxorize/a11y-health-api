@@ -20,6 +20,9 @@ async def create_scan_run(session: AsyncSession, app_id: int, data: ScanRunCreat
     scan_run = ScanRun(app_id=app_id, status=ScanRunStatus.PENDING, **data.model_dump())
     session.add(scan_run)
     await session.flush()
+    # RETURNING reloads only server-generated columns, and Postgres normalizes
+    # this caller-supplied one to UTC.
+    await session.refresh(scan_run, attribute_names=["scanned_at"])
     return scan_run
 
 

@@ -5,6 +5,8 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.models.enums import ScanRunStatus
+from a11y_health.models.page_result import PageResult
+from a11y_health.schemas.page_result import PageResultRead
 from tests.factories import assert_error, make_scan_run_with_parents
 
 
@@ -27,6 +29,11 @@ async def test_create_page_result(
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
+    # No GET serves a Page Result's timestamps, so the stored row stands in for
+    # one. Expiring the shared session makes the get read the row.
+    db_session.expire_all()
+    stored = await db_session.get(PageResult, data["id"])
+    assert data == PageResultRead.model_validate(stored).model_dump(mode="json")
 
 
 async def test_reject_upload_on_completed_scan_run(

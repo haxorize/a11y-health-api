@@ -14,8 +14,10 @@ See `docs/architecture.md` ("The layers") and
 """
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, NamedTuple, Self
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
@@ -36,7 +38,7 @@ class AxeNode(BaseModel):
     none: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class _RuleTags(NamedTuple):
+class _DerivedValues(NamedTuple):
     category: Category
     wcag_criteria: list[str]
     classifications: list[Classification]
@@ -45,15 +47,27 @@ class _RuleTags(NamedTuple):
 _WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
 _CATEGORY_TAG = re.compile(r"^cat\.(.+)$")
 _CATEGORIES = {c.value: c for c in Category}
-_WEB_ADDRESS = re.compile(r"^https?://", re.IGNORECASE)
+# Case-sensitive, as the UI's guard in `help-link.ts` is, so the two agree on
+# which stored links render as links.
+_WEB_ADDRESS = re.compile(r"^https?://")
+_WHITESPACE_OR_CONTROL = re.compile(r"[\s\x00-\x1f\x7f]")
 
 
-def _read_rule_tags(tags: list[str]) -> _RuleTags:
-    """A rule's Category, WCAG Criteria, and Classifications, all read from its
-    tags. Unknown WCAG-shaped tags are dropped, since the axe tag set is open;
-    the category tag is the exception, and a rule with none, or with one that
-    is not a known Category, raises `ValueError`, which `parse_axe_payload`
-    reports as the 400 `invalid_axe_payload`."""
+def _is_web_address(value: str) -> bool:
+    if not _WEB_ADDRESS.match(value) or _WHITESPACE_OR_CONTROL.search(value):
+        return False
+    try:
+        return bool(urlsplit(value).hostname)
+    except ValueError:
+        return False
+
+
+def _read_rule_tags(tags: list[str]) -> _DerivedValues:
+    """Unknown WCAG-shaped tags are dropped, since the axe tag set is open.
+    The category tag is the exception: only the first `cat.*` tag is read, and
+    a rule with none, or whose first is not a known Category, raises
+    `ValueError`, which `parse_axe_payload` reports as the 400
+    `invalid_axe_payload`."""
     categories = (m.group(1) for tag in tags if (m := _CATEGORY_TAG.match(tag)))
     value = next(categories, None)
     if value is None:
@@ -61,7 +75,7 @@ def _read_rule_tags(tags: list[str]) -> _RuleTags:
     if value not in _CATEGORIES:
         raise ValueError(f"Unknown category: {value}")
     criteria = [".".join(m.groups()) for tag in tags if (m := _WCAG_CRITERION.match(tag))]
-    return _RuleTags(_CATEGORIES[value], criteria, classifications_in(tags))
+    return _DerivedValues(_CATEGORIES[value], criteria, classifications_in(tags))
 
 
 class AxeRule(BaseModel):
@@ -74,33 +88,44 @@ class AxeRule(BaseModel):
     help_url: str = Field(alias="helpUrl")
     tags: list[str]
     nodes: list[AxeNode]
-    _read: _RuleTags = PrivateAttr()
+    _derived: _DerivedValues = PrivateAttr()
 
     @field_validator("help_url")
     @classmethod
     def require_web_address(cls, value: str) -> str:
         # Stored and served verbatim, so a `javascript:` link accepted here
         # reaches every client that renders one. Empty is no link at all.
-        if value and not _WEB_ADDRESS.match(value):
+        if value and not _is_web_address(value):
             raise ValueError("must be an http or https address")
         return value
 
+    # Not cached properties over `tags`: those read at first use, and a rule
+    # with no known category tag has to be refused at the Axe Boundary
+    # (ADR 0009).
     @model_validator(mode="after")
     def read_tags(self) -> Self:
-        self._read = _read_rule_tags(self.tags)
+        self._derived = _read_rule_tags(self.tags)
         return self
+
+    # `model_copy` skips validators, so a copy given new tags would otherwise
+    # keep the values read from the old ones.
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        copy = super().model_copy(update=update, deep=deep)
+        if update and "tags" in update:
+            copy._derived = _read_rule_tags(copy.tags)
+        return copy
 
     @property
     def category(self) -> Category:
-        return self._read.category
+        return self._derived.category
 
     @property
     def wcag_criteria(self) -> list[str]:
-        return self._read.wcag_criteria
+        return self._derived.wcag_criteria
 
     @property
     def classifications(self) -> list[Classification]:
-        return self._read.classifications
+        return self._derived.classifications
 
 
 class AxeFindings(BaseModel):
@@ -113,6 +138,8 @@ class AxeFindings(BaseModel):
 class AxeTestSubject(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    # Served as the Page Result's `url` but not checked like `helpUrl`, until
+    # the product says whether it is a URL (ADR 0009, Deferred).
     file_name: str = Field(min_length=1, alias="fileName")
 
 

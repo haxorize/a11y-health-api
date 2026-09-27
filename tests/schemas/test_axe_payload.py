@@ -212,14 +212,29 @@ class TestAxeRuleSemanticValidation:
             parse_axe_payload(make_axe_payload(violations=[violation]))
         assert exc_info.value.reason.startswith("findings → violations → 0 → tags")
 
-    @pytest.mark.parametrize("help_url", ["javascript:alert(1)", "data:text/html,x", "/rules/color", "ftp://x.test/r"])
+    @pytest.mark.parametrize(
+        "help_url",
+        [
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "/rules/color",
+            "ftp://x.test/r",
+            # The UI renders a link only behind a lowercase scheme, so an
+            # uppercase one would be stored and then shown as no link.
+            "HTTP://x.test/r",
+            "https://",
+            "http://\nx",
+            "https://x.test/a\tb",
+        ],
+        ids=repr,
+    )
     def test_a_help_link_that_is_not_a_web_address_is_refused(self, help_url: str) -> None:
         violation = make_violation("color-contrast", "serious")
         violation["helpUrl"] = help_url
         with pytest.raises(InvalidAxePayloadError, match=r"→ helpUrl: must be an http or https address$"):
             parse_axe_payload(make_axe_payload(violations=[violation]))
 
-    @pytest.mark.parametrize("help_url", ["https://dequeuniversity.com/rules/axe/4.8/x", "HTTP://x.test/r", ""])
+    @pytest.mark.parametrize("help_url", ["https://dequeuniversity.com/rules/axe/4.8/x", "http://x.test/r", ""])
     def test_a_web_address_or_no_link_is_accepted(self, help_url: str) -> None:
         violation = make_violation("color-contrast", "serious")
         violation["helpUrl"] = help_url
@@ -275,6 +290,15 @@ class TestAxeRuleSemanticValidation:
         violation = make_violation("color-contrast", "serious", tags=tags)
         [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
         assert rule.category == expected
+
+    def test_a_copy_with_new_tags_reads_them_again(self) -> None:
+        # `model_copy` skips validators, so without its override a copy kept
+        # the Category read from the tags it was copied from.
+        violation = make_violation("color-contrast", "serious", tags=["cat.color", "wcag143"])
+        [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
+        copy = rule.model_copy(update={"tags": ["cat.forms", "wcag111"]})
+        assert (copy.category, copy.wcag_criteria) == (Category.FORMS, ["1.1.1"])
+        assert rule.category == Category.COLOR
 
     def test_classified_fields_attached_to_rule(self) -> None:
         violation = make_violation("color-contrast", "serious")

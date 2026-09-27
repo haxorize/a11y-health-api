@@ -410,9 +410,9 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
     cascading to the parent where the spec defines one. Raises `ValueError` for
     an owner type that doesn't roll up (APP)."""
     spec, rollup_spec = _require_rollup_spec(owner_type)
-    # The tree is meant to be acyclic, and update_org_unit's reparent guard
-    # refuses a cycle, but two concurrent reparents can still commit one past
-    # it (#176). The visited set stops the climb there instead.
+    # update_org_unit serializes reparents and refuses a cycle (ADR 0047), but a
+    # cycle committed before that lock, or by a writer outside the app, still
+    # reaches here. The visited set stops the climb there instead.
     visited: set[int] = set()
     current: int | None = owner_id
     while current is not None and current not in visited:
@@ -427,7 +427,7 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
         # The members already rolled up read each other's old snapshots, so
         # one of them is left stale; the warning is the only trace of it.
         logger.warning(
-            "Rollup of %s %s stopped at a committed cycle: %s was already rolled up (#176)",
+            "Rollup of %s %s stopped at a committed cycle: %s was already rolled up",
             owner_type.value,
             owner_id,
             current,

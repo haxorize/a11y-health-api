@@ -166,7 +166,7 @@ async def test_rollup_on_a_committed_cycle_warns_where_it_stops(
     child = await make_org_unit(db_session, name="Child", parent_id=root.id)
     app = await make_app(db_session, org_unit_id=child.id)
     await make_score_snapshot(db_session, app_id=app.id, score=0.6)
-    # Written past the reparent guard, the way #176's race commits one.
+    # Written past the reparent guard, the way a writer outside the app could.
     await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
 
     with caplog.at_level(logging.WARNING, logger=owner_service.__name__):
@@ -174,7 +174,7 @@ async def test_rollup_on_a_committed_cycle_warns_where_it_stops(
 
     [record] = caplog.records
     assert record.getMessage() == (
-        f"Rollup of org_unit {child.id} stopped at a committed cycle: {child.id} was already rolled up (#176)"
+        f"Rollup of org_unit {child.id} stopped at a committed cycle: {child.id} was already rolled up"
     )
 
 

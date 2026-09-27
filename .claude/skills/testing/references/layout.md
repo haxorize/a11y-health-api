@@ -18,6 +18,7 @@ tests/
                             # file: they are exercised through the module that consumes them
     test_finding_persistence.py   # what one Axe Payload leaves behind across the finding tables
     test_rollup_serialization.py  # per-Owner Rollup on two sessions (#101, ADR 0029); `integration`
+    test_org_unit_reparent_race.py  # reparent serialization on two sessions (#176, ADR 0047); `integration`
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
   models/

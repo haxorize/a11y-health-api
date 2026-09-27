@@ -1,5 +1,7 @@
 # Per-owner advisory locks serialize rollup recomputes
 
+> **Amended by [ADR 0047](0047-one-tree-advisory-lock-serializes-reparents.md):** a PATCH that changes an Org Unit's parent takes one tree-wide advisory lock before anything else, so the lock order below gains a lock ahead of the rollup locks. It adds no deadlock, because no transaction waits on the tree lock while holding a rollup lock.
+
 The #98 uniqueness indexes only decide same-observation races; two rollups for one owner deriving *different* observation times never collide on a row, so a recompute holding a stale children view could prune and displace a newer committed Score Snapshot (#101). Each rollup therefore acquires a transaction-scoped Postgres advisory lock keyed per owner (`rollup:{owner_type}:{owner_id}`, hashed to a bigint) as its first statement, so the children read and the prune/insert sit under one serialization; the indexes remain the backstop for same-observation races (`concurrent_rollup`, 409, retryable).
 
 Rejected: **detect-and-fail** (compare-then-abort is unsound under READ COMMITTED — the check itself races without serialization underneath) and **SERIALIZABLE isolation** (blast radius across all mutating operations, plus the suite-wide retry orchestration #98 scoped out).

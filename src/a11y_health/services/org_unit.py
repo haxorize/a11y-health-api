@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from contextlib import AbstractAsyncContextManager
 
-from sqlalchemy import literal, literal_column, not_, select
+from sqlalchemy import func, literal, literal_column, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -13,6 +13,8 @@ from a11y_health.models.score_snapshot import FK_SCORE_SNAPSHOT_ORG_UNIT_ID
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import scoring_orchestration
 from a11y_health.services._org_subtree import get_descendant_ids
+
+_REPARENT_LOCK_KEY = "reparent:org_unit_tree"
 
 
 async def get_root_org_unit_id(session: AsyncSession) -> int | None:
@@ -60,11 +62,22 @@ async def get_org_unit(session: AsyncSession, org_unit_id: int) -> OrgUnit:
     return await existence.get_by_pk(session, OrgUnit, org_unit_id)
 
 
+# One key for the whole tree: every ancestor chain ends at the Root Org Unit,
+# so any two reparents can close a cycle between them (ADR 0047).
+async def _acquire_reparent_lock(session: AsyncSession) -> None:
+    await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(_REPARENT_LOCK_KEY, 0))))
+
+
 async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnit:
+    updates = data.model_dump(exclude_unset=True)
+    is_reparent = "parent_id" in updates
+    if is_reparent:
+        # Ahead of the load, so the old parent, the ancestry check and the
+        # write all read the tree the previous reparent committed.
+        await _acquire_reparent_lock(session)
     org_unit = await get_org_unit(session, org_unit_id)
     old_parent_id = org_unit.parent_id
-    updates = data.model_dump(exclude_unset=True)
-    if "parent_id" in updates:
+    if is_reparent:
         new_parent_id = updates["parent_id"]
         if new_parent_id is not None:
             await get_org_unit(session, new_parent_id)
@@ -78,7 +91,7 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
         for field, value in updates.items():
             setattr(org_unit, field, value)
     await session.refresh(org_unit)
-    if "parent_id" in updates and org_unit.parent_id != old_parent_id:
+    if is_reparent and org_unit.parent_id != old_parent_id:
         await scoring_orchestration.on_org_unit_reparented(
             session, old_parent_id=old_parent_id, new_parent_id=org_unit.parent_id
         )

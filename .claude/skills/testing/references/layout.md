@@ -19,6 +19,8 @@ tests/
     test_finding_persistence.py   # what one Axe Payload leaves behind across the finding tables
     test_rollup_serialization.py  # per-Owner Rollup on two sessions (#101, ADR 0029); `integration`
     test_org_unit_reparent_race.py  # reparent serialization on two sessions (#176, ADR 0047); `integration`
+    test_org_unit_delete_race.py    # writes naming an Org Unit deleted underneath them (#178, ADR 0048); `integration`
+    test_scan_run_race.py           # the Scan Run row lock: completion, page adds, delete (#178, ADR 0048); `integration`
   schemas/
     test_<schema>.py        # Pydantic schema validation tests
   models/

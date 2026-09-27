@@ -1,9 +1,10 @@
 """Two-session coverage for Org Unit reparent serialization (#176, ADR 0047).
 
-Each test freezes session A's reparent right after its ancestry check, runs
+Each race freezes session A's reparent right after its ancestry check, runs
 session B's reparent to completion or to a lock wait, then releases A. Real
-commits on separate connections (`committed_session_factory`) are what let B
-read the tree A has not committed yet.
+commits on separate connections (`committed_session_factory`) put the two in
+separate transactions that contend on real locks, each reading only what the
+other has committed.
 """
 
 import asyncio
@@ -14,19 +15,23 @@ from pytest import approx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import CircularReferenceError
+from a11y_health.core.exceptions import CircularReferenceError, DuplicateRootError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import owner as owner_service
 from tests.factories import (
+    RACE_DEADLINE,
     SessionFactory,
+    backend_pid,
+    cancel_tasks,
+    finished_or_blocked,
     latest_ou_snapshot,
-    lock_waiters,
     make_app,
     make_org_unit,
     make_score_snapshot,
+    race_behind_open_transaction,
 )
 
 pytestmark = pytest.mark.integration
@@ -35,7 +40,6 @@ _OLDER_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 # P2's own app observes last, so P2's recompute after the moved unit leaves
 # lands on the same observation time and replaces the snapshot A wrote.
 _NEWER_AT = datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
-_DEADLINE = 5.0
 
 
 async def _race_reparents(
@@ -44,9 +48,11 @@ async def _race_reparents(
     *,
     move_a: tuple[int, int],
     move_b: tuple[int, int],
-) -> list[BaseException | None]:
+    b_loads_first: bool = False,
+) -> list[CircularReferenceError | None]:
     """Run A's reparent paused after its ancestry check, then B's, and return
-    each one's outcome: `None` for a commit, or the exception it raised."""
+    each one's outcome: `None` for a commit, or the `CircularReferenceError`
+    it raised. Any other error propagates."""
     session_a = committed_session_factory()
     session_b = committed_session_factory()
     poll = committed_session_factory()
@@ -64,8 +70,15 @@ async def _race_reparents(
 
     mocker.patch.object(org_unit_service, "get_descendant_ids", pause_after_check)
 
-    async def reparent(session: AsyncSession, move: tuple[int, int]) -> BaseException | None:
+    # Held, because the identity map holds an unmodified instance weakly.
+    loaded_by_b: list[OrgUnit | None] = []
+
+    async def reparent(session: AsyncSession, move: tuple[int, int]) -> CircularReferenceError | None:
         org_unit_id, parent_id = move
+        if session is session_b and b_loads_first:
+            # Loaded before A commits, as a caller that read the unit earlier
+            # in its transaction has.
+            loaded_by_b.append(await session.get(OrgUnit, org_unit_id))
         try:
             await org_unit_service.update_org_unit(session, org_unit_id, OrgUnitUpdate(parent_id=parent_id))
             await session.commit()
@@ -74,32 +87,20 @@ async def _race_reparents(
             return error
         return None
 
-    # Polling is forced here: Postgres emits no event for a backend waiting on
-    # a lock. Any lock type: unserialized, B waits on A's row lock rather than
-    # on an advisory lock, and the release below has to see either.
-    async def finished_or_blocked(task: asyncio.Task[BaseException | None]) -> None:
-        while not task.done() and await lock_waiters(poll) == 0:  # noqa: ASYNC110
-            await asyncio.sleep(0.05)
-
     task_a = asyncio.create_task(reparent(session_a, move_a))
-    task_b: asyncio.Task[BaseException | None] | None = None
+    task_b: asyncio.Task[CircularReferenceError | None] | None = None
     try:
-        await asyncio.wait_for(a_checked.wait(), timeout=_DEADLINE)
+        await asyncio.wait_for(a_checked.wait(), timeout=RACE_DEADLINE)
+        b_pid = await backend_pid(session_b)
         task_b = asyncio.create_task(reparent(session_b, move_b))
-        await asyncio.wait_for(finished_or_blocked(task_b), timeout=_DEADLINE)
-        await poll.rollback()
+        await finished_or_blocked(poll, task_b, b_pid)
         resume_a.set()
         return [
-            await asyncio.wait_for(task_a, timeout=_DEADLINE),
-            await asyncio.wait_for(task_b, timeout=_DEADLINE),
+            await asyncio.wait_for(task_a, timeout=RACE_DEADLINE),
+            await asyncio.wait_for(task_b, timeout=RACE_DEADLINE),
         ]
     finally:
-        # On a deadline miss, cancel before fixture teardown closes the
-        # sessions out from under the tasks' in-flight statements.
-        tasks = [task for task in (task_a, task_b) if task is not None]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await cancel_tasks(task_a, task_b)
 
 
 async def _committed_parents(session: AsyncSession) -> dict[int, int | None]:
@@ -125,9 +126,12 @@ async def test_crossing_reparents_cannot_both_commit_a_cycle(committed_session_f
     assert await _committed_parents(setup) == {root_id: None, x_id: y_id, y_id: root_id}
 
 
-# Reds when the reparent lock is taken after the unit is loaded, not before.
+# Reds when the reparent lock is taken after the unit is loaded, not before,
+# and, where B loaded the unit first, when the load after the lock keeps the
+# instance B read before A committed.
+@pytest.mark.parametrize("b_loads_first", [False, True], ids=["fresh-session", "b-loaded-first"])
 async def test_a_second_reparent_of_one_unit_rolls_up_the_parent_the_first_committed(
-    committed_session_factory: SessionFactory, mocker
+    committed_session_factory: SessionFactory, mocker, b_loads_first: bool
 ) -> None:
     setup = committed_session_factory()
     root_id = (await make_org_unit(setup, name="Root")).id
@@ -143,7 +147,11 @@ async def test_a_second_reparent_of_one_unit_rolls_up_the_parent_the_first_commi
     await setup.commit()
 
     outcomes = await _race_reparents(
-        committed_session_factory, mocker, move_a=(unit_id, p2_id), move_b=(unit_id, p3_id)
+        committed_session_factory,
+        mocker,
+        move_a=(unit_id, p2_id),
+        move_b=(unit_id, p3_id),
+        b_loads_first=b_loads_first,
     )
 
     assert outcomes == [None, None]
@@ -151,3 +159,24 @@ async def test_a_second_reparent_of_one_unit_rolls_up_the_parent_the_first_commi
     # its own app alone. A stale read of P1 leaves P2 at (0.2 + 1.0) / 2 = 0.6.
     await setup.rollback()
     assert (await latest_ou_snapshot(setup, p2_id)).score == approx(0.2)
+
+
+# Reds when a PATCH to a null parent skips the reparent lock: the promotion
+# is refused at once, without waiting on the reparent in flight.
+async def test_a_promotion_waits_on_a_reparent_in_flight(committed_session_factory: SessionFactory) -> None:
+    setup = committed_session_factory()
+    root_id = (await make_org_unit(setup, name="Root")).id
+    x_id = (await make_org_unit(setup, name="X", parent_id=root_id)).id
+    y_id = (await make_org_unit(setup, name="Y", parent_id=root_id)).id
+    await setup.commit()
+
+    async def move_x_under_y(session: AsyncSession) -> None:
+        await org_unit_service.update_org_unit(session, x_id, OrgUnitUpdate(parent_id=y_id))
+
+    async def promote_y(session: AsyncSession) -> None:
+        await org_unit_service.update_org_unit(session, y_id, OrgUnitUpdate(parent_id=None))
+
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, move_x_under_y, promote_y)
+
+    assert waited
+    assert isinstance(outcome, DuplicateRootError)

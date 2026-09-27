@@ -5,8 +5,9 @@ Each case leaves an Org Unit's delete uncommitted, runs a write that names
 that unit, and records whether the write was waiting when the delete
 committed. The write's existence check still sees the unit, so what decides
 the race is its foreign-key check, which waits on the delete's row lock.
-Real commits on separate connections (`committed_session_factory`) are what
-let the two sessions see each other.
+Real commits on separate connections (`committed_session_factory`) put the
+two in separate transactions that contend on real locks, each reading only
+what the other has committed.
 """
 
 from collections.abc import Awaitable, Callable
@@ -20,7 +21,13 @@ from a11y_health.schemas.app import AppCreate, AppUpdate
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import app as app_service
 from a11y_health.services import org_unit as org_unit_service
-from tests.factories import SessionFactory, make_app, make_brand, make_org_unit, race_behind_open_transaction
+from tests.factories import (
+    SessionFactory,
+    make_app,
+    make_brand,
+    make_org_unit,
+    race_behind_open_transaction,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -82,4 +89,4 @@ async def test_a_write_naming_a_unit_deleted_underneath_it_is_not_found(
 
     assert waited
     assert isinstance(outcome, NotFoundError)
-    assert outcome.resource_id == deleted_id
+    assert str(outcome) == f"Org unit {deleted_id} not found"

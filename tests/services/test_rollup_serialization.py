@@ -19,8 +19,11 @@ from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.services import owner as owner_service
 from a11y_health.services.owner import ChildrenRead
 from tests.factories import (
+    RACE_DEADLINE,
     SessionFactory,
-    advisory_lock_waiters,
+    backend_pid,
+    cancel_tasks,
+    finished_or_blocked,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -34,7 +37,6 @@ pytestmark = pytest.mark.integration
 
 _STALE_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 _NEWER_AT = datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
-_DEADLINE = 5.0
 
 
 async def _race_stale_rollup_against_newer_observation(
@@ -74,43 +76,30 @@ async def _race_stale_rollup_against_newer_observation(
         await run_rollup(session_a)
         await session_a.commit()
 
-    async def newer_observation_and_rollup() -> None:
-        await make_score_snapshot(session_b, app_id=app_id, snapshot_at=_NEWER_AT, score=1.0)
-        await session_b.commit()
+    async def full_rollup() -> None:
         await run_rollup(session_b)
         await session_b.commit()
-
-    # B either completes (unserialized) or blocks on A's owner lock
-    # (serialized). Polling is forced here: Postgres emits no event for a
-    # backend waiting on a lock.
-    async def finished_or_blocked(task: asyncio.Task[None]) -> None:
-        while not task.done() and await advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
-            await asyncio.sleep(0.05)
 
     task_a = asyncio.create_task(stale_rollup())
     task_b: asyncio.Task[None] | None = None
     try:
-        await asyncio.wait_for(stale_view_read.wait(), timeout=_DEADLINE)
+        await asyncio.wait_for(stale_view_read.wait(), timeout=RACE_DEADLINE)
 
-        task_b = asyncio.create_task(newer_observation_and_rollup())
-        await asyncio.wait_for(finished_or_blocked(task_b), timeout=_DEADLINE)
-        await poll.rollback()
-
+        await make_score_snapshot(session_b, app_id=app_id, snapshot_at=_NEWER_AT, score=1.0)
+        await session_b.commit()
+        b_pid = await backend_pid(session_b)
+        task_b = asyncio.create_task(full_rollup())
         # With the lock in place B cannot finish while A holds its stale view;
         # B completing here means the rollup ran unserialized — fail loudly
         # now rather than only via the final-state assertion.
-        assert not task_b.done(), "session B completed without blocking on the per-owner rollup lock"
+        blocked = await finished_or_blocked(poll, task_b, b_pid)
+        assert blocked, "session B completed without blocking on the per-owner rollup lock"
 
         resume_stale_rollup.set()
-        await asyncio.wait_for(task_a, timeout=_DEADLINE)
-        await asyncio.wait_for(task_b, timeout=_DEADLINE)
+        await asyncio.wait_for(task_a, timeout=RACE_DEADLINE)
+        await asyncio.wait_for(task_b, timeout=RACE_DEADLINE)
     finally:
-        # On a deadline miss, cancel before fixture teardown closes the
-        # sessions out from under the tasks' in-flight statements.
-        tasks = [task for task in (task_a, task_b) if task is not None]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await cancel_tasks(task_a, task_b)
 
 
 async def test_stale_org_unit_rollup_cannot_regress_a_newer_committed_observation(
@@ -180,7 +169,7 @@ async def test_a_deadlock_loser_surfaces_as_the_retryable_concurrent_rollup_erro
                 owner_service._acquire_rollup_lock(session_b, ScoreSnapshotOwnerType.ORG_UNIT, 1),
                 return_exceptions=True,
             ),
-            timeout=_DEADLINE * 2,
+            timeout=RACE_DEADLINE * 2,
         )
     finally:
         await session_a.close()
@@ -216,7 +205,7 @@ async def test_rollups_for_different_owners_do_not_serialize_each_other(
         await owner_service.rollup(session_b, ScoreSnapshotOwnerType.BRAND, brand_id)
         await session_b.commit()
 
-    await asyncio.wait_for(brand_rollup(), timeout=_DEADLINE)
+    await asyncio.wait_for(brand_rollup(), timeout=RACE_DEADLINE)
     await session_a.rollback()
 
     assert (await latest_brand_snapshot(setup, brand_id)).snapshot_at == _STALE_AT

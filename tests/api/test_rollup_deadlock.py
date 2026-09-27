@@ -28,14 +28,18 @@ from a11y_health.services import owner as owner_service
 from a11y_health.services.owner import ChildrenRead
 from tests.factories import (
     SessionFactory,
-    advisory_lock_waiters,
     assert_error,
+    backend_pid,
+    cancel_tasks,
+    finished_or_blocked,
     make_org_unit,
     substitute_children_read,
 )
 
 pytestmark = pytest.mark.integration
 
+# Past the holder's 10s deadlock_timeout below, so a cycle the holder is left
+# to detect fails as its 40P01 rather than as a timeout here.
 _DEADLINE = 15.0
 
 
@@ -77,6 +81,7 @@ async def _race_a_reparent_into_a_deadlock(
     # its transaction only, so the raise never returns to the pool with it.
     await holder.execute(text("SET LOCAL deadlock_timeout = '10s'"))
     await owner_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, root.id)
+    holder_pid = await backend_pid(holder)
 
     request_holds_child = asyncio.Event()
     holder_queued_on_child = asyncio.Event()
@@ -105,15 +110,10 @@ async def _race_a_reparent_into_a_deadlock(
             owner_service._acquire_rollup_lock(holder, ScoreSnapshotOwnerType.ORG_UNIT, child.id)
         )
 
-        # The done() guard fails fast if a regression drops the per-owner lock
-        # and lets the holder acquire without ever waiting.
-        async def holder_blocked() -> None:
-            while not holder_acquire.done() and await advisory_lock_waiters(poll) == 0:  # noqa: ASYNC110
-                await asyncio.sleep(0.025)
-
-        await asyncio.wait_for(holder_blocked(), timeout=_DEADLINE)
-        await poll.rollback()
-        assert not holder_acquire.done(), "holder acquired the child lock without blocking on the rollup lock"
+        # Fails fast if a regression drops the per-owner lock and lets the
+        # holder acquire without ever waiting.
+        blocked = await finished_or_blocked(poll, holder_acquire, holder_pid)
+        assert blocked, "holder acquired the child lock without blocking on the rollup lock"
 
         # Resuming closes the cycle. The request aborts with 40P01 and the
         # holder's acquisition is granted — returning cleanly is itself the
@@ -122,10 +122,7 @@ async def _race_a_reparent_into_a_deadlock(
         await asyncio.wait_for(holder_acquire, timeout=_DEADLINE)
         response = await asyncio.wait_for(request, timeout=_DEADLINE)
     finally:
-        tasks = [task for task in (request, holder_acquire) if task is not None]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await cancel_tasks(request, holder_acquire)
 
     return _Race(response, setup, holder, child, grandchild)
 

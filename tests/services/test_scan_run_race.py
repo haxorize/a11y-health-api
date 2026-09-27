@@ -3,22 +3,28 @@
 Each test leaves one session's write to a Scan Run uncommitted, runs a
 second session's write against the same run, and records whether the second
 was waiting on a lock when the first committed. Real commits on separate
-connections (`committed_session_factory`) are what let the second session
-read the state the first has not committed yet.
+connections (`committed_session_factory`) put the two in separate
+transactions that contend on real locks, each reading only what the other has
+committed.
 """
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.core.exceptions import InvalidStatusTransitionError, ScanRunCompletedError
+from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.scan_run import ScanRunStatusUpdate
 from a11y_health.services import page_result as page_result_service
 from a11y_health.services import scan_run as scan_run_service
-from tests.factories import SessionFactory, make_axe_payload, make_scan_run_with_parents, race_behind_open_transaction
+from tests.factories import (
+    SessionFactory,
+    make_axe_payload,
+    make_scan_run_with_parents,
+    race_behind_open_transaction,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -61,9 +67,10 @@ async def test_a_second_completion_waits_and_is_refused(committed_session_factor
     assert isinstance(outcome, InvalidStatusTransitionError)
 
 
-# Reds at `waited` when the page add reads the run without a lock that
-# completion's exclusive lock blocks, and with a persisted page when the
-# locked read keeps the instance loaded before the completion committed.
+# Reds at the refusal when the page add reads the run unlocked, or keeps the
+# instance loaded before the completion committed: either way it still waits,
+# since its foreign-key check takes KEY SHARE, which completion's FOR UPDATE
+# blocks, and then inserts the page.
 async def test_a_page_added_mid_completion_waits_and_is_refused(committed_session_factory: SessionFactory) -> None:
     setup, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
 
@@ -103,3 +110,23 @@ async def test_concurrent_page_adds_do_not_wait_on_each_other(committed_session_
     assert not waited
     assert outcome is None
     assert await _page_count(setup, scan_run_id) == 3
+
+
+# Reds with an IntegrityError on the page's foreign key when the page add
+# reads the run without a lock.
+async def test_a_page_added_mid_delete_waits_and_is_not_found(committed_session_factory: SessionFactory) -> None:
+    _, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
+
+    async def delete(session: AsyncSession) -> None:
+        await scan_run_service.delete_scan_run(session, scan_run_id)
+
+    async def add_page(session: AsyncSession) -> None:
+        await page_result_service.create_page_result(
+            session, scan_run_id, make_axe_payload(url="https://example.com/2")
+        )
+
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, delete, add_page)
+
+    assert waited
+    assert isinstance(outcome, NotFoundError)
+    assert str(outcome) == f"Scan run {scan_run_id} not found"

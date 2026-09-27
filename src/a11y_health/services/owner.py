@@ -411,8 +411,8 @@ async def rollup(session: AsyncSession, owner_type: ScoreSnapshotOwnerType, owne
     an owner type that doesn't roll up (APP)."""
     spec, rollup_spec = _require_rollup_spec(owner_type)
     # update_org_unit serializes reparents and refuses a cycle (ADR 0047), but a
-    # cycle committed before that lock, or by a writer outside the app, still
-    # reaches here. The visited set stops the climb there instead.
+    # cycle committed before that lock, or by a writer outside the application,
+    # still reaches here. The visited set stops the climb there instead.
     visited: set[int] = set()
     current: int | None = owner_id
     while current is not None and current not in visited:

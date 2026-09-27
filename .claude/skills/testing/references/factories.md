@@ -85,3 +85,9 @@ async def latest_ou_snapshot(db: AsyncSession, org_unit_id: int) -> ScoreSnapsho
 ## Statement recorders
 
 `recorded_statements(session)` is an async context manager that yields the list of every statement the session's connection sends inside the block, each a `RecordedStatement`: a `str` of the SQL, so a test counts or searches the list directly, carrying the bound `.parameters` for a test that re-runs a statement, as the Filter Options `EXPLAIN` test does. Reach for it rather than an inline `before_cursor_execute` listener; a new need for what a statement carried is an attribute on `RecordedStatement`, not a second recorder.
+
+## Race helpers
+
+A two-session race test (`committed_session_factory`) waits on a lock through these, never a hand-rolled poll loop. `race_behind_open_transaction(factory, hold, write)` is the whole harness for the common shape: it leaves `hold` uncommitted, runs `write` until it finishes or waits, commits `hold`, and returns whether `write` waited and the `DomainError` it raised, as `test_scan_run_race.py` and `test_org_unit_delete_race.py` use it. A race that pauses one side mid-operation (the reparent and rollup races) builds its own sequence from the parts: `backend_pid(session)`, read in the transaction the racing side runs in; `finished_or_blocked(poll, task, pid)`, which polls `pg_locks` for an ungranted lock held by that one backend and returns whether it was waiting; `cancel_tasks(...)` in the `finally`; and `RACE_DEADLINE` for every `wait_for`. The count is scoped by the racing backend's pid, not by database, so no other session's wait can release the race early, and `pg_locks` is read live where `pg_stat_activity` would be frozen for the poll's transaction.
+
+`close_cycle_past_the_reparent_guard(db, org_unit_id, parent_id)` writes a committed cycle with a raw UPDATE, for a test of the guards that must survive one.

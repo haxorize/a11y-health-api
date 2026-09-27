@@ -3,13 +3,12 @@ from datetime import UTC, datetime
 
 import pytest
 from pytest import approx
-from sqlalchemy import text, update
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import ConcurrentRollupError, NotFoundError
 from a11y_health.models.enums import ScoreSnapshotOwnerType
-from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.score_snapshot import (
     CK_SCORE_SNAPSHOT_OWNER,
     UQ_SCORE_SNAPSHOT_BRAND_SNAPSHOT_AT,
@@ -23,6 +22,7 @@ from tests.factories import (
     DEFAULT_SNAPSHOT_AT,
     brand_snapshots,
     build_score_snapshot,
+    close_cycle_past_the_reparent_guard,
     latest_brand_snapshot,
     latest_ou_snapshot,
     make_app,
@@ -166,8 +166,7 @@ async def test_rollup_on_a_committed_cycle_warns_where_it_stops(
     child = await make_org_unit(db_session, name="Child", parent_id=root.id)
     app = await make_app(db_session, org_unit_id=child.id)
     await make_score_snapshot(db_session, app_id=app.id, score=0.6)
-    # Written past the reparent guard, the way a writer outside the app could.
-    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+    await close_cycle_past_the_reparent_guard(db_session, root.id, child.id)
 
     with caplog.at_level(logging.WARNING, logger=owner_service.__name__):
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, child.id)

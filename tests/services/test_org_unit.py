@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from pytest import approx
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,14 @@ from a11y_health.models.org_unit import UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services._org_subtree import get_descendant_ids
-from tests.factories import latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot, recorded_statements
+from tests.factories import (
+    close_cycle_past_the_reparent_guard,
+    latest_ou_snapshot,
+    make_app,
+    make_org_unit,
+    make_score_snapshot,
+    recorded_statements,
+)
 
 
 async def test_create_org_unit(db_session: AsyncSession) -> None:
@@ -225,8 +232,7 @@ async def test_subtree_and_ancestor_walks_terminate_on_a_committed_cycle(db_sess
     root = await make_org_unit(db_session, name="Humana")
     child = await make_org_unit(db_session, name="CenterWell", parent_id=root.id)
     leaf = await make_org_unit(db_session, name="Primary Care", parent_id=root.id)
-    # Written past the reparent guard, the way a writer outside the app could.
-    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+    await close_cycle_past_the_reparent_guard(db_session, root.id, child.id)
     # A walk that never terminates cancels here instead of hanging the test.
     await db_session.execute(text("SET LOCAL statement_timeout = '2s'"))
 
@@ -304,8 +310,7 @@ async def test_reparent_rollup_terminates_on_a_committed_cycle(db_session: Async
     app = await make_app(db_session, name="App", slug="app-cycle", org_unit_id=leaf.id)
     await make_score_snapshot(db_session, app_id=app.id, score=0.6)
     await make_score_snapshot(db_session, org_unit_id=leaf.id, score=0.6)
-    # Written past the reparent guard, the way a writer outside the app could.
-    await db_session.execute(update(OrgUnit).where(OrgUnit.id == root.id).values(parent_id=child.id))
+    await close_cycle_past_the_reparent_guard(db_session, root.id, child.id)
 
     # An Org Unit Rollup that climbs the cycle forever cancels here
     # instead of hanging.

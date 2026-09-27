@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Any
 
 from httpx import Response
-from sqlalchemy import event, select, text
+from sqlalchemy import event, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import DomainError
@@ -429,34 +429,49 @@ def write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None 
     write_scan_file(date_dir, "p.json", name=name, end_time=end_time if end_time is not None else f"{date}T12:00:00Z")
 
 
-async def advisory_lock_waiters(session: AsyncSession) -> int:
-    # pg_locks is instance-wide; without the database filter an unrelated
-    # backend's waiter (shared dev/CI instance) would satisfy the poll early.
-    result = await session.execute(
-        text(
-            "SELECT count(*) FROM pg_locks"
-            " WHERE locktype = 'advisory' AND NOT granted"
-            " AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"
-        )
+RACE_DEADLINE = 5.0
+
+
+async def backend_pid(session: AsyncSession) -> int:
+    # Read in the transaction the race runs in: a session returns its
+    # connection to the pool at commit, and may check out another after.
+    return (await session.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+
+
+async def _waits_on_a_lock(poll: AsyncSession, pid: int) -> bool:
+    # pg_locks is read live on every call, where pg_stat_activity would be
+    # snapshotted at its first read in the poll's transaction.
+    result = await poll.execute(
+        text("SELECT EXISTS (SELECT FROM pg_locks WHERE pid = :pid AND NOT granted)"),
+        {"pid": pid},
     )
     return result.scalar_one()
 
 
-async def lock_waiters(session: AsyncSession) -> int:
-    # Any lock type, for a race decided by a row lock rather than an advisory
-    # one. A row-lock waiter waits on the holder's transactionid lock, whose
-    # pg_locks row has no database, so the waiter's backend is what scopes
-    # the count to this database.
-    result = await session.execute(
-        text(
-            "SELECT count(*) FROM pg_locks WHERE NOT granted"
-            " AND pid IN (SELECT pid FROM pg_stat_activity WHERE datname = current_database())"
-        )
-    )
-    return result.scalar_one()
+async def finished_or_blocked(poll: AsyncSession, task: asyncio.Task[Any], pid: int) -> bool:
+    """Wait until `task` finishes or the backend `pid` it runs on waits on a
+    lock, and return whether it was waiting. Ends `poll`'s transaction."""
+
+    # Polling is forced here: Postgres emits no event for a backend waiting on
+    # a lock.
+    async def poll_until() -> None:
+        while not task.done() and not await _waits_on_a_lock(poll, pid):  # noqa: ASYNC110
+            await asyncio.sleep(0.05)
+
+    try:
+        await asyncio.wait_for(poll_until(), timeout=RACE_DEADLINE)
+    finally:
+        await poll.rollback()
+    return not task.done()
 
 
-_RACE_DEADLINE = 5.0
+async def cancel_tasks(*tasks: asyncio.Task[Any] | None) -> None:
+    # On a deadline miss, cancel before fixture teardown closes the sessions
+    # out from under the tasks' in-flight statements.
+    started = [task for task in tasks if task is not None]
+    for task in started:
+        task.cancel()
+    await asyncio.gather(*started, return_exceptions=True)
 
 
 async def race_behind_open_transaction(
@@ -472,6 +487,7 @@ async def race_behind_open_transaction(
     writer = session_factory()
     poll = session_factory()
     await hold(holder)
+    writer_pid = await backend_pid(writer)
 
     async def write_and_commit() -> DomainError | None:
         try:
@@ -482,24 +498,19 @@ async def race_behind_open_transaction(
             return error
         return None
 
-    # Polling is forced here: Postgres emits no event for a backend waiting on
-    # a lock.
-    async def finished_or_blocked() -> None:
-        while not task.done() and await lock_waiters(poll) == 0:  # noqa: ASYNC110
-            await asyncio.sleep(0.05)
-
     task = asyncio.create_task(write_and_commit())
     try:
-        await asyncio.wait_for(finished_or_blocked(), timeout=_RACE_DEADLINE)
-        await poll.rollback()
-        waited = not task.done()
+        waited = await finished_or_blocked(poll, task, writer_pid)
         await holder.commit()
-        return waited, await asyncio.wait_for(task, timeout=_RACE_DEADLINE)
+        return waited, await asyncio.wait_for(task, timeout=RACE_DEADLINE)
     finally:
-        # On a deadline miss, cancel before fixture teardown closes the
-        # sessions out from under the task's in-flight statement.
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        await cancel_tasks(task)
+
+
+async def close_cycle_past_the_reparent_guard(db: AsyncSession, org_unit_id: int, parent_id: int) -> None:
+    # A raw UPDATE, the way a writer outside the application could commit a
+    # cycle that update_org_unit refuses.
+    await db.execute(update(OrgUnit).where(OrgUnit.id == org_unit_id).values(parent_id=parent_id))
 
 
 # A str, so a caller that counts or searches statements never unpacks, and one

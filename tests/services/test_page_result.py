@@ -23,8 +23,9 @@ async def test_stored_raw_json_is_the_exact_uploaded_document(
 
 
 # Reds if the create path re-reads its row: the INSERT's RETURNING carries the
-# timestamps, so the write is the page result's insert plus a rule-finding and
-# a node-finding insert for each finding type the fixture carries.
+# timestamps, so the write is the Scan Run's locked read, the page result's
+# insert, and a rule-finding and a node-finding insert for each finding type
+# the fixture carries.
 async def test_create_page_result_takes_its_timestamps_from_the_insert(
     db_session: AsyncSession, axe_payload: dict[str, Any]
 ) -> None:
@@ -33,7 +34,7 @@ async def test_create_page_result_takes_its_timestamps_from_the_insert(
         page_result = await create_page_result(db_session, scan_run.id, axe_payload)
     returned = (page_result.created_at, page_result.updated_at)
 
-    assert len(statements) == 5
+    assert len(statements) == 6
     stored = await db_session.execute(
         select(PageResult.created_at, PageResult.updated_at).where(PageResult.id == page_result.id)
     )

@@ -33,10 +33,18 @@ async def _check_no_other_root(session: AsyncSession, promoted_id: int | None = 
         raise DuplicateRootError(OrgUnit, existing_root_id)
 
 
-def _root_race_guard(session: AsyncSession) -> AbstractAsyncContextManager[None]:
-    """The single-root violation is only reachable when a concurrent transaction
-    won the root race after `_check_no_other_root` passed."""
-    return integrity.guard_constraints(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit)})
+def _write_race_guard(session: AsyncSession, parent_id: int | None) -> AbstractAsyncContextManager[None]:
+    """Both violations are only reachable through a concurrent transaction: the
+    single-root one when it won the root race after `_check_no_other_root`
+    passed, the parent reference when it deleted the parent after its
+    existence check (ADR 0048)."""
+    return integrity.guard_constraints(
+        session,
+        {
+            UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit),
+            FK_ORG_UNIT_PARENT_ID: existence.not_found(OrgUnit, parent_id),
+        },
+    )
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
@@ -45,7 +53,7 @@ async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit
     else:
         await _check_no_other_root(session)
     org_unit = OrgUnit(**data.model_dump())
-    async with _root_race_guard(session):
+    async with _write_race_guard(session, data.parent_id):
         session.add(org_unit)
     return org_unit
 
@@ -87,7 +95,7 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
                 raise CircularReferenceError(OrgUnit, org_unit_id, new_parent_id)
         else:
             await _check_no_other_root(session, promoted_id=org_unit_id)
-    async with _root_race_guard(session):
+    async with _write_race_guard(session, updates.get("parent_id")):
         for field, value in updates.items():
             setattr(org_unit, field, value)
     await session.refresh(org_unit)

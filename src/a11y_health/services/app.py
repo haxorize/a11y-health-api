@@ -5,7 +5,7 @@ from a11y_health.core import existence, integrity
 from a11y_health.core.exceptions import DuplicateSlugError
 from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, CursorPage, paginate
 from a11y_health.core.slug import derive_slug
-from a11y_health.models.app import UQ_APP_SLUG, App
+from a11y_health.models.app import FK_APP_ORG_UNIT_ID, UQ_APP_SLUG, App
 from a11y_health.models.brand import Brand
 from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.app import AppCreate, AppUpdate
@@ -46,7 +46,16 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     await existence.get_by_pk(session, OrgUnit, data.org_unit_id)
     slug = derive_slug(data.name)
     app = App(**data.model_dump(), slug=slug)
-    async with integrity.guard_constraints(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
+    # The Org Unit can be deleted after its check above, and its foreign key
+    # decides that race (ADR 0048). The Brand's key is unmapped because no
+    # operation deletes a Brand.
+    async with integrity.guard_constraints(
+        session,
+        {
+            UQ_APP_SLUG: DuplicateSlugError(slug),
+            FK_APP_ORG_UNIT_ID: existence.not_found(OrgUnit, data.org_unit_id),
+        },
+    ):
         session.add(app)
     return app
 
@@ -59,9 +68,11 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
 
     if new_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, new_org_unit_id)
-        app.org_unit_id = new_org_unit_id
+        async with integrity.guard_constraints(
+            session, {FK_APP_ORG_UNIT_ID: existence.not_found(OrgUnit, new_org_unit_id)}
+        ):
+            app.org_unit_id = new_org_unit_id
 
-    await session.flush()
     await session.refresh(app)
 
     if reassigning:

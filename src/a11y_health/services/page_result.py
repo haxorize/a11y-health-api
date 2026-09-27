@@ -6,6 +6,7 @@ sits here.
 
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core import existence
@@ -74,7 +75,15 @@ def _assert_scan_run_pending(scan_run: ScanRun) -> None:
 
 async def create_page_result(session: AsyncSession, scan_run_id: int, raw_document: dict[str, Any]) -> PageResult:
     payload = parse_axe_payload(raw_document)
-    scan_run = await existence.get_by_pk(session, ScanRun, scan_run_id)
+    # Shared, so page adds still run together while one waits out an
+    # in-flight completion and then reads the run as Completed (ADR 0048).
+    locked = (
+        select(ScanRun)
+        .where(ScanRun.id == scan_run_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    scan_run = await existence.get_by_query(session, ScanRun, locked, scan_run_id)
     _assert_scan_run_pending(scan_run)
 
     page_result = PageResult(

@@ -8,7 +8,7 @@ Completion therefore reads the Scan Run with `SELECT … FOR UPDATE`, and a page
 
 Lock order: the Scan Run row first, then ADR 0029's per-owner rollup locks, which the completion cascade takes after the write. That was already the order, since the status UPDATE took this row lock before the cascade; the lock moves earlier in the same transaction and adds no edge. No transaction takes a rollup lock and then waits on a Scan Run row: Scan Run deletion and App deletion both lock their rows before their cascades.
 
-The line between this lock and the Integrity Guard (ADR 0028) is what decides the race. The guard answers a race a constraint decides, such as a write that references an Org Unit deleted underneath it, which #178 maps to `NotFoundError` at the App and Org Unit write sites. A check-then-act on a row's own state has no deciding constraint: the snapshot uniqueness violation is a side effect several calls past the check, and nothing catches the page-add race at all. That kind of race takes a row lock.
+The line between this lock and the Integrity Guard (ADR 0028) is what decides the race. The guard answers a race a constraint decides, such as a write that references an Org Unit deleted underneath it, which #178 maps to `NotFoundError` at the App and Org Unit write sites. The Existence Guard builds that error for the mapping, which amends [ADR 0024](0024-existence-guard-core-module-two-tier-rule.md)'s single raise site into a single construction site. A check-then-act on a row's own state has no deciding constraint: the snapshot uniqueness violation is a side effect several calls past the check, and nothing catches the page-add race at all. That kind of race takes a row lock.
 
 Considered and rejected:
 

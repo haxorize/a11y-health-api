@@ -1,6 +1,7 @@
+import asyncio
 import itertools
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from httpx import Response
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core.exceptions import DomainError
 from a11y_health.models.app import App
 from a11y_health.models.brand import Brand
 from a11y_health.models.classification import Classification
@@ -438,6 +440,66 @@ async def advisory_lock_waiters(session: AsyncSession) -> int:
         )
     )
     return result.scalar_one()
+
+
+async def lock_waiters(session: AsyncSession) -> int:
+    # Any lock type, for a race decided by a row lock rather than an advisory
+    # one. A row-lock waiter waits on the holder's transactionid lock, whose
+    # pg_locks row has no database, so the waiter's backend is what scopes
+    # the count to this database.
+    result = await session.execute(
+        text(
+            "SELECT count(*) FROM pg_locks WHERE NOT granted"
+            " AND pid IN (SELECT pid FROM pg_stat_activity WHERE datname = current_database())"
+        )
+    )
+    return result.scalar_one()
+
+
+_RACE_DEADLINE = 5.0
+
+
+async def race_behind_open_transaction(
+    session_factory: SessionFactory,
+    hold: Callable[[AsyncSession], Awaitable[object]],
+    write: Callable[[AsyncSession], Awaitable[object]],
+) -> tuple[bool, DomainError | None]:
+    """Run `hold` and leave it uncommitted, run `write` in a second session
+    until it finishes or waits on a lock, then commit `hold`. Returns whether
+    `write` was waiting at that commit, and its outcome: `None` for a commit,
+    or the domain error it raised. Any other error propagates."""
+    holder = session_factory()
+    writer = session_factory()
+    poll = session_factory()
+    await hold(holder)
+
+    async def write_and_commit() -> DomainError | None:
+        try:
+            await write(writer)
+            await writer.commit()
+        except DomainError as error:
+            await writer.rollback()
+            return error
+        return None
+
+    # Polling is forced here: Postgres emits no event for a backend waiting on
+    # a lock.
+    async def finished_or_blocked() -> None:
+        while not task.done() and await lock_waiters(poll) == 0:  # noqa: ASYNC110
+            await asyncio.sleep(0.05)
+
+    task = asyncio.create_task(write_and_commit())
+    try:
+        await asyncio.wait_for(finished_or_blocked(), timeout=_RACE_DEADLINE)
+        await poll.rollback()
+        waited = not task.done()
+        await holder.commit()
+        return waited, await asyncio.wait_for(task, timeout=_RACE_DEADLINE)
+    finally:
+        # On a deadline miss, cancel before fixture teardown closes the
+        # sessions out from under the task's in-flight statement.
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 # A str, so a caller that counts or searches statements never unpacks, and one

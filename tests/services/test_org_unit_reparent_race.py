@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 from pytest import approx
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import CircularReferenceError
@@ -20,7 +20,14 @@ from a11y_health.models.org_unit import OrgUnit
 from a11y_health.schemas.org_unit import OrgUnitUpdate
 from a11y_health.services import org_unit as org_unit_service
 from a11y_health.services import owner as owner_service
-from tests.factories import SessionFactory, latest_ou_snapshot, make_app, make_org_unit, make_score_snapshot
+from tests.factories import (
+    SessionFactory,
+    latest_ou_snapshot,
+    lock_waiters,
+    make_app,
+    make_org_unit,
+    make_score_snapshot,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -29,18 +36,6 @@ _OLDER_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 # lands on the same observation time and replaces the snapshot A wrote.
 _NEWER_AT = datetime(2026, 4, 1, 13, 0, 0, tzinfo=UTC)
 _DEADLINE = 5.0
-
-
-async def _lock_waiters(session: AsyncSession) -> int:
-    # Any lock type: unserialized, B waits on A's row lock rather than on an
-    # advisory lock, and the release below has to see either.
-    result = await session.execute(
-        text(
-            "SELECT count(*) FROM pg_locks WHERE NOT granted"
-            " AND database = (SELECT oid FROM pg_database WHERE datname = current_database())"
-        )
-    )
-    return result.scalar_one()
 
 
 async def _race_reparents(
@@ -80,9 +75,10 @@ async def _race_reparents(
         return None
 
     # Polling is forced here: Postgres emits no event for a backend waiting on
-    # a lock.
+    # a lock. Any lock type: unserialized, B waits on A's row lock rather than
+    # on an advisory lock, and the release below has to see either.
     async def finished_or_blocked(task: asyncio.Task[BaseException | None]) -> None:
-        while not task.done() and await _lock_waiters(poll) == 0:  # noqa: ASYNC110
+        while not task.done() and await lock_waiters(poll) == 0:  # noqa: ASYNC110
             await asyncio.sleep(0.05)
 
     task_a = asyncio.create_task(reparent(session_a, move_a))

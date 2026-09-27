@@ -131,7 +131,7 @@ Declared in `pyproject.toml` under `[tool.pytest.ini_options]`:
 
 `addopts = ["--strict-markers", "--strict-config"]` is on, so a typo'd marker fails the run. Add new markers to `pyproject.toml` before using them.
 
-An integration file is marked whole, not per function — four carry it (`tests/api/test_rollup_deadlock.py`, `tests/services/test_rollup_serialization.py`, `tests/services/test_org_unit_reparent_race.py`, `tests/cli/test_live_server.py`):
+An integration file is marked whole, not per function — six carry it (`tests/api/test_rollup_deadlock.py`, `tests/services/test_rollup_serialization.py`, `tests/services/test_org_unit_reparent_race.py`, `tests/services/test_scan_run_race.py`, `tests/services/test_org_unit_delete_race.py`, `tests/cli/test_live_server.py`):
 
 ```python
 pytestmark = pytest.mark.integration

@@ -55,7 +55,14 @@ _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {
 
 
 async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRun:
-    scan_run = await get_scan_run(session, scan_run_id)
+    # Locked ahead of every check, so a second completion waits and then reads
+    # the status the first committed, and so does a page add (ADR 0048).
+    # populate_existing, because an instance this session loaded before the
+    # wait would otherwise keep the status it read then.
+    locked = (
+        select(ScanRun).where(ScanRun.id == scan_run_id).with_for_update().execution_options(populate_existing=True)
+    )
+    scan_run = await existence.get_by_query(session, ScanRun, locked, scan_run_id)
     if data.status not in _VALID_TRANSITIONS[scan_run.status]:
         raise InvalidStatusTransitionError(ScanRun, scan_run_id, scan_run.status, data.status)
     if data.status == ScanRunStatus.COMPLETED:

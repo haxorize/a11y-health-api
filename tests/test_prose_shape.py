@@ -588,14 +588,14 @@ _WORD = re.compile(r"[A-Za-z][a-z]*")
 
 
 def british_spellings(text: str, *, exempt: Collection[str] = ()) -> list[str]:
-    flagged = BRITISH_WORDS - {word.lower() for word in exempt}
+    excused = {word.lower() for word in exempt}
     stripped = _URL.sub(" ", _CODE_SPAN.sub(" ", text))
-    return [word for word in _WORD.findall(stripped) if _is_british(word.lower(), flagged)]
+    return [word for word in _WORD.findall(stripped) if word.lower() not in excused and _is_british(word.lower())]
 
 
-def _is_british(token: str, flagged: frozenset[str]) -> bool:
-    return token in flagged or any(
-        token.startswith(prefix) and token[len(prefix) :] in flagged for prefix in BRITISH_PREFIXES
+def _is_british(token: str) -> bool:
+    return token in BRITISH_WORDS or any(
+        token.startswith(prefix) and token[len(prefix) :] in BRITISH_WORDS for prefix in BRITISH_PREFIXES
     )
 
 
@@ -997,10 +997,10 @@ class TestBritishSpellings:
         assert british_spellings("untotalled and relabelled") == ["untotalled", "relabelled"]
 
     def test_a_prefix_needs_a_whole_listed_word_behind_it(self) -> None:
-        # `reprogram` only begins a listed word, `greyhound` holds one with
-        # no prefix, `unlabeled` is American behind one, and `hyper` is not a
+        # `reprogram` only begins a listed word, `ungreyed` has one with more
+        # behind it, `unlabeled` is American behind one, and `hyper` is not a
         # prefix.
-        assert british_spellings("reprogram greyhound unlabeled hypersceptical") == []
+        assert british_spellings("reprogram ungreyed unlabeled hypersceptical") == []
 
     def test_only_one_prefix_is_stripped(self) -> None:
         # Upstream strips one prefix and does not recurse, so a stack passes.
@@ -1014,6 +1014,11 @@ class TestBritishSpellings:
 
     def test_the_roster_exempts_exactly_the_word_it_names(self) -> None:
         assert british_spellings("CancelledError and colour", exempt=["Cancelled"]) == ["colour"]
+
+    def test_the_roster_does_not_reach_a_prefixed_form_of_its_word(self) -> None:
+        # Upstream excuses the whole token, so an entry kept for one consumer
+        # cannot quietly excuse every word the prefix rule derives from it.
+        assert british_spellings("uncancelled cancelled", exempt=["Cancelled"]) == ["uncancelled"]
 
     def test_the_roster_excuses_a_word_only_in_the_file_that_needs_it(self) -> None:
         # A bare-word roster would excuse the everyday spelling repo-wide; ADR

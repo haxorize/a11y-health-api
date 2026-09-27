@@ -526,9 +526,18 @@ BRITISH_WORDS = frozenset(
     utilisation minimisation maximisation summarisation paralysed paralyses paralysing modelled signalling
     fulfils enrolments instalments judgemental draughts sceptics storeys enquires enquired enquiries practises
     practising tokenisers behavioural behaviourally colourful colouring manoeuvre manoeuvres manoeuvring mould
-    moulds moulded counselling counsellor counsellors centred centring licenced totalled totalling
+    moulds moulded counselling counsellor counsellors centred centring licenced totalled totalling labeller
+    labellers paediatric haemoglobin haematology anaemia anaesthesia leukaemia orthopaedic gynaecology oedema
+    oesophagus oestrogen foetus diarrhoea levelled fuelled channelled dialled marshalled funnelled tunnelled
+    equalled pencilled enrol enrols recognisable organiser organisers analyser analysers humoured neighbourly
+    colourless defenceless cheque tyre aluminium cosy plough
     """.split()  # noqa: SIM905 — upstream's order and shape, so a drifted copy diffs cleanly
 )
+
+# Copied from `british_prefixes` in the same file. A token fires when one of
+# these is followed by a whole listed word, so `untotalled` does and `reprogram`
+# does not.
+BRITISH_PREFIXES = ("un", "re", "pre", "mis", "non", "dis", "de", "over", "under")
 
 # A British form some other system matches by string, mapped to the consumer
 # that requires it. An entry with no named consumer is a word someone did not
@@ -581,7 +590,13 @@ _WORD = re.compile(r"[A-Za-z][a-z]*")
 def british_spellings(text: str, *, exempt: Collection[str] = ()) -> list[str]:
     flagged = BRITISH_WORDS - {word.lower() for word in exempt}
     stripped = _URL.sub(" ", _CODE_SPAN.sub(" ", text))
-    return [word for word in _WORD.findall(stripped) if word.lower() in flagged]
+    return [word for word in _WORD.findall(stripped) if _is_british(word.lower(), flagged)]
+
+
+def _is_british(token: str, flagged: frozenset[str]) -> bool:
+    return token in flagged or any(
+        token.startswith(prefix) and token[len(prefix) :] in flagged for prefix in BRITISH_PREFIXES
+    )
 
 
 def _without_literals(source: str) -> str:
@@ -977,6 +992,19 @@ class TestBritishSpellings:
         # The reason the roster exists at all: a word scan that stopped at
         # identifier boundaries would never reach `CancelledError`.
         assert british_spellings("with suppress(asyncio.CancelledError):") == ["Cancelled"]
+
+    def test_a_listed_form_behind_a_common_prefix_is_flagged(self) -> None:
+        assert british_spellings("untotalled and relabelled") == ["untotalled", "relabelled"]
+
+    def test_a_prefix_needs_a_whole_listed_word_behind_it(self) -> None:
+        # `reprogram` only begins a listed word, `greyhound` holds one with
+        # no prefix, `unlabeled` is American behind one, and `hyper` is not a
+        # prefix.
+        assert british_spellings("reprogram greyhound unlabeled hypersceptical") == []
+
+    def test_only_one_prefix_is_stripped(self) -> None:
+        # Upstream strips one prefix and does not recurse, so a stack passes.
+        assert british_spellings("reunlabelled unlabelled") == ["unlabelled"]
 
     def test_a_form_in_a_code_span_is_not_this_repo_prose_to_spell(self) -> None:
         assert british_spellings("pass `colour` to the vendor call") == []

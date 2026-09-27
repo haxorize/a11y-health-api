@@ -57,9 +57,9 @@ async def list_scan_run_pages(
 async def create_page_result(
     db: DbSession,
     scan_run_id: int,
-    raw_payload: Annotated[dict[str, Any], Body()],
+    raw_document: Annotated[dict[str, Any], Body()],
 ) -> PageResultRead:
-    page_result = await page_result_service.create_page_result(db, scan_run_id, raw_payload)
+    page_result = await page_result_service.create_page_result(db, scan_run_id, raw_document)
     return PageResultRead.model_validate(page_result)
 
 

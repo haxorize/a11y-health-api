@@ -152,9 +152,9 @@ async def list_apps(
     return await paginate(session, select(App), keyset=[App.id], cursor=cursor, limit=limit)
 ```
 
-Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id]`. Keyset columns must be NOT NULL.
+Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `keyset=[ScoreSnapshot.snapshot_at, ScoreSnapshot.id]`. No NULL may reach a keyset column: declare it NOT NULL or filter the NULLs out.
 
-**Enforcement** — contract tests in `tests/core/test_pagination.py` sweep every served operation. Accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). The sweep reaches sub-dependencies, so a shared dependency growing its own `cursor` or `limit` fails the rule above as well: two definitions of one wire parameter publish conflicting schemas. A forgotten declaration fails the suite, not review.
+**Enforcement** — contract tests in `tests/test_cursor_pagination.py` sweep every served operation. Accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). The sweep reaches sub-dependencies, so a shared dependency growing its own `cursor` or `limit` fails the rule above as well: two definitions of one wire parameter publish conflicting schemas. A forgotten declaration fails the suite, not review.
 
 Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) with `Page.from_cursor_page`.
 

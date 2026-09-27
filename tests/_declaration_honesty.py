@@ -8,9 +8,10 @@ observed against what is declared once a full run finishes.
 The charter is closed: this mechanism, nothing else. The audit lives here rather
 than in `error_contract` because no production code consumes it; what crosses
 the seam instead is the contract's own vocabulary plus `ERROR_CODES_KEY`, which
-ties what `error_responses()` writes to what `_declared_codes` reads. Should
-production ever need declaration introspection, the function it needs is
-*promoted* back into `error_contract` — never copied.
+ties what `error_responses()` writes to what `declared_codes` reads. That reader
+is public for the Cursor Pagination sweep, a second test reader and not a
+production consumer. Should production ever need declaration introspection,
+the function it needs is *promoted* back into `error_contract` — never copied.
 
 See `docs/architecture.md` ("How errors become HTTP status codes").
 """
@@ -60,7 +61,7 @@ def _effective_route(app: FastAPI | None, route: Any) -> Any:
     return route
 
 
-def _declared_codes(view: Any) -> set[ErrorCode]:
+def declared_codes(view: Any) -> set[ErrorCode]:
     # Read across statuses rather than indexing one. `error_responses()` buckets
     # each code under exactly one status, so the union answers "is this code
     # declared here?" identically — without the audit having to derive a second
@@ -83,7 +84,7 @@ def _operations_declaring(app: FastAPI, code: ErrorCode) -> set[tuple[str, str]]
     operations: set[tuple[str, str]] = set()
     for context in iter_route_contexts(app.routes):
         route = context.original_route
-        if isinstance(route, APIRoute) and code in _declared_codes(context):
+        if isinstance(route, APIRoute) and code in declared_codes(context):
             operations.update(_operation_key(method, route) for method in route.methods or ())
     return operations
 
@@ -94,7 +95,7 @@ def _assert_raisable_mode_declared(method: str, route: Any, code: ErrorCode, app
     operation by its route template, not the concrete request path.
     """
     route = _effective_route(app, route)
-    assert code in _declared_codes(route), (
+    assert code in declared_codes(route), (
         f"{method} {route.path} can produce error code {code} but does not declare it — "
         f"add ErrorCode.{code.name} to the operation's error_responses()"
     )
@@ -106,14 +107,14 @@ def _assert_declared_mode(method: str, path: str, route: Any, status: int, body:
         f"{method} {path} returned {status}, which is not declared on the "
         f"operation — declare the mode via error_responses()"
     )
-    # Read by observed status rather than through `_declared_codes`, which
+    # Read by observed status rather than through `declared_codes`, which
     # unions across statuses and cannot say which one carried the code — and
     # which defaults a missing key to [], where the next assert has to tell
     # "declared without codes" apart from "declared with none". This is the one
     # reader that still checks a code against the status it actually came back
-    # on; `_declared_codes` deliberately does not.
-    declared_codes = declared[status].get(ERROR_CODES_KEY)
-    assert declared_codes is not None, (
+    # on; `declared_codes` deliberately does not.
+    status_codes = declared[status].get(ERROR_CODES_KEY)
+    assert status_codes is not None, (
         f"{method} {path} declares {status} without {ERROR_CODES_KEY} — "
         f"declare it via error_responses(), not a hand-written responses entry"
     )
@@ -123,9 +124,9 @@ def _assert_declared_mode(method: str, path: str, route: Any, status: int, body:
         raise AssertionError(
             f"{method} {path} returned declared {status} with a body that is not a coded ErrorBody: {body[:200]!r}"
         ) from None
-    assert parsed.code in declared_codes, (
+    assert parsed.code in status_codes, (
         f"{method} {path} produced error code {parsed.code!r}, which is not "
-        f"among the operation's declared modes {declared_codes}"
+        f"among the operation's declared modes {status_codes}"
     )
 
 

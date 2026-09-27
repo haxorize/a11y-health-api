@@ -7,7 +7,7 @@ description: Test conventions for this project — layout, the nine conftest fix
 
 ## Test layout
 
-Mirror the app structure — except for a **suite-wide mechanism**, a **topology guard**, a **test of something outside `src/`**, or **test data two mirrored suites share**, which live at the root beside their implementation rather than under the package they guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either of those two under a mirrored directory is what produced the mixed contract suite #133 had to split. A test of something outside `src/` — a script under `scripts/`, the way `test_staged_worktree.py` drives `scripts/staged_worktree.sh` — has no package to mirror at all.
+Mirror the app structure — except for a **suite-wide mechanism**, a **topology guard**, an **app-wide contract sweep**, a **test of something outside `src/`**, or **test data two mirrored suites share**, which live at the root beside their implementation rather than under the package they guard. A mechanism enforces an invariant across the whole suite (Declaration Honesty, import honesty), or over a tracked artifact no package owns (`skills-sync.lock`, the prose documents), and has no single mirrored home. A topology guard reads the source tree — which module imports which, what reaches what — rather than exercising a module's behavior, so it sits at the root even when the rule it holds is scoped to one package. Filing either of those two under a mirrored directory is what produced the mixed contract suite #133 had to split. A test of something outside `src/` — a script under `scripts/`, the way `test_staged_worktree.py` drives `scripts/staged_worktree.sh` — has no package to mirror at all. An app-wide contract sweep checks a rule over every served operation, as `test_cursor_pagination.py` does and `test_main.py`'s operation-id check did first, so no one package owns it.
 
 ```
 tests/
@@ -17,6 +17,7 @@ tests/
   test_main.py             # application assembly: operation-id uniqueness, CORS by allowed origins, lifespan
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
+  test_cursor_pagination.py  # the Cursor Pagination conformance sweep over every served operation
   import_graph.py          # shared import-reading helpers for the topology guards
   test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide
@@ -37,39 +38,7 @@ tests/
   test_factories.py        # the Latest Score Snapshot readers
   test_truncate_teardown.py  # teardown lock timeout
   fixtures/                # one sample Axe Payload (humana.com-home.json)
-  api/
-    test_health.py          # tests for api/v1/endpoints/health.py
-    test_deps.py            # api/deps.py's session scope
-    test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
-                            # three. Its two scan-run routers share test_scan_runs.py; pages_router
-                            # is test_pages.py; a nested read takes its own file
-                            # (test_scan_run_pages.py, test_scan_run_summary.py)
-    test_rollup_deadlock.py # the #104 deadlock 409 through the full request stack; `integration`
-  services/
-    test_<resource>.py      # direct service-layer tests, one per public services/ module. The
-                            # underscore-prefixed ones (_latest_snapshot, _org_subtree) have no
-                            # file: they are exercised through the module that consumes them
-    test_finding_persistence.py   # what one Axe Payload leaves behind across the finding tables
-    test_rollup_serialization.py  # per-Owner Rollup on two sessions (#101, ADR 0029); `integration`
-  schemas/
-    test_<schema>.py        # Pydantic schema validation tests
-  models/
-    test_<model>.py         # model-level tests (defaults, constraints as declared)
-  core/
-    test_<module>.py        # one per core module that has one. error_body.py and exceptions.py
-                            # have none — both are reached only through consumers, error_body
-                            # through test_error_contract.py and cli/test_client.py's error decode
-  cli/
-    conftest.py             # CLI-only fixtures (no_server, live_server, socket_client, forwarded) — see references/cli-and-migration-tests.md
-    test_<command>.py       # one file per command (test_ingest.py, test_import.py, test_org_units.py,
-                            # test_brands.py)
-    test_client.py          # transport, error decode, and timeouts over httpx.MockTransport
-    test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport)
-    test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
-  migrations/
-    harness.py, roundtrip.py # the migration-body harness; the roundtrip
-    test_downgrade_floor.py # the floor is a real revision and never the head; reads the Makefile
-    test_<revision>.py      # migration bodies through harness.py — see references/cli-and-migration-tests.md
+  api/, services/, schemas/, models/, core/, cli/, migrations/  # mirrored: references/layout.md
 ```
 
 ## Fixtures (from conftest.py)
@@ -171,6 +140,7 @@ pytestmark = pytest.mark.integration
 ## References
 
 - [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
+- [references/layout.md](references/layout.md) — open before adding a file under a mirrored test directory: what each one holds
 - [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
 - [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md) — open before writing a CLI test, a migration-body test, or a session-scoped fixture that swaps an attribute
 - [references/fixtures.md](references/fixtures.md) — open before asserting on state a rejected `db_client` request left behind

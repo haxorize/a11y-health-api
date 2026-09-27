@@ -167,11 +167,11 @@ A caller passes a filtered query plus the keyset, the columns that order and tie
 
 An operation needing the exact filtered count opts into the totaled envelope, where `paginate` also serves `total`, counted from the same statement the page runs over. The count is a second query, skipped where the first page is also the last, so it matches the page's scope but not always its instant ([ADR 0032](adr/0032-filtered-total-as-per-operation-totaled-page.md)).
 
-The module owns the request-facing half too: an endpoint declares one `pagination: PageParams` argument, so the page-size bounds and default reach every operation and the OpenAPI document. `tests/core/test_pagination.py` fails any operation that breaks that, and `docs/solutions/fastapi-query-model-stops-flattening-beside-other-query-params.md` says why it is a `Depends()` dependency.
+The module owns the request-facing half too: an endpoint declares one `pagination: PageParams` argument, so the page-size bounds and default reach every operation and the OpenAPI document. `tests/test_cursor_pagination.py` fails any operation that breaks that, and `docs/solutions/fastapi-query-model-stops-flattening-beside-other-query-params.md` says why it is a `Depends()` dependency.
 
 When you touch it:
 
-- **Keyset columns must be `NOT NULL`.** A NULL breaks the row-value comparison and silently drops rows.
+- **No NULL may reach a keyset column of the paged rows.** A NULL breaks the row-value comparison and silently drops rows. A `NOT NULL` column guarantees it; `list_latest_scores` filters its nullable owner column instead, which is why `paginate` leaves this to the caller rather than checking it at entry.
 - **An optional `into` callback maps each row into a response object.** `list_page_metrics` and `list_findings` use it.
 
 ---

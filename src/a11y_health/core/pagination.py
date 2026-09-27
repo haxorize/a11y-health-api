@@ -17,7 +17,7 @@ import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Literal, cast, overload
+from typing import Annotated, Any, Literal, overload
 
 from fastapi import Depends
 from pydantic import BaseModel, Field
@@ -39,11 +39,11 @@ class InvalidCursorError(DomainError):
         super().__init__("Invalid cursor")
 
 
-# Deliberately not an InvalidCursorError: a bad keyset type is a server-side
+# Deliberately not an InvalidCursorError: a bad keyset is a server-side
 # misconfiguration, so it should 500 in development, not be masked as a 400.
-class UnsupportedKeysetTypeError(Exception):
-    def __init__(self, python_type: type) -> None:
-        super().__init__(f"Unsupported keyset column type: {python_type.__name__}")
+class KeysetMisconfigurationError(Exception):
+    def __init__(self, attr: InstrumentedAttribute, problem: str) -> None:
+        super().__init__(f"keyset column {attr.class_.__name__}.{attr.key}: {problem}")
 
 
 # Sort Order (DOMAIN.md): the request-facing vocabulary for listings that let
@@ -79,12 +79,9 @@ class PaginationParams(BaseModel):
     limit: int = Field(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)
 
 
-# The one request-facing declaration of pagination: endpoints take a single
-# `PageParams` argument and FastAPI surfaces it as the flat `cursor`/`limit`
-# query parameters, so bounds and default live only here. Depends(), not
-# Query(): a Query() parameter model silently stops flattening when the
-# endpoint declares any other query parameter (all FastAPI versions through
-# 0.139), while a model dependency composes with them.
+# Depends(), not Query(): a Query() parameter model silently stops flattening
+# when the endpoint declares any other query parameter (all FastAPI versions
+# through 0.139), while a model dependency composes with them.
 PageParams = Annotated[PaginationParams, Depends()]
 
 
@@ -94,8 +91,13 @@ class CursorPage[T]:
     next_cursor: str | None
 
 
+# Not a CursorPage subclass: a totaled page reaching `Page.from_cursor_page`
+# would pay the count query and drop `total`, and without the subtype that
+# mis-call is a type error rather than a runtime one.
 @dataclass(frozen=True)
-class TotaledCursorPage[T](CursorPage[T]):
+class TotaledCursorPage[T]:
+    items: list[T]
+    next_cursor: str | None
     total: int
 
 
@@ -118,10 +120,6 @@ class Page[T](BaseModel):
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> Page[R]: ...
     @classmethod
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> Page[I] | Page[R]:
-        if isinstance(page, TotaledCursorPage):
-            # A totaled page reaching the plain converter means the count query
-            # was paid and its result silently dropped — fail loud instead.
-            raise TypeError("page carries a total — serve it via TotaledPage.from_totaled_cursor_page")
         if item is None:
             return Page(items=page.items, next_cursor=page.next_cursor)
         return Page(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
@@ -167,30 +165,61 @@ def _decode_cursor(cursor: str, *, expected: int) -> list:
     return decoded
 
 
-# Each keyset column's entity must be present in the row as an ORM instance
-# (true for select(Entity) and select(Entity, agg, ...)); a bare scalar keyset
-# column has no entity to read and raises below rather than mis-paging.
-def _cursor_values(row: Row, keyset: Sequence[InstrumentedAttribute]) -> list:
-    values = []
+def _require_str(raw: object) -> str:
+    if not isinstance(raw, str):
+        raise InvalidCursorError
+    return raw
+
+
+# The supported keyset types, each with its cursor decoding: one table, so the
+# entry check and the coercion cannot disagree on what is supported.
+_KEYSET_COERCIONS: dict[type, Callable[[Any], object]] = {
+    int: int,
+    datetime: datetime.fromisoformat,
+    str: _require_str,
+}
+
+
+def _keyset_type(attr: InstrumentedAttribute) -> type:
+    try:
+        python_type = attr.type.python_type
+    except NotImplementedError:
+        raise KeysetMisconfigurationError(attr, f"unsupported type {attr.type!r}") from None
+    if python_type not in _KEYSET_COERCIONS:
+        raise KeysetMisconfigurationError(attr, f"unsupported type {python_type.__name__}")
+    return python_type
+
+
+# A scalar column's description names an entity too, so only a description
+# whose type is a class is a selected entity. An alias matches itself alone:
+# `Brand.id` must not read its cursor from an `aliased(Brand)` row.
+def _selects(description: dict[str, Any], owner: object) -> bool:
+    if not isinstance(description["type"], type):
+        return False
+    entity = description["entity"]
+    if isinstance(entity, type) and isinstance(owner, type):
+        return issubclass(entity, owner)
+    return entity is owner
+
+
+# The row position each keyset column's cursor value is read back from: the
+# first selected entity the column belongs to. Checks the column's type on the
+# way, so both preconditions fail before the first query.
+def _keyset_positions(stmt: Select, keyset: Sequence[InstrumentedAttribute]) -> list[int]:
+    descriptions = stmt.column_descriptions
+    positions = []
     for attr in keyset:
-        entity = next((v for v in row if isinstance(v, cast("type", attr.class_))), None)
-        if entity is None:
-            raise LookupError(f"keyset column {attr.key!r}: no {attr.class_.__name__} instance in result row")
-        values.append(getattr(entity, attr.key))
-    return values
+        _keyset_type(attr)
+        owner = attr.class_
+        position = next((i for i, d in enumerate(descriptions) if _selects(d, owner)), None)
+        if position is None:
+            raise KeysetMisconfigurationError(attr, f"no {owner.__name__} entity among the selected columns")
+        positions.append(position)
+    return positions
 
 
 def _coerce(attr: InstrumentedAttribute, raw: object) -> object:
-    python_type = attr.type.python_type
-    if python_type is datetime:
-        return datetime.fromisoformat(cast("str", raw))
-    if python_type is int:
-        return int(cast("str | int", raw))
-    if python_type is str:
-        if not isinstance(raw, str):
-            raise InvalidCursorError
-        return raw
-    raise UnsupportedKeysetTypeError(python_type)
+    return _KEYSET_COERCIONS[attr.type.python_type](raw)
 
 
 @overload
@@ -227,7 +256,7 @@ async def paginate[T](
     descending: bool = False,
     into: Callable[[Row], T] | None = None,
     with_total: bool = False,
-) -> CursorPage[T]:
+) -> CursorPage[T] | TotaledCursorPage[T]:
     """Apply keyset pagination to `stmt`, returning a page and the next cursor.
 
     `descending` reverses both the ORDER BY and the keyset comparison so paging
@@ -239,18 +268,19 @@ async def paginate[T](
     second query, so under READ COMMITTED a commit landing between the two can
     make `total` lag the page by the concurrent writes; a refetch corrects it.
 
-    Caller contract not captured by the types:
-    - `keyset` columns must be NOT NULL — a NULL makes the row-value `>`
-      comparison return NULL and silently drops rows. Use primary keys or NOT
-      NULL columns.
-    - each keyset column's owning entity must appear in the result row (true
-      for `select(Entity)` and `select(Entity, agg, ...)`); a bare scalar
-      keyset column raises rather than mis-paging.
+    Caller contract not captured by the types: no NULL may reach a keyset
+    column of the paged rows. A NULL makes the row-value `>` comparison return
+    NULL and silently drops rows. Declaring the column NOT NULL is one way;
+    filtering the NULLs out is the other, which is how `list_latest_scores`
+    pages a nullable owner column. That second way is why this is not checked
+    at entry (ADR 0017).
 
-    Raises `InvalidCursorError` on a malformed cursor (handled as 400) and
-    `UnsupportedKeysetTypeError` if a keyset column's type isn't
-    int/datetime/str.
+    Raises `InvalidCursorError` on a malformed cursor (handled as 400) and,
+    before any query, `KeysetMisconfigurationError` if a keyset column's type
+    isn't int/datetime/str or its entity is not in the result row, as it is
+    for `select(Entity)` and `select(Entity, agg, ...)`.
     """
+    positions = _keyset_positions(stmt, keyset)
     unpaged = stmt
     order = [col.desc() for col in keyset] if descending else list(keyset)
     if cursor is not None:
@@ -266,7 +296,10 @@ async def paginate[T](
     has_more = len(rows) > limit
     page_rows = rows[:limit]
     items = [into(row) if into is not None else row[0] for row in page_rows]
-    next_cursor = encode_cursor(*_cursor_values(page_rows[-1], keyset)) if has_more and page_rows else None
+    next_cursor = None
+    if has_more and page_rows:
+        last = page_rows[-1]
+        next_cursor = encode_cursor(*(getattr(last[i], attr.key) for attr, i in zip(keyset, positions, strict=True)))
     if not with_total:
         return CursorPage(items=items, next_cursor=next_cursor)
     if cursor is None and not has_more:

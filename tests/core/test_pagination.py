@@ -1,19 +1,19 @@
-from collections.abc import Iterator
+import re
 from datetime import UTC, datetime
-from typing import Any
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from fastapi.routing import iter_route_contexts
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+from sqlalchemy.types import NullType
 
-from a11y_health.core.error_contract import ERROR_CODES_KEY, ErrorCode
 from a11y_health.core.pagination import (
-    DEFAULT_PAGE_SIZE,
-    MAX_PAGE_SIZE,
     CursorPage,
     InvalidCursorError,
+    KeysetMisconfigurationError,
     Page,
     PaginationParams,
     TotaledCursorPage,
@@ -21,8 +21,8 @@ from a11y_health.core.pagination import (
     encode_cursor,
     paginate,
 )
-from a11y_health.main import app
 from a11y_health.models.brand import Brand
+from a11y_health.models.scan_run import ScanRun
 from a11y_health.models.score_snapshot import ScoreSnapshot
 from tests.factories import make_app_with_org_unit, make_brand, make_score_snapshot
 
@@ -91,6 +91,7 @@ async def test_paginate_composite_keyset_round_trip(
     [
         "not-a-cursor",
         "",
+        "A" * 5,  # not base64: 5 characters cannot encode whole bytes
         "A" * 513,  # over the decode length cap
         encode_cursor(1, 2),  # decodes cleanly but doesn't match the keyset width
     ],
@@ -98,6 +99,25 @@ async def test_paginate_composite_keyset_round_trip(
 async def test_paginate_rejects_invalid_cursor(db_session: AsyncSession, bad_cursor: str) -> None:
     with pytest.raises(InvalidCursorError):
         await paginate(db_session, select(Brand), keyset=[Brand.id], cursor=bad_cursor, limit=2)
+
+
+# Validly encoded on both sides of the 512-character cap, so only the cap can
+# refuse the longer one. 514 is the shortest valid encoding past 512.
+async def test_paginate_accepts_a_cursor_at_the_length_cap(db_session: AsyncSession) -> None:
+    cursor = encode_cursor("x" * 380)
+    assert len(cursor) == 512
+
+    page = await paginate(db_session, select(Brand), keyset=[Brand.name], cursor=cursor, limit=2)
+
+    assert page.items == []
+
+
+async def test_paginate_rejects_a_validly_encoded_cursor_over_the_length_cap(db_session: AsyncSession) -> None:
+    cursor = encode_cursor("x" * 381)
+    assert len(cursor) == 514
+
+    with pytest.raises(InvalidCursorError):
+        await paginate(db_session, select(Brand), keyset=[Brand.name], cursor=cursor, limit=2)
 
 
 async def test_paginate_into_transforms_rows_and_keeps_cursor_from_row(db_session: AsyncSession) -> None:
@@ -144,7 +164,47 @@ async def test_paginate_decodable_cursor_with_wrong_typed_value_is_rejected(
     # a 500.
     cursor = encode_cursor(*([bad_value] + [1] * (len(keyset) - 1)))
     with pytest.raises(InvalidCursorError):
-        await paginate(db_session, select(Brand), keyset=keyset, cursor=cursor, limit=2)
+        await paginate(db_session, select(keyset[0].class_), keyset=keyset, cursor=cursor, limit=2)
+
+
+_BRAND_ALIAS = aliased(Brand)
+# A column type with no Python type (NullType, TSVECTOR, INET) makes
+# `python_type` raise; no mapped column here has one, so a stand-in carries it.
+_UNTYPED_COLUMN = SimpleNamespace(class_=Brand, key="untyped", type=NullType())
+
+
+# The session has no `execute`, so reaching the first query fails with an
+# AttributeError instead: raising the misconfiguration error proves the check
+# ran before any round trip, on a first page with no cursor to decode.
+@pytest.mark.parametrize(
+    ("stmt", "keyset", "column"),
+    [
+        pytest.param(select(ScanRun), [ScanRun.status], "ScanRun.status", id="unsupported-type"),
+        pytest.param(select(Brand.id, Brand.name), [Brand.id], "Brand.id", id="bare-scalar"),
+        pytest.param(select(Brand), [ScoreSnapshot.id], "ScoreSnapshot.id", id="entity-not-selected"),
+        pytest.param(select(_BRAND_ALIAS), [Brand.id], "Brand.id", id="only-an-alias-selected"),
+        pytest.param(select(Brand), [_UNTYPED_COLUMN], "Brand.untyped", id="no-python-type"),
+    ],
+)
+async def test_paginate_refuses_a_misconfigured_keyset_before_the_first_query(
+    stmt: Select, keyset: list, column: str
+) -> None:
+    no_session = cast("AsyncSession", object())
+
+    with pytest.raises(KeysetMisconfigurationError, match=rf"^keyset column {re.escape(column)}:"):
+        await paginate(no_session, stmt, keyset=keyset, cursor=None, limit=2)
+
+
+async def test_paginate_keyset_on_a_selected_alias_round_trip(db_session: AsyncSession) -> None:
+    for name in ("A", "B", "C"):
+        await make_brand(db_session, name=name)
+
+    stmt = select(_BRAND_ALIAS)
+    first = await paginate(db_session, stmt, keyset=[_BRAND_ALIAS.id], cursor=None, limit=2)
+    second = await paginate(db_session, stmt, keyset=[_BRAND_ALIAS.id], cursor=first.next_cursor, limit=2)
+
+    assert [b.name for b in first.items] == ["A", "B"]
+    assert [b.name for b in second.items] == ["C"]
 
 
 async def test_paginate_composite_keyset_breaks_ties_on_id(db_session: AsyncSession) -> None:
@@ -166,12 +226,13 @@ async def test_paginate_composite_keyset_breaks_ties_on_id(db_session: AsyncSess
 
 
 async def test_paginate_into_over_aggregate_row_recovers_cursor_past_scalars(db_session: AsyncSession) -> None:
-    # Aggregate row (Entity, scalar, ...): the cursor must be recovered past the
-    # scalars — a select(Entity)-only test can't regress that path.
+    # Aggregate row (scalar, Entity): the cursor must be recovered from the
+    # entity's position past the scalar, which a row leading with the entity
+    # (every production caller's shape) can't regress.
     for name in ("A", "B", "C"):
         await make_brand(db_session, name=name)
 
-    stmt = select(Brand, func.length(Brand.name).label("name_len"))
+    stmt = select(func.length(Brand.name).label("name_len"), Brand)
     into = lambda r: (r.Brand.name, r.name_len)  # noqa: E731
     first = await paginate(db_session, stmt, keyset=[Brand.id], cursor=None, limit=2, into=into)
     second = await paginate(db_session, stmt, keyset=[Brand.id], cursor=first.next_cursor, limit=2, into=into)
@@ -230,130 +291,6 @@ async def test_paginate_with_total_when_the_first_page_is_the_last(db_session: A
     assert page.total == 2
 
 
-def _flat_dependants(dependant: Any) -> Iterator[Any]:
-    yield dependant
-    for sub in dependant.dependencies:
-        yield from _flat_dependants(sub)
-
-
-# Discovery keys on the response envelope, not on "accepts a cursor": an
-# operation that loses its cursor must fail the sweep by name, not drop out of
-# the swept set (Story #94). Bounded reference lists return bare arrays
-# (ADR 0025), so the envelope excludes them naturally. iter_route_contexts is
-# the traversal FastAPI's own OpenAPI generation walks, so the sweep sees every
-# served operation, not just one router's.
-def _serves_pages(ctx: Any) -> bool:
-    # docs/spec routes are plain starlette Routes with no response_model
-    model = getattr(ctx, "response_model", None)
-    return isinstance(model, type) and issubclass(model, Page)
-
-
-def _paginated_operations() -> list[Any]:
-    operations = [ctx for ctx in iter_route_contexts(app.routes) if _serves_pages(ctx)]
-    assert operations, "paginated-operation sweep found nothing — detection is broken"
-    return operations
-
-
-def _spec_operation(spec: dict[str, Any], op: Any, method: str) -> dict[str, Any]:
-    operation = spec["paths"].get(op.path_format, {}).get(method.lower())
-    assert operation is not None, (
-        f"{method} {op.path_format} serves the Page envelope but is missing from the "
-        f"OpenAPI document — paginated operations must publish their contract"
-    )
-    return operation
-
-
-def _spec_parameters(spec: dict[str, Any], op: Any, method: str) -> list[dict[str, Any]]:
-    return _spec_operation(spec, op, method).get("parameters", [])
-
-
-# Asserted against the published spec, not the dependant tree: the wire-level
-# `cursor` parameter is what clients rely on, and internal field names can
-# diverge from published ones (aliases, model-shaped query params).
-def test_every_operation_serving_the_page_envelope_accepts_a_cursor() -> None:
-    spec = app.openapi()
-    for op in _paginated_operations():
-        for method in op.methods:
-            assert "cursor" in {p["name"] for p in _spec_parameters(spec, op, method)}, (
-                f"{method} {op.path_format} serves the Page envelope but does not "
-                f"accept a cursor — consume PageParams from core.pagination"
-            )
-
-
-# The inverse guard: with envelope ⇒ cursor above and cursor ⇒ envelope here,
-# the swept set and the cursor-accepting set stay equal — a hand-rolled cursor
-# on a bare-array operation fails by name instead of escaping the sweep.
-def test_every_operation_accepting_a_cursor_serves_the_page_envelope() -> None:
-    paginated = {(op.path_format, method.lower()) for op in _paginated_operations() for method in op.methods}
-    spec = app.openapi()
-    for path, operations in spec["paths"].items():
-        for method, operation in operations.items():
-            if any(param["name"] == "cursor" for param in operation.get("parameters", [])):
-                assert (path, method) in paginated, (
-                    f"{method.upper()} {path} accepts a cursor but does not serve the Page "
-                    f"envelope — unbounded list operations return Page[...] (ADR 0025 keeps "
-                    f"bounded reference lists bare and cursor-free)"
-                )
-
-
-def test_every_paginated_operation_uses_the_pagination_owned_definition() -> None:
-    for op in _paginated_operations():
-        # swept across sub-dependencies too: a shared dependency growing its own
-        # limit would publish conflicting schemas for the same wire parameter
-        own_params = {
-            field.name
-            for dep in _flat_dependants(op.dependant)
-            if dep.call is not PaginationParams
-            for field in dep.query_params
-        }
-        assert "cursor" not in own_params and "limit" not in own_params, (
-            f"{sorted(op.methods)} {op.path_format} declares pagination parameters outside "
-            f"PageParams — consume PageParams from core.pagination instead"
-        )
-        assert any(dep.call is PaginationParams for dep in _flat_dependants(op.dependant)), (
-            f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not "
-            f"consume PageParams from core.pagination"
-        )
-
-
-def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
-    for op in _paginated_operations():
-        declared_codes = {code for entry in op.responses.values() for code in entry.get(ERROR_CODES_KEY, [])}
-        assert ErrorCode.INVALID_CURSOR in declared_codes, (
-            f"{sorted(op.methods)} {op.path_format} serves the Page envelope but does not declare "
-            f"the invalid-cursor error mode — add ErrorCode.INVALID_CURSOR to its error_responses()"
-        )
-
-
-# "Totaled" is a named contract mode like invalid_cursor: an operation that
-# opts into the extended envelope must publish `total` as a required response
-# property, so a client can rely on it without probing.
-def test_every_totaled_operation_publishes_a_required_total() -> None:
-    spec = app.openapi()
-    totaled = [op for op in _paginated_operations() if issubclass(op.response_model, TotaledPage)]
-    assert totaled, "totaled-operation sweep found nothing — detection is broken"
-    for op in totaled:
-        for method in op.methods:
-            operation = _spec_operation(spec, op, method)
-            ref = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
-            schema = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
-            assert "total" in schema.get("required", []), (
-                f"{method} {op.path_format} serves the TotaledPage envelope but its response "
-                f"schema does not require `total`"
-            )
-
-
-def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> None:
-    spec = app.openapi()
-    for op in _paginated_operations():
-        for method in op.methods:
-            params = {p["name"]: p for p in _spec_parameters(spec, op, method)}
-            limit_schema = params["limit"]["schema"]
-            assert limit_schema["minimum"] == 1, f"{method} {op.path_format}"
-            assert limit_schema["maximum"] == MAX_PAGE_SIZE, f"{method} {op.path_format}"
-            assert limit_schema["default"] == DEFAULT_PAGE_SIZE, f"{method} {op.path_format}"
-
-
 # Expected values are the published contract (Story #80): default page size 20,
 # bounds 1..100 — literals here, so a drift in the module is caught, not
 # mirrored.
@@ -405,16 +342,13 @@ class TestPageFromCursorPage:
 
         assert page.next_cursor is None
 
-    def test_rejects_a_totaled_page(self) -> None:
-        # A totaled page through the plain converter would pay the count query
-        # and silently drop `total` from the response.
-        internal = TotaledCursorPage(items=[1], next_cursor=None, total=1)
-
-        with pytest.raises(TypeError, match="from_totaled_cursor_page"):
-            Page.from_cursor_page(internal)
-
 
 class TestTotaledPageFromTotaledCursorPage:
+    # Pins the type-level guard: as a subclass, a totaled page would type-check
+    # into `Page.from_cursor_page` and lose `total` without a runtime error.
+    def test_a_totaled_cursor_page_is_not_a_cursor_page(self) -> None:
+        assert not issubclass(TotaledCursorPage, CursorPage)
+
     def test_preserves_items_cursor_and_total(self) -> None:
         internal = TotaledCursorPage(items=["already", "shaped"], next_cursor="cursor-xyz", total=7)
 

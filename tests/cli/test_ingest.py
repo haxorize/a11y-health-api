@@ -18,6 +18,7 @@ from a11y_health.cli._scan import (
     NameResolutionError,
     UnderivableAppNameError,
 )
+from a11y_health.core.slug import SLUG_MAX_LENGTH
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from tests.factories import make_app_with_org_unit, make_axe_payload, write_scan_file
@@ -373,9 +374,9 @@ async def test_ingest_overlong_app_name_reports_the_length_bound(no_server: Asyn
     # The named error forwards derive_slug's own wording, so the operator
     # learns which derivation rule the name broke rather than a flattened
     # "underivable".
-    write_scan_file(tmp_path, "a.json", name="a" * 256)
+    write_scan_file(tmp_path, "a.json", name="a" * (SLUG_MAX_LENGTH + 1))
 
-    with pytest.raises(UnderivableAppNameError, match="longer than 255 characters"):
+    with pytest.raises(UnderivableAppNameError, match=f"longer than {SLUG_MAX_LENGTH} characters"):
         await ingest(no_server, directory=tmp_path)
 
 

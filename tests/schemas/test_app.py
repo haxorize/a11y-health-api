@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from a11y_health.core.slug import NAME_MAX_LENGTH
+from a11y_health.core.slug import NAME_MAX_LENGTH, SLUG_MAX_LENGTH
 from a11y_health.schemas.app import AppCreate
 
 
@@ -9,8 +9,10 @@ def test_app_create_name_admits_the_bound_and_refuses_one_past_it() -> None:
     # Red when the constant moves and the field does not.
     AppCreate(name="a" * NAME_MAX_LENGTH, brand_id=1, org_unit_id=1)
 
-    with pytest.raises(ValidationError, match="at most"):
+    with pytest.raises(ValidationError) as exc_info:
         AppCreate(name="a" * (NAME_MAX_LENGTH + 1), brand_id=1, org_unit_id=1)
+    [err] = exc_info.value.errors()
+    assert (err["loc"], err["type"]) == (("name",), "string_too_long")
 
 
 def test_app_create_rejects_name_deriving_to_empty_slug() -> None:
@@ -24,7 +26,7 @@ def test_app_create_rejects_fully_non_latin_name() -> None:
 
 
 def test_app_create_rejects_name_deriving_past_slug_length() -> None:
-    # NFKD folds each "ﬃ" to "ffi", so the name passes its own 255 limit
+    # NFKD folds each "ﬃ" to "ffi", so the name passes NAME_MAX_LENGTH
     # while the derived slug does not
-    with pytest.raises(ValidationError, match="longer than 255"):
+    with pytest.raises(ValidationError, match=f"longer than {SLUG_MAX_LENGTH}"):
         AppCreate(name="ﬃ" * 100, brand_id=1, org_unit_id=1)

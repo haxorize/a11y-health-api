@@ -59,7 +59,7 @@ class TestAxePayloadBoundary:
         raw["findings"]["incomplete"] = 42
         assert _only_error_loc(raw) == ("findings", "incomplete")
 
-    # Both required-field cases start from a rule with valid tags and nodes, so
+    # The required-field cases start from a rule with valid tags, so
     # the category derivation passes and the missing field is what fires. Each
     # reds when its field is made optional.
 
@@ -70,12 +70,12 @@ class TestAxePayloadBoundary:
         raw = make_axe_payload(violations=[violation])
         with pytest.raises(ValidationError) as exc_info:
             AxePayload.model_validate(raw)
-        reported = {(err["loc"], err["msg"]) for err in exc_info.value.errors()}
+        reported = {(err["loc"], err["type"]) for err in exc_info.value.errors()}
         assert reported == {
-            (("findings", "violations", 0, "impact"), "Field required"),
-            (("findings", "violations", 0, "description"), "Field required"),
-            (("findings", "violations", 0, "help"), "Field required"),
-            (("findings", "violations", 0, "helpUrl"), "Field required"),
+            (("findings", "violations", 0, "impact"), "missing"),
+            (("findings", "violations", 0, "description"), "missing"),
+            (("findings", "violations", 0, "help"), "missing"),
+            (("findings", "violations", 0, "helpUrl"), "missing"),
         }
 
     def test_rule_missing_id_rejected(self) -> None:
@@ -86,7 +86,16 @@ class TestAxePayloadBoundary:
             AxePayload.model_validate(raw)
         [err] = exc_info.value.errors()
         assert err["loc"] == ("findings", "violations", 0, "id")
-        assert err["msg"] == "Field required"
+        assert err["type"] == "missing"
+
+    def test_rule_missing_nodes_rejected(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        del violation["nodes"]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
+            AxePayload.model_validate(raw)
+        [err] = exc_info.value.errors()
+        assert (err["loc"], err["type"]) == (("findings", "violations", 0, "nodes"), "missing")
 
     def test_non_dict_rule_entry_rejected(self) -> None:
         raw = make_axe_payload(violations=[42])
@@ -100,6 +109,30 @@ class TestAxePayloadBoundary:
 
 
 class TestAxeNodeFields:
+    def test_invalid_impact_on_node_only_rejected(self) -> None:
+        # The rule keeps a valid impact, so only the node's own impact type
+        # stands between this value and the store.
+        violation = make_violation("color-contrast", "serious")
+        violation["nodes"][0]["impact"] = "severe"
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
+            AxePayload.model_validate(raw)
+        [err] = exc_info.value.errors()
+        assert (err["loc"], err["type"]) == (("findings", "violations", 0, "nodes", 0, "impact"), "enum")
+
+    def test_node_missing_html_and_target_rejected(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        del violation["nodes"][0]["html"]
+        del violation["nodes"][0]["target"]
+        raw = make_axe_payload(violations=[violation])
+        with pytest.raises(ValidationError) as exc_info:
+            AxePayload.model_validate(raw)
+        reported = {(err["loc"], err["type"]) for err in exc_info.value.errors()}
+        assert reported == {
+            (("findings", "violations", 0, "nodes", 0, "html"), "missing"),
+            (("findings", "violations", 0, "nodes", 0, "target"), "missing"),
+        }
+
     def test_node_without_failure_summary_accepted(self) -> None:
         violation = make_violation("color-contrast", "serious")
         assert "failureSummary" not in violation["nodes"][0]

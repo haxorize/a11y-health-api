@@ -1,6 +1,6 @@
 import pytest
 
-from a11y_health.core.slug import derive_slug, rederive_slugs
+from a11y_health.core.slug import SLUG_MAX_LENGTH, derive_slug, rederive_slugs
 
 
 def test_derive_slug_folds_case_and_collapses_punctuation() -> None:
@@ -31,7 +31,7 @@ def test_derive_slug_fully_non_latin_fails_loudly() -> None:
 
 def test_derive_slug_nfkd_expansion_past_max_length_fails_loudly() -> None:
     # NFKD folds each "ﬃ" to "ffi", so 100 chars in → 300 slug chars out
-    with pytest.raises(ValueError, match="longer than 255"):
+    with pytest.raises(ValueError, match=f"longer than {SLUG_MAX_LENGTH}"):
         derive_slug("ﬃ" * 100)
 
 

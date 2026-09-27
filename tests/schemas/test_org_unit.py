@@ -10,5 +10,7 @@ def test_the_name_admits_the_bound_and_refuses_one_past_it(schema: type[OrgUnitC
     # Red when the constant moves and the field does not.
     schema(name="a" * NAME_MAX_LENGTH)
 
-    with pytest.raises(ValidationError, match="at most"):
+    with pytest.raises(ValidationError) as exc_info:
         schema(name="a" * (NAME_MAX_LENGTH + 1))
+    [err] = exc_info.value.errors()
+    assert (err["loc"], err["type"]) == (("name",), "string_too_long")

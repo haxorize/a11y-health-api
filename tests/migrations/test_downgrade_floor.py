@@ -7,22 +7,18 @@ does — while CI still reports a green `Migration roundtrip` and three document
 still describe it as proof that the revisions above the floor reverse. This
 reads the value rather than trusting it, and resolves it before comparing.
 
-The checks on the value read only the Makefile and the revision files. The
-roundtrip runs against an empty database of its own, and the harness check
-holds the migration harness to the same floor, so a test whose world lies
-below it is refused at the revision the roundtrip is.
+The checks on the value read only the Makefile and the revision files, and
+the roundtrip runs against an empty database of its own. The last test ties
+the migration harness to the floor: the harness never reads it, but a walk
+from the base is refused first at the floor, so its error names the revision
+the Makefile does. A test that lists that revision in `skips` walks past it.
 """
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.migrations.harness import (
-    IrreversibleRevisionError,
-    Roundtrip,
-    downgrade_floor,
-    restore_world,
-    script_directory,
-)
+from tests.migrations.harness import IrreversibleRevisionError, restore_pre_migration_schema, script_directory
+from tests.migrations.roundtrip import RoundtripResult, downgrade_floor
 
 
 def test_the_downgrade_floor_names_a_revision_that_exists() -> None:
@@ -58,7 +54,7 @@ def test_the_downgrade_floor_is_below_the_head() -> None:
     )
 
 
-async def test_the_revisions_above_the_floor_reverse(roundtrip: Roundtrip) -> None:
+async def test_the_revisions_above_the_floor_reverse(roundtrip: RoundtripResult) -> None:
     # What `make migrate-roundtrip` runs; the session's `roundtrip` fixture
     # runs the child, and this is the test that owns its outcome.
     assert roundtrip.returncode == 0, f"the roundtrip failed:\n{roundtrip.stderr}"
@@ -72,5 +68,5 @@ async def test_the_harness_stops_at_the_downgrade_floor(db_session: AsyncSession
     floor = script.get_revision(downgrade_floor())
     assert floor is not None
     with pytest.raises(IrreversibleRevisionError) as exc_info:
-        await restore_world(db_session, root)
+        await restore_pre_migration_schema(db_session, root)
     assert exc_info.value.revision == floor.revision

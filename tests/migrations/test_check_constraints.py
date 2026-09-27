@@ -7,8 +7,6 @@ moved without a migration behind it.
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-from tests.migrations.harness import Roundtrip
-
 _CHECKS = text(
     "SELECT conrelid::regclass::text AS tbl, conname, pg_get_constraintdef(oid) AS definition"
     " FROM pg_constraint WHERE contype = 'c' AND connamespace = 'public'::regnamespace"
@@ -19,10 +17,8 @@ async def _checks(conn: AsyncConnection) -> dict[tuple[str, str], str]:
     return {(row.tbl, row.conname): row.definition for row in await conn.execute(_CHECKS)}
 
 
-async def test_the_migrated_check_constraints_are_the_models(roundtrip: Roundtrip, engine: AsyncEngine) -> None:
-    assert roundtrip.returncode == 0, "the roundtrip failed; test_the_revisions_above_the_floor_reverse shows why"
-
-    migrated_engine = create_async_engine(roundtrip.database_url)
+async def test_the_migrated_check_constraints_are_the_models(migrated_database_url: str, engine: AsyncEngine) -> None:
+    migrated_engine = create_async_engine(migrated_database_url)
     try:
         async with migrated_engine.connect() as conn:
             migrated = await _checks(conn)

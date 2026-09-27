@@ -21,7 +21,7 @@ from tests.factories import (
     make_score_snapshot,
     ou_snapshots,
 )
-from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
+from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_pre_migration_schema, run_upgrade
 
 migration = load_migration(DUPLICATE_CLEANUP)
 
@@ -29,10 +29,10 @@ _OBSERVED_AT = datetime(2026, 3, 1, 9, 0, 0, tzinfo=UTC)
 
 
 # The cleanup ran before #98's uniqueness enforcement existed, so the legacy
-# duplicates seeded here need the world without its indexes.
+# duplicates seeded here need the schema without its indexes.
 @pytest.fixture(autouse=True)
 async def _pre_cleanup_db(db_session: AsyncSession) -> None:
-    await restore_world(db_session, DUPLICATE_CLEANUP, skips=(DUPLICATE_CLEANUP,))
+    await restore_pre_migration_schema(db_session, DUPLICATE_CLEANUP, skips=(DUPLICATE_CLEANUP,))
 
 
 async def test_identical_org_unit_duplicates_collapse_to_max_id_row(db_session: AsyncSession) -> None:

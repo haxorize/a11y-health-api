@@ -21,10 +21,16 @@ from a11y_health.models.score_snapshot import (
     UQ_SCORE_SNAPSHOT_ORG_UNIT_SNAPSHOT_AT,
 )
 from tests.factories import make_brand, make_org_unit, make_score_snapshot
-from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
+from tests.migrations.harness import (
+    DUPLICATE_CLEANUP,
+    UNIQUENESS_ENFORCEMENT,
+    load_migration,
+    restore_pre_migration_schema,
+    run_upgrade,
+)
 
 cleanup = load_migration(DUPLICATE_CLEANUP)
-enforcement = load_migration("8b3a1162eb95")
+enforcement = load_migration(UNIQUENESS_ENFORCEMENT)
 
 _OBSERVED_AT = datetime(2026, 3, 1, 9, 0, 0, tzinfo=UTC)
 
@@ -41,7 +47,7 @@ async def _rollup_survivors(db_session: AsyncSession) -> set[int]:
 
 @pytest.fixture(autouse=True)
 async def _pre_enforcement_db(db_session: AsyncSession) -> None:
-    await restore_world(db_session, enforcement.revision)
+    await restore_pre_migration_schema(db_session, enforcement.revision)
 
 
 async def test_enforcement_applies_cleanly_after_cleanup_on_legacy_duplicates(db_session: AsyncSession) -> None:

@@ -9,8 +9,9 @@
 export UV_LOCKED := 1
 
 # The revision `migrate-roundtrip` downgrades to. No recipe expands it:
-# tests/migrations/harness.py reads this line, for the roundtrip and for the
-# migration harness, which refuses to walk below it.
+# tests/migrations/roundtrip.py reads this line, so it cannot be overridden
+# from the command line. test_downgrade_floor.py also checks that the migration
+# harness is refused first at this revision on a walk from the base.
 #
 # b362121027a0 is the deepest revision the roundtrip can reach: its own
 # downgrade() raises NotImplementedError, so it is downgraded *to* and never
@@ -20,7 +21,7 @@ export UV_LOCKED := 1
 #
 # 8b3a1162eb95 sits above the floor although its downgrade() restores none of
 # the rows its upgrade() deletes: it loses rows but not schema, and the
-# roundtrip runs against an empty scratch database.
+# roundtrip runs against an empty per-run test database.
 DOWNGRADE_FLOOR := b362121027a0
 
 install:
@@ -85,6 +86,7 @@ migrate-downgrade:
 # Runs against an empty per-run test database, never DATABASE_URL. The suite
 # runs the same test; this target is the one CI's migration-drift job names.
 migrate-roundtrip:
+	$(if $(filter command line,$(origin DOWNGRADE_FLOOR)),$(error DOWNGRADE_FLOOR is read from this Makefile by the test, so a command-line override would be ignored; edit the assignment instead))
 	uv run pytest tests/migrations/test_downgrade_floor.py::test_the_revisions_above_the_floor_reverse
 
 openapi:

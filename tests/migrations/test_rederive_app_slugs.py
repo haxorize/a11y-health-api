@@ -8,9 +8,9 @@ against real colliding rows in a real database, which needs a harness that runs
 the shipped `upgrade()` — not a reimplementation of it. Harness mechanics live
 in tests/migrations/harness.py.
 
-The walk to this revision's world skips the #97 duplicate cleanup and this
-repair itself: both downgrades raise, and both rewrite rows without changing
-the schema.
+The walk to this revision's pre-migration schema skips the #97 duplicate
+cleanup and this repair itself: both downgrades raise, and both rewrite rows
+without changing the schema.
 """
 
 import pytest
@@ -18,14 +18,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories import make_app, make_brand, make_org_unit
-from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
+from tests.migrations.harness import (
+    DUPLICATE_CLEANUP,
+    SLUG_REPAIR,
+    load_migration,
+    restore_pre_migration_schema,
+    run_upgrade,
+)
 
-migration = load_migration("48770eba4885")
+migration = load_migration(SLUG_REPAIR)
 
 
 @pytest.fixture(autouse=True)
 async def _pre_repair_db(db_session: AsyncSession) -> None:
-    await restore_world(db_session, migration.revision, skips=(DUPLICATE_CLEANUP, migration.revision))
+    await restore_pre_migration_schema(db_session, migration.revision, skips=(DUPLICATE_CLEANUP, migration.revision))
 
 
 async def test_migration_reslugs_transiently_colliding_rows(db_session: AsyncSession) -> None:

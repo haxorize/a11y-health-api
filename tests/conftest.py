@@ -24,7 +24,7 @@ from tests._declaration_honesty import DeclarationHonestyShim, instrument_rollup
 from tests._non_test_database import allow_maintenance_engine, install_non_test_database_guard
 from tests.factories import SessionFactory
 from tests.import_graph import Module, package_edges
-from tests.migrations.harness import Roundtrip, run_roundtrip
+from tests.migrations.roundtrip import RoundtripResult, run_roundtrip
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -131,7 +131,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture(scope="session")
-async def roundtrip() -> AsyncIterator[Roundtrip]:
+async def roundtrip() -> AsyncIterator[RoundtripResult]:
     # Built from the base in a database of its own, since the `engine`
     # fixture's already holds the metadata's tables, and never DATABASE_URL:
     # the head's upgrade re-runs a DELETE its downgrade does not restore, so
@@ -140,6 +140,15 @@ async def roundtrip() -> AsyncIterator[Roundtrip]:
     # reader of the migrated schema share one child's run.
     async with _per_run_test_database(suffix="_roundtrip") as url:
         yield await run_roundtrip(url)
+
+
+@pytest.fixture(scope="session")
+def migrated_database_url(roundtrip: RoundtripResult) -> str:
+    # A failed run leaves the schema wherever it stopped, so no reader of it
+    # gets to compare against a half-migrated database.
+    if roundtrip.returncode != 0:
+        pytest.fail(f"the roundtrip failed:\n{roundtrip.stderr}")
+    return roundtrip.database_url
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ guidance — never a raw unique-violation error, and never an implicit rewrite o
 the org structure.
 
 The test engine creates `uq_org_unit_single_root` from model metadata, so each
-test first restores the pre-migration world (inside the rolled-back
+test first restores the pre-migration schema (inside the rolled-back
 transaction, ADR 0011), skipping the #97 duplicate cleanup on the way. Harness
 mechanics live in tests/migrations/harness.py.
 """
@@ -17,14 +17,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories import make_org_unit
-from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_world, run_upgrade
+from tests.migrations.harness import DUPLICATE_CLEANUP, load_migration, restore_pre_migration_schema, run_upgrade
 
 migration = load_migration("8fe96135b4ba")
 
 
 @pytest.fixture(autouse=True)
 async def _pre_index_db(db_session: AsyncSession) -> None:
-    await restore_world(db_session, migration.revision, skips=(DUPLICATE_CLEANUP,))
+    await restore_pre_migration_schema(db_session, migration.revision, skips=(DUPLICATE_CLEANUP,))
 
 
 async def test_migration_aborts_naming_offenders_when_multiple_roots_exist(db_session: AsyncSession) -> None:

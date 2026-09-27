@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Test conventions for this project — layout, the seven conftest fixtures, factories and arrange helpers, markers, and mocking. Use when writing or moving a test, adding a fixture, reaching for a factory, deciding where a new test file goes, or setting up test infrastructure.
+description: Test conventions for this project — layout, the nine conftest fixtures, factories and arrange helpers, markers, and mocking. Use when writing or moving a test, adding a fixture, reaching for a factory, deciding where a new test file goes, or setting up test infrastructure.
 ---
 
 # Testing Conventions
@@ -67,18 +67,20 @@ tests/
     test_live_server.py     # the CLI over a real socket (production AsyncHTTPTransport)
     test_terminal.py        # argv dispatch and the operator-facing ERROR line + exit code
   migrations/
+    harness.py, roundtrip.py # the migration-body harness; the roundtrip
     test_downgrade_floor.py # the floor is a real revision and never the head; reads the Makefile
     test_<revision>.py      # migration bodies through harness.py — see references/cli-and-migration-tests.md
 ```
 
 ## Fixtures (from conftest.py)
 
-Seven fixtures, layered:
+Nine fixtures, layered:
 
 - **`engine`** (session scope) — creates a database per run (`TEST_DATABASE_URL`'s name plus the pid), builds the schema in it, drops it at teardown. Two runs never share one, so the hook's suite and yours cannot drop tables under each other. Every connection sets `deadlock_timeout = 50ms` so deadlock-provoking tests detect in milliseconds instead of idling out Postgres's 1s default — don't re-set the GUC per test. Its superuser requirement and the one sanctioned exception are in [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md)
+- **`roundtrip`** / **`migrated_database_url`** (session scope) — the migration roundtrip's result, and its database's URL once it succeeded
 - **`client`** — `AsyncClient` for endpoints that don't touch the DB
 - **`db_session`** — `AsyncSession` wrapped in a rolled-back transaction for direct DB access (depends on `engine`)
-- **`db_client`** — `AsyncClient` with the session source bound, through `bind_session_source`, to one that hands every request `db_session`; the binding is restored on exit. For endpoints that touch the DB. That source yields the session and stops there, where production's `get_db` commits on success and rolls back on an exception — so a row a handler flushed before raising a 4xx stays visible for the rest of the test, where production would have discarded it. That is a fidelity limit to test around, not a bug: ADR 0011's rollback isolation, below, is why that source is shaped this way. Assert the rejection itself — a follow-up read through `db_client` cannot tell you what production kept
+- **`db_client`** — `AsyncClient` with the session source bound, through `bind_session_source`, to one that hands every request `db_session`; the binding is restored on exit. For endpoints that touch the DB. It never commits or rolls back per request as production's `get_db` does — see [references/fixtures.md](references/fixtures.md) before asserting on state after a 4xx
 - **`committed_session_factory`** — factory for real-commit sessions on separate connections, for the rare test that needs one session's writes visible to another (genuine lock contention); teardown truncates every table. A test that also sends requests through `client` binds `SessionSource(engine)` with `bind_session_source`, as `test_rollup_deadlock.py` does; unbound, the non-test-database guard refuses them. The sanctioned exception to rollback isolation — see [ADR 0011](../../../docs/adr/0011-transactional-rollback-test-isolation.md)
 - **`axe_payload`** (function scope) — `tests/fixtures/humana.com-home.json`, parsed once per run; each test gets its own copy
 - **`source_edges`** (session scope) — `package_edges` over `src/`, walked once per run
@@ -171,6 +173,7 @@ pytestmark = pytest.mark.integration
 - [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
 - [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
 - [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md) — open before writing a CLI test, a migration-body test, or a session-scoped fixture that swaps an attribute
+- [references/fixtures.md](references/fixtures.md) — open before asserting on state a rejected `db_client` request left behind
 - [references/mocking.md](references/mocking.md) — open before mocking: `mocker` over raw `unittest.mock`, `monkeypatch` for a swap that asserts nothing, and the transport as the seam for anything leaving the process
 
 ## Anti-patterns

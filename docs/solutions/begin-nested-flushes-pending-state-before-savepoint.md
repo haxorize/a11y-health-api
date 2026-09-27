@@ -25,10 +25,10 @@ Services used `session.add(obj)` followed by `try: async with session.begin_nest
 
 ## Fix
 
-Made the guarded-write helper an async context manager so the mutation happens inside the savepoint scope (`core/integrity.py::guard`): begin_nested first, `yield` for the caller's `session.add(...)`/attribute sets, then an explicit `flush()` before the savepoint releases. A caught violation now rolls back only the savepoint and the surrounding transaction stays usable. (Same change also switched constraint matching to asyncpg's parsed `constraint_name` instead of message text.)
+Made the guarded-write helper an async context manager so the mutation happens inside the savepoint scope (`core/integrity.py::guard_constraints`): begin_nested first, `yield` for the caller's `session.add(...)`/attribute sets, then an explicit `flush()` before the savepoint releases. A caught violation now rolls back only the savepoint and the surrounding transaction stays usable. (Same change also switched constraint matching to asyncpg's parsed `constraint_name` instead of message text.)
 
 ## Prevention
 
 - `tests/core/test_integrity.py::test_transaction_stays_usable_after_caught_violation` pins the guarantee; `test_mutation_outside_guard_would_not_be_protected` pins the sharp edge itself, so if SQLAlchemy ever changes the pre-flush behavior the pin fails and the constraint can be revisited.
-- The fastapi convention skill's Services section now mandates `integrity.guard` with the mutation inside the block; no service hand-rolls `begin_nested`.
+- The fastapi convention skill's Services section now mandates `integrity.guard_constraints` with the mutation inside the block; no service hand-rolls `begin_nested`.
 - Beware when reading green tests as proof: a conflict test that ends at the expected 409 never checks that the session survived it.

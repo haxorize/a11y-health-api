@@ -15,7 +15,7 @@ from a11y_health.core.exceptions import DomainError
 
 
 @asynccontextmanager
-async def guard(
+async def guard_constraints(
     session: AsyncSession,
     constraint_errors: Mapping[str, DomainError],
 ) -> AsyncIterator[None]:

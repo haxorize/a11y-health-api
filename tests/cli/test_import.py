@@ -483,7 +483,7 @@ async def test_import_missing_name_reported_even_alongside_unslugifiable_name(
     app_dir = tmp_path / "missing-and-unslugifiable"
     app_dir.mkdir()
 
-    # One subdir's payload has no name; another's name is present but derives
+    # One subdir's document has no name; another's name is present but derives
     # to an empty slug. The unslugifiable name must not pre-empt the structured
     # report — the missing-name diagnostic has to survive rather than be lost
     # to a raw ValueError.

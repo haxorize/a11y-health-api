@@ -75,7 +75,7 @@ Services raise semantic exceptions, subclasses of `DomainError`, and know nothin
 
 The 400-versus-422 rule: 422 belongs to the framework, while a well-formed request failing domain validation returns 400 with a coded body. No app-level handler catches `ValidationError`, because an internal validation failure escaping the domain is a defect and returns a 500 ([ADR 0022](adr/0022-error-contract-single-table-400-vs-422.md)).
 
-Where the database is the rule's enforcer, as with the **Root Org Unit** or the **Dependents Guard**, services declare a constraint-to-error mapping instead of inspecting `IntegrityError`. `core/integrity.py`'s `guard`, the **Integrity Guard**, translates a recognized violation into its domain error with the transaction still usable ([ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)).
+Where the database is the rule's enforcer, as with the **Root Org Unit** or the **Dependents Guard**, services declare a constraint-to-error mapping instead of inspecting `IntegrityError`. `core/integrity.py`'s `guard_constraints`, the **Integrity Guard**, translates a recognized violation into its domain error with the transaction still usable ([ADR 0028](adr/0028-integrity-guard-constraint-identity-savepoint.md)).
 
 To add a failure mode: subclass `DomainError`, add its row to `ERROR_MODES`, and list its code in `error_responses(...)`. `tests/core/test_error_contract.py` fails if a subclass lacks a table entry, and the declaration-honesty check fails any test observing an undeclared status or code; what it reaches is [ADR 0033](adr/0033-rollup-race-declaration-enforced-at-raise-site.md).
 

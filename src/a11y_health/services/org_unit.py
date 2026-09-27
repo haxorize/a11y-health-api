@@ -15,7 +15,14 @@ from a11y_health.services import scoring_orchestration
 from a11y_health.services._org_subtree import get_descendant_ids
 
 
-async def get_root_id(session: AsyncSession, *, exclude_id: int | None = None) -> int | None:
+async def get_root_org_unit_id(session: AsyncSession, *, exclude_id: int | None = None) -> int | None:
+    """The Root Org Unit's id, or `None` when the tree has no root, which is
+    before onboarding or once the root is deleted, never a failed lookup.
+
+    `exclude_id` leaves one Org Unit out, so a unit being reparented to the
+    root never counts as its own competitor. The unordered `limit(1)` is safe
+    because ADR 0026's partial unique index allows one parentless row at most.
+    """
     stmt = select(OrgUnit.id).where(OrgUnit.parent_id.is_(None))
     if exclude_id is not None:
         stmt = stmt.where(OrgUnit.id != exclude_id)
@@ -23,7 +30,7 @@ async def get_root_id(session: AsyncSession, *, exclude_id: int | None = None) -
 
 
 async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = None) -> None:
-    existing_root_id = await get_root_id(session, exclude_id=exclude_id)
+    existing_root_id = await get_root_org_unit_id(session, exclude_id=exclude_id)
     if existing_root_id is not None:
         raise DuplicateRootError(OrgUnit, existing_root_id)
 
@@ -31,7 +38,7 @@ async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = N
 def _root_race_guard(session: AsyncSession) -> AbstractAsyncContextManager[None]:
     """The single-root violation is only reachable when a concurrent transaction
     won the root race after `_check_no_other_root` passed."""
-    return integrity.guard(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit)})
+    return integrity.guard_constraints(session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit)})
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
@@ -108,13 +115,13 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
 
 # The Dependents Guard (DOMAIN.md): an Org Unit with child Org Units, Apps, or
 # Score Snapshots refuses deletion. The RESTRICT foreign keys decide it, and
-# `integrity.guard` turns the violation into `HasDependentsError`.
+# `integrity.guard_constraints` turns the violation into `HasDependentsError`.
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
     # One instance for all three dependent FKs: guard raises at most once per
     # call.
     dependents = HasDependentsError(OrgUnit, org_unit_id)
-    async with integrity.guard(
+    async with integrity.guard_constraints(
         session,
         {
             FK_ORG_UNIT_PARENT_ID: dependents,

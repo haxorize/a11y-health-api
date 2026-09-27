@@ -71,7 +71,7 @@ async def _upload_scan(
     pages_uploaded = 0
     try:
         for file in scan.files:
-            rejection = await _client.upload_page(client, scan_run_id=scan_run_id, payload=file.document)
+            rejection = await _client.upload_page(client, scan_run_id=scan_run_id, document=file.document)
             if rejection is None:
                 pages_uploaded += 1
                 on_progress(f"Uploaded {file.path.name}")

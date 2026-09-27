@@ -118,7 +118,7 @@ async def test_create_org_unit_service(db_session: AsyncSession) -> None:
 
 Arrange side: reach for `tests/factories.py` and reuse production code freely — a factory that calls the real service to set a row up is arranging, not asserting. Writing one is [references/factories.md](references/factories.md).
 
-Expected side: no production helper. Importing `safe_ratio` from `services/score_snapshot.py` to build the number you compare against asserts the formula against itself, and the test stays green when the formula is wrong. Write the expected value as a literal, with the arithmetic in an inline comment.
+Expected side: no production helper. Calling the scoring arithmetic to build the number you compare against asserts the formula against itself, and the test stays green when the formula is wrong. Write the expected value as a literal, with the arithmetic in an inline comment.
 
 ## What to test at which layer
 

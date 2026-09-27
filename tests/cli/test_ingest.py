@@ -239,9 +239,9 @@ async def test_ingest_falls_back_to_directory_mtime_when_no_endtime(
 ) -> None:
     await make_app_with_org_unit(db_session, slug="foo-com")
 
-    payload = make_axe_payload(name="foo.com", url="https://example.com/a")
+    document = make_axe_payload(name="foo.com", url="https://example.com/a")
     file = tmp_path / "a.json"
-    file.write_text(json.dumps(payload))
+    file.write_text(json.dumps(document))
 
     expected_ts = 1_700_000_000.0
     os.utime(tmp_path, (expected_ts, expected_ts))
@@ -315,11 +315,11 @@ async def test_ingest_leaves_a_partial_run_pending_and_unscored(
     real_upload_page = _client.upload_page
     calls = 0
 
-    async def reject_second_page(client: AsyncClient, *, scan_run_id: int, payload: dict) -> _client.ApiError | None:
+    async def reject_second_page(client: AsyncClient, *, scan_run_id: int, document: dict) -> _client.ApiError | None:
         nonlocal calls
         calls += 1
         if calls == 1:
-            return await real_upload_page(client, scan_run_id=scan_run_id, payload=payload)
+            return await real_upload_page(client, scan_run_id=scan_run_id, document=document)
         return _client.ApiError(code="invalid_axe_payload", message="faked at the client seam")
 
     monkeypatch.setattr(_client, "upload_page", reject_second_page)

@@ -48,7 +48,7 @@ type ParentLookup = Callable[[AsyncSession, int], Awaitable[int | None]]
 # The one Brand-membership predicate: App.brand_id alone decides, wherever the
 # app sits in the org tree. Shared by the brand scope and the Brand Rollup's
 # children read.
-def brand_apps(brand_id: int) -> Select[tuple[int]]:
+def _brand_apps(brand_id: int) -> Select[tuple[int]]:
     return select(App.id).where(App.brand_id == brand_id)
 
 
@@ -72,7 +72,7 @@ async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> li
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    snapshots = select(ScoreSnapshot).where(ScoreSnapshot.app_id.in_(brand_apps(brand_id)))
+    snapshots = select(ScoreSnapshot).where(ScoreSnapshot.app_id.in_(_brand_apps(brand_id)))
     return await _latest_of(session, snapshots, partition_on=[ScoreSnapshot.app_id])
 
 
@@ -195,7 +195,7 @@ def _brand_scope(owner_type: ScoreSnapshotOwnerType, brand_id: int) -> ColumnEle
     if owner_type is ScoreSnapshotOwnerType.APP:
         # Brand ownership is flat, like the brand rollup: the one membership
         # predicate decides, wherever the app sits in the org tree.
-        return OWNERS[owner_type].id_column.in_(brand_apps(brand_id))
+        return OWNERS[owner_type].id_column.in_(_brand_apps(brand_id))
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT or owner_type is ScoreSnapshotOwnerType.BRAND:
         # Only apps carry brand ownership. An org unit has no brand, and a
         # brand isn't owned by a brand — the scoping brand's own rollup
@@ -380,7 +380,7 @@ async def _apply_rollup(
         await session.execute(delete(ScoreSnapshot).where(criterion, ScoreSnapshot.snapshot_at == snapshot_at))
     # The unique indexes (#98) only decide races: a concurrent rollup landing
     # between the read above and this insert makes the flush a violation.
-    async with integrity.guard(
+    async with integrity.guard_constraints(
         session, {rollup_spec.unique_index: _concurrent_rollup_error(spec.owner_type, owner_id)}
     ):
         session.add(snapshot)

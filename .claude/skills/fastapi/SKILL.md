@@ -18,7 +18,7 @@ src/a11y_health/
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
     existence.py      # the Existence Guard: get_by_pk/get_by_query
-    integrity.py      # the Integrity Guard: guard() turns a named constraint violation into a domain error
+    integrity.py      # the Integrity Guard: guard_constraints() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
     slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.
                       # rederive_slugs() is migration-only — its one non-test caller is
@@ -89,12 +89,12 @@ src/a11y_health/
 - Call `flush()` (not `commit()`) — `get_db` commits the transaction automatically on success
 - Never re-read a row you just inserted: the INSERT's own `RETURNING` loads its server-generated values (id, `created_at`, `updated_at`), since the mapper's default `eager_defaults="auto"` fetches them on insert. It reloads nothing the caller supplied, so a caller-supplied column the database normalizes, like `scan_run.scanned_at` to UTC, takes `await session.refresh(obj, attribute_names=[...])` for that column alone. Under `"auto"` the mapper adds no `RETURNING` to an UPDATE, so an update path that serializes `updated_at` still calls `await session.refresh(obj)` after its flush; switching the mapper to `eager_defaults=True` would return it but splits the page-health batch into one UPDATE per page
 - Name an entity in an error by its model type, never a label string: `HasDependentsError(OrgUnit, org_unit_id)`. The mode resolves the label from `ENTITY_LABELS` in `core/exceptions.py`, so a service holds no label constant; a new entity, or a contextual label like `ScoreSnapshot`'s "Scan run summary", is a row in that table. The three modes serving one entity (`DuplicateSlugError`, `ScanRunCompletedError`, `EmptyScanRunError`) open on its label as a literal instead, so the sentence stays searchable from its first word
-- Writes guarded by a named constraint use `core/integrity.py`'s `guard` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard` docstring for why):
+- Writes guarded by a named constraint use `core/integrity.py`'s `guard_constraints` — never hand-roll the `begin_nested()`/`IntegrityError` dance. Map exported constraint-name constants to the domain error, building the mapping fresh per call; the mutation goes **inside** the `async with` block (see the `guard_constraints` docstring for why):
   ```python
-  async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
+  async with integrity.guard_constraints(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
       session.add(app)
   ```
-  On a recognized violation `guard` raises the mapped domain error with the transaction still usable; anything else re-raises unchanged. Classification rules and the single-use-mapping invariant live in `guard`'s docstrings; ADR 0028 records the decisions.
+  On a recognized violation `guard_constraints` raises the mapped domain error with the transaction still usable; anything else re-raises unchanged. Classification rules and the single-use-mapping invariant live in `guard_constraints`' docstrings; ADR 0028 records the decisions.
 
 ## Orchestration
 

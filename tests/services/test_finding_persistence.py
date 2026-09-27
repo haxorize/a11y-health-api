@@ -107,8 +107,8 @@ async def test_classifications_extracted(db_session: AsyncSession, page_result: 
 
 async def test_best_practice_classification_stored_without_null_members(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
-    payload = make_axe_payload(violations=[make_violation("region", "moderate")])
-    await create_page_result(db_session, scan_run.id, payload)
+    document = make_axe_payload(violations=[make_violation("region", "moderate")])
+    await create_page_result(db_session, scan_run.id, document)
 
     stmt = select(text("classifications")).select_from(RuleFinding).where(RuleFinding.rule_id == "region")
     stored = (await db_session.execute(stmt)).scalar_one()
@@ -120,8 +120,8 @@ async def test_best_practice_classification_stored_without_null_members(db_sessi
 
 async def test_wcag21_classification_stored_from_ingested_tags(db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
-    payload = make_axe_payload(violations=[make_violation("target-size", "serious", tags=["wcag21aa", "cat.color"])])
-    await create_page_result(db_session, scan_run.id, payload)
+    document = make_axe_payload(violations=[make_violation("target-size", "serious", tags=["wcag21aa", "cat.color"])])
+    await create_page_result(db_session, scan_run.id, document)
 
     stmt = select(text("classifications")).select_from(RuleFinding).where(RuleFinding.rule_id == "target-size")
     stored = (await db_session.execute(stmt)).scalar_one()

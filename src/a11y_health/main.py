@@ -16,7 +16,7 @@ from a11y_health.core.error_contract import register_error_handlers
 # first request. It is single-shot on purpose: retrying is left to whatever
 # restarts the process.
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = session_source().engine
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
@@ -41,7 +41,7 @@ def assemble_application(*, allowed_origins: list[str]) -> FastAPI:
         title=PROJECT_NAME,
         version=VERSION,
         openapi_url=f"{API_V1_PREFIX}/openapi.json",
-        lifespan=lifespan,
+        lifespan=_lifespan,
         generate_unique_id_function=_operation_id,
     )
     app.add_middleware(

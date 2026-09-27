@@ -25,7 +25,7 @@ async def list_scores(session, owner_type, owner_id, *,
 async def rollup(session, owner_type, owner_id)      # ValueError on APP; cascades
 def owned(owner_type, owner_id, aggregates: ScoreAggregates, *,
           scan_run_id=None, snapshot_at) -> ScoreSnapshot   # #136; see amendment
-def brand_apps(brand_id) -> Select                   # the one membership predicate
+def _brand_apps(brand_id) -> Select                  # the one membership predicate
 
 class RollupOwner(NamedTuple):                       # #160
     owner_type: ScoreSnapshotOwnerType

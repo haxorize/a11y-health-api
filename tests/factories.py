@@ -96,7 +96,7 @@ async def make_app_with_org_unit(
 ) -> App:
     # Nest under the existing root when one exists — a second parentless org
     # unit would violate the single-root index (ADR 0026).
-    existing_root_id = await org_unit_service.get_root_id(db)
+    existing_root_id = await org_unit_service.get_root_org_unit_id(db)
     org_unit = await make_org_unit(db, name=org_name, parent_id=existing_root_id)
     return await make_app(db, name=app_name, slug=slug, brand_id=brand_id, org_unit_id=org_unit.id)
 
@@ -400,10 +400,10 @@ def make_axe_payload(
         "passes": [],
         "inapplicable": [],
     }
-    payload: dict[str, Any] = {"name": name, "testSubject": {"fileName": url}, "findings": findings}
+    document: dict[str, Any] = {"name": name, "testSubject": {"fileName": url}, "findings": findings}
     if end_time is not None:
-        payload["endTime"] = end_time
-    return {**(unmodeled or {}), **payload}
+        document["endTime"] = end_time
+    return {**(unmodeled or {}), **document}
 
 
 def write_scan_file(
@@ -414,8 +414,8 @@ def write_scan_file(
     url: str = "https://example.com/a",
     end_time: Any = "2026-03-30T11:55:52-0400",
 ) -> None:
-    payload = make_axe_payload(name=name, url=url, end_time=end_time)
-    (directory / filename).write_text(json.dumps(payload))
+    document = make_axe_payload(name=name, url=url, end_time=end_time)
+    (directory / filename).write_text(json.dumps(document))
 
 
 def write_scan_dir(app_dir: Path, date: str, *, name: str, end_time: str | None = None) -> None:

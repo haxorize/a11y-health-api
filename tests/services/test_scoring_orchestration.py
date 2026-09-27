@@ -34,8 +34,8 @@ class TestOnScanRunCompleted:
         leaf = await make_org_unit(db_session, name="Leaf", parent_id=middle.id)
         app = await make_app(db_session, name="App", slug="app-1", org_unit_id=leaf.id)
 
-        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        scan_run = await complete_new_scan_run(db_session, app.id, [payload])
+        document = make_axe_payload(violations=[make_violation("r1", "serious")])
+        scan_run = await complete_new_scan_run(db_session, app.id, [document])
         await on_scan_run_completed(db_session, scan_run)
 
         [app_snapshot] = await app_snapshots(db_session, app.id)
@@ -51,8 +51,8 @@ class TestOnScanRunCompleted:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-brand", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        scan_run = await complete_new_scan_run(db_session, app.id, [payload])
+        document = make_axe_payload(violations=[make_violation("r1", "serious")])
+        scan_run = await complete_new_scan_run(db_session, app.id, [document])
         await on_scan_run_completed(db_session, scan_run)
 
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
@@ -91,12 +91,12 @@ class TestOnScanRunCompleted:
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app_a.id, [payload_a])
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(db_session, app_a.id, [document_a])
         await on_scan_run_completed(db_session, sr_a)
 
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app_b.id, [payload_b])
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(db_session, app_b.id, [document_b])
         await on_scan_run_completed(db_session, sr_b)
 
         brand_snap = await latest_brand_snapshot(db_session, brand.id)
@@ -127,12 +127,16 @@ class TestLatestSnapshotChangedAfterScanRunDelete:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-recomp", org_unit_id=org_unit.id)
 
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app.id, [payload_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(
+            db_session, app.id, [document_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_a)
 
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app.id, [payload_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(
+            db_session, app.id, [document_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_b)
 
         await db_session.delete(sr_b)
@@ -151,12 +155,16 @@ class TestLatestSnapshotChangedAfterScanRunDelete:
         leaf = await make_org_unit(db_session, name="Leaf", parent_id=root.id)
         app = await make_app(db_session, name="App", slug="app-del-sr", org_unit_id=leaf.id)
 
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app.id, [payload_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(
+            db_session, app.id, [document_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_a)
 
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app.id, [payload_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(
+            db_session, app.id, [document_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_b)
 
         leaf_before = await latest_ou_snapshot(db_session, leaf.id)
@@ -178,12 +186,16 @@ class TestLatestSnapshotChangedAfterScanRunDelete:
             db_session, name="App", slug="app-del-sr-brand", org_unit_id=org_unit.id, brand_id=brand.id
         )
 
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app.id, [payload_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC))
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(
+            db_session, app.id, [document_a], scanned_at=datetime(2026, 3, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_a)
 
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app.id, [payload_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC))
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(
+            db_session, app.id, [document_b], scanned_at=datetime(2026, 4, 1, tzinfo=UTC)
+        )
         await on_scan_run_completed(db_session, sr_b)
 
         brand_before = await latest_brand_snapshot(db_session, brand.id)
@@ -260,8 +272,8 @@ class TestLatestSnapshotChangedAfterScanRunDelete:
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-last-sr", org_unit_id=org_unit.id, brand_id=brand.id)
 
-        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr = await complete_new_scan_run(db_session, app.id, [payload])
+        document = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr = await complete_new_scan_run(db_session, app.id, [document])
         await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(sr)
@@ -394,13 +406,13 @@ class TestLatestSnapshotChangedAfterAppDelete:
         brand = await make_brand(db_session, name="Humana")
 
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=leaf.id, brand_id=brand.id)
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app_a.id, [payload_a])
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(db_session, app_a.id, [document_a])
         await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=leaf.id, brand_id=brand.id)
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app_b.id, [payload_b])
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(db_session, app_b.id, [document_b])
         await on_scan_run_completed(db_session, sr_b)
 
         leaf_before = await latest_ou_snapshot(db_session, leaf.id)
@@ -420,13 +432,13 @@ class TestLatestSnapshotChangedAfterAppDelete:
         org_unit = await make_org_unit(db_session, name="Org")
 
         app_a = await make_app(db_session, name="App A", slug="app-a", org_unit_id=org_unit.id, brand_id=brand.id)
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app_a.id, [payload_a])
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(db_session, app_a.id, [document_a])
         await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(db_session, name="App B", slug="app-b", org_unit_id=org_unit.id, brand_id=brand.id)
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app_b.id, [payload_b])
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(db_session, app_b.id, [document_b])
         await on_scan_run_completed(db_session, sr_b)
 
         brand_before = await latest_brand_snapshot(db_session, brand.id)
@@ -443,8 +455,8 @@ class TestLatestSnapshotChangedAfterAppDelete:
         brand = await make_brand(db_session, name="Go365")
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-solo", org_unit_id=org_unit.id, brand_id=brand.id)
-        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr = await complete_new_scan_run(db_session, app.id, [payload])
+        document = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr = await complete_new_scan_run(db_session, app.id, [document])
         await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(app)
@@ -457,8 +469,8 @@ class TestLatestSnapshotChangedAfterAppDelete:
         brand = await make_brand(db_session, name="Go365")
         org_unit = await make_org_unit(db_session, name="Org")
         app = await make_app(db_session, name="App", slug="app-solo-brand", org_unit_id=org_unit.id, brand_id=brand.id)
-        payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr = await complete_new_scan_run(db_session, app.id, [payload])
+        document = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr = await complete_new_scan_run(db_session, app.id, [document])
         await on_scan_run_completed(db_session, sr)
 
         await db_session.delete(app)
@@ -476,15 +488,15 @@ class TestLatestSnapshotChangedAfterAppDelete:
         app_a = await make_app(
             db_session, name="App A", slug="app-a-cascade", org_unit_id=branch_a.id, brand_id=brand.id
         )
-        payload_a = make_axe_payload(violations=[make_violation("r1", "serious")])
-        sr_a = await complete_new_scan_run(db_session, app_a.id, [payload_a])
+        document_a = make_axe_payload(violations=[make_violation("r1", "serious")])
+        sr_a = await complete_new_scan_run(db_session, app_a.id, [document_a])
         await on_scan_run_completed(db_session, sr_a)
 
         app_b = await make_app(
             db_session, name="App B", slug="app-b-cascade", org_unit_id=branch_b.id, brand_id=brand.id
         )
-        payload_b = make_axe_payload(url="https://example.com/b")
-        sr_b = await complete_new_scan_run(db_session, app_b.id, [payload_b])
+        document_b = make_axe_payload(url="https://example.com/b")
+        sr_b = await complete_new_scan_run(db_session, app_b.id, [document_b])
         await on_scan_run_completed(db_session, sr_b)
 
         branch_a_before = await latest_ou_snapshot(db_session, branch_a.id)

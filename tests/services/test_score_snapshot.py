@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a11y_health.models.enums import Impact, PageHealth
 from a11y_health.models.page_result import PageResult
 from a11y_health.services.score_snapshot import (
+    _compute_app_score_result,
+    _compute_page_health,
     compute_app_score,
-    compute_app_score_result,
-    compute_page_health,
 )
 from tests.factories import (
     ingest_and_score,
@@ -20,27 +20,27 @@ from tests.factories import (
 
 class TestComputePageHealth:
     def test_critical_impact_gives_critical_health(self) -> None:
-        assert compute_page_health([Impact.CRITICAL]) == PageHealth.CRITICAL
+        assert _compute_page_health([Impact.CRITICAL]) == PageHealth.CRITICAL
 
     def test_serious_impact_gives_serious_health(self) -> None:
-        assert compute_page_health([Impact.SERIOUS]) == PageHealth.SERIOUS
+        assert _compute_page_health([Impact.SERIOUS]) == PageHealth.SERIOUS
 
     def test_moderate_impact_gives_fair_health(self) -> None:
-        assert compute_page_health([Impact.MODERATE]) == PageHealth.FAIR
+        assert _compute_page_health([Impact.MODERATE]) == PageHealth.FAIR
 
     def test_minor_impact_gives_good_health(self) -> None:
-        assert compute_page_health([Impact.MINOR]) == PageHealth.GOOD
+        assert _compute_page_health([Impact.MINOR]) == PageHealth.GOOD
 
     def test_empty_list_gives_good_health(self) -> None:
-        assert compute_page_health([]) == PageHealth.GOOD
+        assert _compute_page_health([]) == PageHealth.GOOD
 
     def test_worst_impact_wins(self) -> None:
-        assert compute_page_health([Impact.MINOR, Impact.CRITICAL]) == PageHealth.CRITICAL
+        assert _compute_page_health([Impact.MINOR, Impact.CRITICAL]) == PageHealth.CRITICAL
 
 
 class TestComputeAppScoreResult:
     def test_all_good_pages_score_1(self) -> None:
-        result = compute_app_score_result(
+        result = _compute_app_score_result(
             page_ids=[1, 2, 3],
             violations_by_page={},
         )
@@ -48,14 +48,14 @@ class TestComputeAppScoreResult:
         assert result.page_healths == {1: PageHealth.GOOD, 2: PageHealth.GOOD, 3: PageHealth.GOOD}
 
     def test_all_critical_pages_score_0(self) -> None:
-        result = compute_app_score_result(
+        result = _compute_app_score_result(
             page_ids=[1, 2],
             violations_by_page={1: [Impact.CRITICAL], 2: [Impact.CRITICAL]},
         )
         assert result.aggregates.score == approx(0.0)
 
     def test_mixed_pages_weighted_average(self) -> None:
-        result = compute_app_score_result(
+        result = _compute_app_score_result(
             page_ids=[1, 2, 3, 4],
             violations_by_page={
                 1: [Impact.CRITICAL],
@@ -67,12 +67,12 @@ class TestComputeAppScoreResult:
         assert result.page_healths[4] == PageHealth.GOOD
 
     def test_zero_pages_returns_zero_score(self) -> None:
-        result = compute_app_score_result(page_ids=[], violations_by_page={})
+        result = _compute_app_score_result(page_ids=[], violations_by_page={})
         assert result.aggregates.score == approx(0.0)
         assert result.aggregates.total_pages == 0
 
     def test_metric_accumulation(self) -> None:
-        result = compute_app_score_result(
+        result = _compute_app_score_result(
             page_ids=[1, 2, 3],
             violations_by_page={
                 1: [Impact.CRITICAL, Impact.SERIOUS],
@@ -139,6 +139,33 @@ class TestComputeAppScoreCreatesSnapshot:
         assert snapshot.total_pages == 1
         result = await db_session.execute(select(PageResult).where(PageResult.scan_run_id == scan_run.id))
         assert result.scalar_one().page_health == PageHealth.SERIOUS
+
+    # Red when the write-back hands one page's health to another: distinct
+    # healths per page are what make a swap visible.
+    async def test_every_page_of_the_run_gets_its_own_health(self, db_session: AsyncSession) -> None:
+        scan_run = await make_scan_run_with_parents(db_session)
+        await ingest_pages_and_complete(
+            db_session,
+            scan_run.id,
+            [
+                make_axe_payload(url="https://example.com/a", violations=[make_violation("r1", "critical")]),
+                make_axe_payload(url="https://example.com/b", violations=[make_violation("r2", "moderate")]),
+                make_axe_payload(url="https://example.com/c"),
+            ],
+        )
+
+        await compute_app_score(db_session, scan_run)
+
+        result = await db_session.execute(
+            select(PageResult.url, PageResult.page_health)
+            .where(PageResult.scan_run_id == scan_run.id)
+            .order_by(PageResult.url)
+        )
+        assert [tuple(row) for row in result] == [
+            ("https://example.com/a", PageHealth.CRITICAL),
+            ("https://example.com/b", PageHealth.FAIR),
+            ("https://example.com/c", PageHealth.GOOD),
+        ]
 
 
 class TestScoreIndependentOfPageHealth:

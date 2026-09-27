@@ -24,17 +24,17 @@ from a11y_health.services import owner, scoring_vocabulary
 from a11y_health.services.owner import ScoreAggregates
 
 
-def safe_ratio(numerator: float, denominator: int) -> float:
+def _safe_ratio(numerator: float, denominator: int) -> float:
     return numerator / denominator if denominator > 0 else 0.0
 
 
 @dataclass(frozen=True)
-class AppScoreResult:
+class _AppScoreResult:
     page_healths: dict[int, PageHealth]
     aggregates: ScoreAggregates
 
 
-def compute_page_health(impacts: list[Impact]) -> PageHealth:
+def _compute_page_health(impacts: list[Impact]) -> PageHealth:
     if not impacts:
         return PageHealth.GOOD
     return min(
@@ -43,7 +43,7 @@ def compute_page_health(impacts: list[Impact]) -> PageHealth:
     )
 
 
-def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, list[Impact]]) -> AppScoreResult:
+def _compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, list[Impact]]) -> _AppScoreResult:
     total_pages = len(page_ids)
     total_violations = 0
     pages_with_violations = 0
@@ -53,7 +53,7 @@ def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, 
 
     for page_id in page_ids:
         impacts = violations_by_page.get(page_id, [])
-        health = compute_page_health(impacts)
+        health = _compute_page_health(impacts)
         page_healths[page_id] = health
         weighted_sum += scoring_vocabulary.PAGE_HEALTH_WEIGHT[health]
 
@@ -64,10 +64,10 @@ def compute_app_score_result(page_ids: list[int], violations_by_page: dict[int, 
         if health == PageHealth.CRITICAL:
             pages_with_critical_violations += 1
 
-    return AppScoreResult(
+    return _AppScoreResult(
         page_healths=page_healths,
         aggregates=ScoreAggregates(
-            score=safe_ratio(weighted_sum, total_pages),
+            score=_safe_ratio(weighted_sum, total_pages),
             total_violations=total_violations,
             total_pages=total_pages,
             pages_with_violations=pages_with_violations,
@@ -92,7 +92,7 @@ async def compute_app_score(session: AsyncSession, scan_run: ScanRun) -> ScoreSn
         for page_result_id, impact in findings_result.all():
             violations_by_page[page_result_id].append(impact)
 
-    score_result = compute_app_score_result(page_ids, violations_by_page)
+    score_result = _compute_app_score_result(page_ids, violations_by_page)
 
     for page in pages:
         page.page_health = score_result.page_healths[page.id]

@@ -161,13 +161,13 @@ async def create_scan_run(client: httpx.AsyncClient, *, app_id: int, scanned_at:
     return _json(resp)["id"]
 
 
-async def upload_page(client: httpx.AsyncClient, *, scan_run_id: int, payload: dict) -> ApiError | None:
+async def upload_page(client: httpx.AsyncClient, *, scan_run_id: int, document: dict) -> ApiError | None:
     """`None` when the page was accepted, the coded rejection when it wasn't.
 
     Returned rather than raised: one unacceptable page must not strand the pages
     behind it, and the caller decides what a partial run means.
     """
-    resp = await _send(client, "POST", f"/scan-runs/{scan_run_id}/pages", json=payload)
+    resp = await _send(client, "POST", f"/scan-runs/{scan_run_id}/pages", json=document)
     return None if resp.is_success else _api_error(resp)
 
 

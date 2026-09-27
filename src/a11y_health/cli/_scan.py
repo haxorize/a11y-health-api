@@ -189,7 +189,7 @@ def find_date_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
 class LoadedFile(NamedTuple):
     path: Path
     # The decoded JSON and its typed view travel together: the document is
-    # what gets uploaded and stored as Raw JSON, the payload is what the CLI
+    # what gets uploaded and stored as Raw JSON, the Axe Payload is what the CLI
     # reads. Keeping them in one record is what makes them impossible to
     # misalign.
     document: dict[str, Any]

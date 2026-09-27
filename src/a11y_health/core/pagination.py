@@ -151,12 +151,12 @@ class TotalledPage[T](Page[T]):
 
 
 def encode_cursor(*values: int | str | datetime) -> str:
-    payload = [v.isoformat() if isinstance(v, datetime) else v for v in values]
-    raw = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    jsonable = [v.isoformat() if isinstance(v, datetime) else v for v in values]
+    raw = base64.urlsafe_b64encode(json.dumps(jsonable).encode()).decode()
     return raw.rstrip("=")
 
 
-def decode_cursor(cursor: str, *, expected: int) -> list:
+def _decode_cursor(cursor: str, *, expected: int) -> list:
     if len(cursor) > _MAX_CURSOR_LENGTH:
         raise InvalidCursorError
     try:
@@ -256,7 +256,7 @@ async def paginate[T](
     unpaged = stmt
     order = [col.desc() for col in keyset] if descending else list(keyset)
     if cursor is not None:
-        decoded = decode_cursor(cursor, expected=len(keyset))
+        decoded = _decode_cursor(cursor, expected=len(keyset))
         try:
             bound = tuple(_coerce(attr, raw) for attr, raw in zip(keyset, decoded, strict=True))
         except (ValueError, TypeError) as exc:

@@ -86,7 +86,7 @@ async def list_findings(
     )
 
 
-def wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
+def _wcag_criterion_sort_key(criterion: str) -> tuple[int, tuple[int, ...], str]:
     """Numeric segment order, so 1.4.13 sorts between 1.4.3 and 1.10.1.
 
     ADR 0014 rejected the reference table that would hold the column to known
@@ -132,7 +132,7 @@ async def list_filter_options(session: AsyncSession, scan_run_id: int) -> Findin
     distinct_criteria, distinct_entries = (await session.execute(stmt)).one()
     options = classification_options(distinct_entries or [])
     return FindingFilterOptionsRead(
-        wcag_criteria=sorted(distinct_criteria or [], key=wcag_criterion_sort_key),
+        wcag_criteria=sorted(distinct_criteria or [], key=_wcag_criterion_sort_key),
         classifications=[
             ClassificationFilterOption(token=token, classification=classification) for token, classification in options
         ],

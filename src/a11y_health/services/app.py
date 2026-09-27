@@ -46,7 +46,7 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     await existence.get_by_pk(session, OrgUnit, data.org_unit_id)
     slug = derive_slug(data.name)
     app = App(**data.model_dump(), slug=slug)
-    async with integrity.guard(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
+    async with integrity.guard_constraints(session, {UQ_APP_SLUG: DuplicateSlugError(slug)}):
         session.add(app)
     return app
 

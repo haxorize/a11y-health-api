@@ -157,8 +157,8 @@ async def test_completed_transition_triggers_scoring(db_session: AsyncSession) -
     app = await make_app(db_session, name="App", slug="app-score", org_unit_id=org_unit.id)
     scan_run = await make_scan_run(db_session, app_id=app.id)
 
-    payload = make_axe_payload(violations=[make_violation("r1", "serious")])
-    await create_page_result(db_session, scan_run.id, payload)
+    document = make_axe_payload(violations=[make_violation("r1", "serious")])
+    await create_page_result(db_session, scan_run.id, document)
 
     await scan_run_service.update_scan_run_status(
         db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)

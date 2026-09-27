@@ -79,9 +79,9 @@ async def test_reject_upload_to_missing_scan_run(db_client: AsyncClient, axe_pay
     assert_error(response, 404, "not_found")
 
 
-async def test_invalid_payload_outranks_missing_scan_run(db_client: AsyncClient) -> None:
-    # The service parses before the existence lookup, so the payload verdict is
-    # the same whichever run it names. Pinned because the order is three
-    # statements inside a service, not something visible at the route.
+async def test_invalid_axe_payload_outranks_missing_scan_run(db_client: AsyncClient) -> None:
+    # The service parses before the existence lookup, so the Axe Boundary's
+    # verdict is the same whichever run it names. Pinned because the order is
+    # three statements inside a service, not something visible at the route.
     response = await db_client.post("/api/v1/scan-runs/999999/pages", json={"not": "axe-json"})
     assert_error(response, 400, "invalid_axe_payload")

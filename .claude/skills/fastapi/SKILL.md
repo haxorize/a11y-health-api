@@ -21,6 +21,8 @@ src/a11y_health/
     integrity.py      # the Integrity Guard: guard_constraints() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
     slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.
+                      # Also NAME_MAX_LENGTH and SLUG_MAX_LENGTH, the name and slug
+                      # length bounds models and schemas read here, not off a model.
                       # rederive_slugs() is migration-only — its one non-test caller is
                       # the revision that backfilled them (ADR 0019)
   api/

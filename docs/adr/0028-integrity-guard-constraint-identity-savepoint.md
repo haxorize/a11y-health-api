@@ -1,6 +1,6 @@
 # The Integrity Guard classifies by constraint identity inside an engaged savepoint
 
-Integrity-violation → domain-error translation lives in one core module, `core/integrity.py::guard` (#96), replacing two hand-rolled copies in the Org Unit and App services. Four decisions in its shape are deliberate:
+Integrity-violation → domain-error translation lives in one core module, `core/integrity.py::guard_constraints` (#96; named `guard` until #174), replacing two hand-rolled copies in the Org Unit and App services. Four decisions in its shape are deliberate:
 
 - **Classify by the driver-parsed constraint identity** (`exc.orig.__cause__.constraint_name`), never by matching rendered error text. Rendered messages append the bound row values, so data merely *containing* a constraint's name could misclassify an unrelated violation, and one constraint name embedded in another could collide. The fallback is fail-safe: an error with no parsed name re-raises unchanged, so a driver swap that moves the attribute degrades recognized conflicts from 409s to loud 500s — never to a wrong classification.
 - **The guarded mutation goes *inside* the `async with` block.** SQLAlchemy's `begin_nested()` flushes pending state *before* emitting SAVEPOINT (`SessionTransaction._take_snapshot`), so a write pending at entry fails outside the savepoint and poisons the whole transaction — the context-manager shape is forced by this, not a style choice. Full diagnosis: `docs/solutions/begin-nested-flushes-pending-state-before-savepoint.md`.

@@ -130,8 +130,8 @@ uv sync --quiet
 echo "Linting..."
 make lint
 
-# The one CI stage of the three that needs no database, so the only one that
-# can run here; `CLAUDE.md` § Commands names the two Alembic stages that stay
+# Needs no database. The migration roundtrip is a suite test, so `make test`
+# below runs it; `CLAUDE.md` § Commands names the one Alembic check that stays
 # in CI and why.
 echo "Checking openapi.json is not stale..."
 make openapi-check

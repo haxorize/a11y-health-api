@@ -1,7 +1,12 @@
 """The single source of App Slugs (ADR 0019): every Slug in existence comes
 from `derive_slug` — the API creation path, the CLI's App resolution, and the
 one-time re-derivation migration all import it, so `slug == derive(name)`
-holds by construction."""
+holds by construction.
+
+It also holds NAME_MAX_LENGTH, the name bound of a Brand, an Org Unit and an
+App, beside SLUG_MAX_LENGTH, so both length bounds have one home. The models
+import them from here, which stays acyclic because this module imports
+nothing from the package (ADR 0024's #173 amendment)."""
 
 import re
 import unicodedata

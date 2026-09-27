@@ -48,7 +48,7 @@ def make_axe_payload(
     does not model, which the stored Raw JSON must still carry — merged first,
     so it can never shadow a named argument."""
     ...
-    return {**(unmodeled or {}), **payload}
+    return {**(unmodeled or {}), **document}
 ```
 
 These don't touch the DB and don't need `async` or `flush()`.

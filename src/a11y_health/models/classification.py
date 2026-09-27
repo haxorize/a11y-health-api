@@ -6,8 +6,8 @@ argument that put the vocabulary here, that record's 2026-08-05 (#131 review)
 amendment for the module's closed charter and the import-time drift guard, and
 `DOMAIN.md` for Classification and Classification Token.
 
-Reading a tag's *shape* — a Category, a WCAG Criterion — is
-`schemas/_tag_parsing.py`'s job.
+Reading a tag's *shape* — a Category, a WCAG Criterion — is the axe rule's
+job, in `schemas/axe_payload.py`.
 """
 
 import logging

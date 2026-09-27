@@ -7,21 +7,21 @@ callers make it: the page-result ingest service, as its first statement, so
 the endpoint hands the raw body straight through and the service owns the
 `invalid_axe_payload` error mode; and the CLI at scan load, so a file the
 server would reject fails before any upload. Below the crossing only the typed
-`AxePayload` exists. Tag-vocabulary parsing is delegated to `_tag_parsing.py`.
+`AxePayload` exists.
 
 See `docs/architecture.md` ("The layers") and
 `docs/adr/0009-axe-payload-pydantic-boundary.md`.
 """
 
+import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.classification import Classification, classifications_in
 from a11y_health.models.enums import Category, Impact
-from a11y_health.schemas._tag_parsing import extract_category, extract_wcag_criteria
 
 
 class AxeNode(BaseModel):
@@ -36,6 +36,34 @@ class AxeNode(BaseModel):
     none: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class _RuleTags(NamedTuple):
+    category: Category
+    wcag_criteria: list[str]
+    classifications: list[Classification]
+
+
+_WCAG_CRITERION = re.compile(r"^wcag(\d)(\d)(\d+)$")
+_CATEGORY_TAG = re.compile(r"^cat\.(.+)$")
+_CATEGORIES = {c.value: c for c in Category}
+_WEB_ADDRESS = re.compile(r"^https?://", re.IGNORECASE)
+
+
+def _read_rule_tags(tags: list[str]) -> _RuleTags:
+    """A rule's Category, WCAG Criteria, and Classifications, all read from its
+    tags. Unknown WCAG-shaped tags are dropped, since the axe tag set is open;
+    the category tag is the exception, and a rule with none, or with one that
+    is not a known Category, raises `ValueError`, which `parse_axe_payload`
+    reports as the 400 `invalid_axe_payload`."""
+    categories = (m.group(1) for tag in tags if (m := _CATEGORY_TAG.match(tag)))
+    value = next(categories, None)
+    if value is None:
+        raise ValueError("No category tag found")
+    if value not in _CATEGORIES:
+        raise ValueError(f"Unknown category: {value}")
+    criteria = [".".join(m.groups()) for tag in tags if (m := _WCAG_CRITERION.match(tag))]
+    return _RuleTags(_CATEGORIES[value], criteria, classifications_in(tags))
+
+
 class AxeRule(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -46,24 +74,33 @@ class AxeRule(BaseModel):
     help_url: str = Field(alias="helpUrl")
     tags: list[str]
     nodes: list[AxeNode]
-    category: Category
-    wcag_criteria: list[str]
-    classifications: list[Classification]
+    _read: _RuleTags = PrivateAttr()
 
-    @model_validator(mode="before")
+    @field_validator("help_url")
     @classmethod
-    def classify_tags(cls, data: Any) -> Any:
-        # Unknown WCAG-shaped tags are silently dropped; the axe tag vocabulary
-        # is open.
-        if isinstance(data, dict):
-            tags = data.get("tags", [])
-            return {
-                **data,
-                "category": extract_category(tags),
-                "wcag_criteria": extract_wcag_criteria(tags),
-                "classifications": classifications_in(tags),
-            }
-        return data
+    def require_web_address(cls, value: str) -> str:
+        # Stored and served verbatim, so a `javascript:` link accepted here
+        # reaches every client that renders one. Empty is no link at all.
+        if value and not _WEB_ADDRESS.match(value):
+            raise ValueError("must be an http or https address")
+        return value
+
+    @model_validator(mode="after")
+    def read_tags(self) -> Self:
+        self._read = _read_rule_tags(self.tags)
+        return self
+
+    @property
+    def category(self) -> Category:
+        return self._read.category
+
+    @property
+    def wcag_criteria(self) -> list[str]:
+        return self._read.wcag_criteria
+
+    @property
+    def classifications(self) -> list[Classification]:
+        return self._read.classifications
 
 
 class AxeFindings(BaseModel):

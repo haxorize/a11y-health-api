@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from a11y_health.core.exceptions import InvalidAxePayloadError
 from a11y_health.models.classification import Classification
+from a11y_health.models.enums import Category
 from a11y_health.schemas.axe_payload import AxePayload, parse_axe_payload
 from tests.factories import make_axe_payload, make_violation
 
@@ -59,9 +60,7 @@ class TestAxePayloadBoundary:
         raw["findings"]["incomplete"] = 42
         assert _only_error_loc(raw) == ("findings", "incomplete")
 
-    # The required-field cases start from a rule with valid tags, so
-    # the category derivation passes and the missing field is what fires. Each
-    # reds when its field is made optional.
+    # Each required-field case reds when its field is made optional.
 
     def test_rule_missing_required_fields_rejected(self) -> None:
         violation = make_violation("color-contrast", "serious")
@@ -199,6 +198,34 @@ class TestAxeFindingsPassesInapplicable:
 
 
 class TestAxeRuleSemanticValidation:
+    @pytest.mark.parametrize("tags", [None, 5, "cat.color", [1, "cat.color"], ...], ids=repr)
+    def test_tags_that_are_not_a_list_of_strings_are_named_as_the_fault(self, tags: object) -> None:
+        # `...` stands for the key being absent. Reds when the tags are read
+        # before they are validated: the reading raises a bare `TypeError`, or
+        # blames a missing category tag, instead of naming `tags`.
+        violation = make_violation("color-contrast", "serious")
+        if tags is ...:
+            del violation["tags"]
+        else:
+            violation["tags"] = tags
+        with pytest.raises(InvalidAxePayloadError) as exc_info:
+            parse_axe_payload(make_axe_payload(violations=[violation]))
+        assert exc_info.value.reason.startswith("findings → violations → 0 → tags")
+
+    @pytest.mark.parametrize("help_url", ["javascript:alert(1)", "data:text/html,x", "/rules/color", "ftp://x.test/r"])
+    def test_a_help_link_that_is_not_a_web_address_is_refused(self, help_url: str) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["helpUrl"] = help_url
+        with pytest.raises(InvalidAxePayloadError, match=r"→ helpUrl: must be an http or https address$"):
+            parse_axe_payload(make_axe_payload(violations=[violation]))
+
+    @pytest.mark.parametrize("help_url", ["https://dequeuniversity.com/rules/axe/4.8/x", "HTTP://x.test/r", ""])
+    def test_a_web_address_or_no_link_is_accepted(self, help_url: str) -> None:
+        violation = make_violation("color-contrast", "serious")
+        violation["helpUrl"] = help_url
+        [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
+        assert rule.help_url == help_url
+
     def test_reject_rule_missing_category_tag(self) -> None:
         violation = make_violation("color-contrast", "serious")
         violation["tags"] = ["wcag2a", "best-practice"]
@@ -220,6 +247,34 @@ class TestAxeRuleSemanticValidation:
         assert "findings" in err["loc"]
         assert "violations" in err["loc"]
         assert "Unknown category: bogus" in err["msg"]
+
+    @pytest.mark.parametrize(
+        ("tags", "expected"),
+        [
+            (["wcag111"], ["1.1.1"]),
+            (["wcag1413"], ["1.4.13"]),
+            (["wcag111", "wcag143"], ["1.1.1", "1.4.3"]),
+            (["wcag2a", "wcag143"], ["1.4.3"]),
+            (["wcag2a", "best-practice"], []),
+        ],
+    )
+    def test_wcag_criteria_are_read_from_criterion_tags_only(self, tags: list[str], expected: list[str]) -> None:
+        violation = make_violation("color-contrast", "serious", tags=["cat.color", *tags])
+        [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
+        assert rule.wcag_criteria == expected
+
+    @pytest.mark.parametrize(
+        ("tags", "expected"),
+        [
+            (["cat.text-alternatives"], Category.TEXT_ALTERNATIVES),
+            (["wcag2a", "cat.structure"], Category.STRUCTURE),
+            (["cat.color", "cat.forms"], Category.COLOR),
+        ],
+    )
+    def test_the_first_category_tag_names_the_category(self, tags: list[str], expected: Category) -> None:
+        violation = make_violation("color-contrast", "serious", tags=tags)
+        [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
+        assert rule.category == expected
 
     def test_classified_fields_attached_to_rule(self) -> None:
         violation = make_violation("color-contrast", "serious")
@@ -249,10 +304,6 @@ class TestAxePayloadValid:
 
 
 class TestAxePayloadIdentityFields:
-    # `name` and `endTime` are optional at the boundary: absent is fine, present
-    # is validated. Both readers (the CLI at load, the server at upload) get the
-    # same verdict from the same crossing.
-
     def test_name_present_is_carried(self) -> None:
         payload = parse_axe_payload(make_axe_payload(name="Humana Home"))
         assert payload.name == "Humana Home"
@@ -294,8 +345,6 @@ class TestAxePayloadIdentityFields:
             parse_axe_payload(make_axe_payload(end_time=end_time))
 
     def test_snake_case_end_time_is_an_unmodeled_key(self) -> None:
-        # Only the axe spelling is read; a snake_case key can neither supply
-        # the observation time nor fail the load.
         raw = make_axe_payload(unmodeled={"end_time": "garbage"})
         assert parse_axe_payload(raw).end_time is None
 

@@ -17,7 +17,7 @@ The server is up when `curl -s localhost:8055/api/v1/health` returns `{"status":
 
 ## Drive it
 
-The onboarding CLI is the drive step. It issues the same calls a hand-written `httpx` script would, so reach for a script only where the change is in a surface the CLI never touches. When you do write one, build the Axe Payload with `make_axe_payload`/`make_violation` from `tests/factories.py` rather than by hand: every violation needs a `cat.*` tag, and one without it is refused at the Axe Boundary with a 400 (`schemas/_tag_parsing.py`, `No category tag found`). Read flags from `uv run a11y <command> --help`; the sequence below is what a fresh scratch database needs, in order:
+The onboarding CLI is the drive step. It issues the same calls a hand-written `httpx` script would, so reach for a script only where the change is in a surface the CLI never touches. When you do write one, build the Axe Payload with `make_axe_payload`/`make_violation` from `tests/factories.py` rather than by hand: every violation needs a `cat.*` tag, and one without it is refused at the Axe Boundary with a 400 (`schemas/axe_payload.py`, `No category tag found`). Read flags from `uv run a11y <command> --help`; the sequence below is what a fresh scratch database needs, in order:
 
 ```bash
 uv run a11y org-units list --base-url http://localhost:8055

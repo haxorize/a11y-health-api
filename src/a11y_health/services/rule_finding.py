@@ -9,7 +9,7 @@ from sqlalchemy.orm import undefer
 from sqlalchemy.types import Text, TypeEngine
 
 from a11y_health.core import existence
-from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotalledCursorPage, paginate
+from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, TotaledCursorPage, paginate
 from a11y_health.models.classification import classification_options
 from a11y_health.models.node_finding import NodeFinding
 from a11y_health.models.page_result import PageResult
@@ -56,7 +56,7 @@ async def list_findings(
     filters: FindingFilters = _NO_FILTERS,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
-) -> TotalledCursorPage[RuleFindingRead]:
+) -> TotaledCursorPage[RuleFindingRead]:
     await existence.get_by_pk(session, ScanRun, scan_run_id)
 
     # Correlated subquery, not outerjoin + GROUP BY: the count then runs only

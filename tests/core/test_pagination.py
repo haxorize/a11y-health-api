@@ -16,8 +16,8 @@ from a11y_health.core.pagination import (
     InvalidCursorError,
     Page,
     PaginationParams,
-    TotalledCursorPage,
-    TotalledPage,
+    TotaledCursorPage,
+    TotaledPage,
     encode_cursor,
     paginate,
 )
@@ -202,7 +202,7 @@ async def test_paginate_with_total_counts_beyond_the_page(db_session: AsyncSessi
 
     page = await paginate(db_session, select(Brand), keyset=[Brand.id], cursor=None, limit=2, with_total=True)
 
-    assert isinstance(page, TotalledCursorPage)
+    assert isinstance(page, TotaledCursorPage)
     assert len(page.items) == 2
     assert page.next_cursor is not None
     assert page.total == 3
@@ -325,20 +325,20 @@ def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
         )
 
 
-# "Totalled" is a named contract mode like invalid_cursor: an operation that
+# "Totaled" is a named contract mode like invalid_cursor: an operation that
 # opts into the extended envelope must publish `total` as a required response
 # property, so a client can rely on it without probing.
-def test_every_totalled_operation_publishes_a_required_total() -> None:
+def test_every_totaled_operation_publishes_a_required_total() -> None:
     spec = app.openapi()
-    totalled = [op for op in _paginated_operations() if issubclass(op.response_model, TotalledPage)]
-    assert totalled, "totalled-operation sweep found nothing — detection is broken"
-    for op in totalled:
+    totaled = [op for op in _paginated_operations() if issubclass(op.response_model, TotaledPage)]
+    assert totaled, "totaled-operation sweep found nothing — detection is broken"
+    for op in totaled:
         for method in op.methods:
             operation = _spec_operation(spec, op, method)
             ref = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
             schema = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
             assert "total" in schema.get("required", []), (
-                f"{method} {op.path_format} serves the TotalledPage envelope but its response "
+                f"{method} {op.path_format} serves the TotaledPage envelope but its response "
                 f"schema does not require `total`"
             )
 
@@ -405,29 +405,29 @@ class TestPageFromCursorPage:
 
         assert page.next_cursor is None
 
-    def test_rejects_a_totalled_page(self) -> None:
-        # A totalled page through the plain converter would pay the count query
+    def test_rejects_a_totaled_page(self) -> None:
+        # A totaled page through the plain converter would pay the count query
         # and silently drop `total` from the response.
-        internal = TotalledCursorPage(items=[1], next_cursor=None, total=1)
+        internal = TotaledCursorPage(items=[1], next_cursor=None, total=1)
 
-        with pytest.raises(TypeError, match="from_totalled_cursor_page"):
+        with pytest.raises(TypeError, match="from_totaled_cursor_page"):
             Page.from_cursor_page(internal)
 
 
-class TestTotalledPageFromTotalledCursorPage:
+class TestTotaledPageFromTotaledCursorPage:
     def test_preserves_items_cursor_and_total(self) -> None:
-        internal = TotalledCursorPage(items=["already", "shaped"], next_cursor="cursor-xyz", total=7)
+        internal = TotaledCursorPage(items=["already", "shaped"], next_cursor="cursor-xyz", total=7)
 
-        page = TotalledPage.from_totalled_cursor_page(internal)
+        page = TotaledPage.from_totaled_cursor_page(internal)
 
         assert page.items == ["already", "shaped"]
         assert page.next_cursor == "cursor-xyz"
         assert page.total == 7
 
     def test_empty_result_yields_no_items_and_zero_total(self) -> None:
-        internal: TotalledCursorPage[int] = TotalledCursorPage(items=[], next_cursor=None, total=0)
+        internal: TotaledCursorPage[int] = TotaledCursorPage(items=[], next_cursor=None, total=0)
 
-        page = TotalledPage.from_totalled_cursor_page(internal)
+        page = TotaledPage.from_totaled_cursor_page(internal)
 
         assert page.items == []
         assert page.next_cursor is None

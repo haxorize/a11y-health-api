@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
-from a11y_health.core.pagination import PageParams, TotalledPage
+from a11y_health.core.pagination import PageParams, TotaledPage
 from a11y_health.schemas.rule_finding import (
     FindingFilterOptionsRead,
     FindingFilterParams,
@@ -22,7 +22,7 @@ async def list_findings(
     # in the published parameter order.
     filters: FindingFilterParams,
     pagination: PageParams,
-) -> TotalledPage[RuleFindingRead]:
+) -> TotaledPage[RuleFindingRead]:
     page = await rule_finding_service.list_findings(
         db,
         scan_run_id,
@@ -30,7 +30,7 @@ async def list_findings(
         cursor=pagination.cursor,
         limit=pagination.limit,
     )
-    return TotalledPage.from_totalled_cursor_page(page)
+    return TotaledPage.from_totaled_cursor_page(page)
 
 
 # Registered before /{finding_id} so the static segment isn't parsed as a

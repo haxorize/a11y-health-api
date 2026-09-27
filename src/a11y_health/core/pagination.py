@@ -95,14 +95,14 @@ class CursorPage[T]:
 
 
 @dataclass(frozen=True)
-class TotalledCursorPage[T](CursorPage[T]):
+class TotaledCursorPage[T](CursorPage[T]):
     total: int
 
 
 # The pagination response envelope: one page of a listing as served, not the
 # domain's Page Result or Page Health. `CursorPage` is its service-layer twin,
 # which `from_cursor_page` converts into this; a page carrying a total goes
-# through `TotalledPage` instead.
+# through `TotaledPage` instead.
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
@@ -118,10 +118,10 @@ class Page[T](BaseModel):
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> Page[R]: ...
     @classmethod
     def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> Page[I] | Page[R]:
-        if isinstance(page, TotalledCursorPage):
-            # A totalled page reaching the plain converter means the count query
+        if isinstance(page, TotaledCursorPage):
+            # A totaled page reaching the plain converter means the count query
             # was paid and its result silently dropped — fail loud instead.
-            raise TypeError("page carries a total — serve it via TotalledPage.from_totalled_cursor_page")
+            raise TypeError("page carries a total — serve it via TotaledPage.from_totaled_cursor_page")
         if item is None:
             return Page(items=page.items, next_cursor=page.next_cursor)
         return Page(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
@@ -130,24 +130,22 @@ class Page[T](BaseModel):
 # Per-operation extension, not a field on Page: only operations whose consumers
 # need an exact filtered count pay the count query, and every other envelope
 # keeps its two-field shape.
-class TotalledPage[T](Page[T]):
+class TotaledPage[T](Page[T]):
     total: int
 
     @overload
     @classmethod
-    def from_totalled_cursor_page[I](cls, page: TotalledCursorPage[I]) -> TotalledPage[I]: ...
+    def from_totaled_cursor_page[I](cls, page: TotaledCursorPage[I]) -> TotaledPage[I]: ...
     @overload
     @classmethod
-    def from_totalled_cursor_page[I, R](
-        cls, page: TotalledCursorPage[I], item: Callable[[I], R]
-    ) -> TotalledPage[R]: ...
+    def from_totaled_cursor_page[I, R](cls, page: TotaledCursorPage[I], item: Callable[[I], R]) -> TotaledPage[R]: ...
     @classmethod
-    def from_totalled_cursor_page[I, R](
-        cls, page: TotalledCursorPage[I], item: Callable[[I], R] | None = None
-    ) -> TotalledPage[I] | TotalledPage[R]:
+    def from_totaled_cursor_page[I, R](
+        cls, page: TotaledCursorPage[I], item: Callable[[I], R] | None = None
+    ) -> TotaledPage[I] | TotaledPage[R]:
         if item is None:
-            return TotalledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
-        return TotalledPage(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)
+            return TotaledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
+        return TotaledPage(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)
 
 
 def encode_cursor(*values: int | str | datetime) -> str:
@@ -218,7 +216,7 @@ async def paginate[T](
     descending: bool = ...,
     into: Callable[[Row], T] | None = ...,
     with_total: Literal[True],
-) -> TotalledCursorPage[T]: ...
+) -> TotaledCursorPage[T]: ...
 async def paginate[T](
     session: AsyncSession,
     stmt: Select,
@@ -236,7 +234,7 @@ async def paginate[T](
     walks newest→oldest; cursor encoding stays direction-agnostic.
 
     `with_total=True` also serves the full filtered count as a
-    `TotalledCursorPage` — counted from the same statement the page runs over,
+    `TotaledCursorPage` — counted from the same statement the page runs over,
     so the two can never disagree on which rows are in scope. The count is a
     second query, so under READ COMMITTED a commit landing between the two can
     make `total` lag the page by the concurrent writes; a refetch corrects it.
@@ -280,4 +278,4 @@ async def paginate[T](
         # the filtered row scan only, not the page's SELECT-list work.
         count_stmt = select(func.count()).select_from(unpaged.order_by(None).subquery())
         total = (await session.execute(count_stmt)).scalar_one()
-    return TotalledCursorPage(items=items, next_cursor=next_cursor, total=total)
+    return TotaledCursorPage(items=items, next_cursor=next_cursor, total=total)

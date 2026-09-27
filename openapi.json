@@ -1072,7 +1072,7 @@
         "title": "SortOrder",
         "type": "string"
       },
-      "TotalledPage_RuleFindingRead_": {
+      "TotaledPage_RuleFindingRead_": {
         "properties": {
           "items": {
             "items": {
@@ -1101,10 +1101,10 @@
           "items",
           "total"
         ],
-        "title": "TotalledPage[RuleFindingRead]",
+        "title": "TotaledPage[RuleFindingRead]",
         "type": "object"
       },
-      "TotalledPage_ScanRunRead_": {
+      "TotaledPage_ScanRunRead_": {
         "properties": {
           "items": {
             "items": {
@@ -1133,7 +1133,7 @@
           "items",
           "total"
         ],
-        "title": "TotalledPage[ScanRunRead]",
+        "title": "TotaledPage[ScanRunRead]",
         "type": "object"
       },
       "ValidationError": {
@@ -1663,7 +1663,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TotalledPage_ScanRunRead_"
+                  "$ref": "#/components/schemas/TotaledPage_ScanRunRead_"
                 }
               }
             },
@@ -2909,7 +2909,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TotalledPage_RuleFindingRead_"
+                  "$ref": "#/components/schemas/TotaledPage_RuleFindingRead_"
                 }
               }
             },

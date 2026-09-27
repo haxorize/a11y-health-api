@@ -526,7 +526,7 @@ BRITISH_WORDS = frozenset(
     utilisation minimisation maximisation summarisation paralysed paralyses paralysing modelled signalling
     fulfils enrolments instalments judgemental draughts sceptics storeys enquires enquired enquiries practises
     practising tokenisers behavioural behaviourally colourful colouring manoeuvre manoeuvres manoeuvring mould
-    moulds moulded counselling counsellor counsellors centred centring licenced
+    moulds moulded counselling counsellor counsellors centred centring licenced totalled totalling
     """.split()  # noqa: SIM905 — upstream's order and shape, so a drifted copy diffs cleanly
 )
 

@@ -58,9 +58,16 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
 
 
 async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App:
-    app = await get_app(session, app_id)
-    old_org_unit_id = app.org_unit_id
     new_org_unit_id = data.org_unit_id
+    stmt = select(App).where(App.id == app_id)
+    if new_org_unit_id is not None:
+        # The lock the UPDATE takes anyway, taken at the load, so a concurrent
+        # move or delete is waited out and the old unit is read after it (ADR
+        # 0048). populate_existing, so an App this session loaded earlier
+        # does not keep the unit it read then.
+        stmt = stmt.with_for_update(key_share=True).execution_options(populate_existing=True)
+    app = await existence.get_by_query(session, App, stmt, app_id)
+    old_org_unit_id = app.org_unit_id
     reassigning = new_org_unit_id is not None and new_org_unit_id != old_org_unit_id
 
     if new_org_unit_id is not None:

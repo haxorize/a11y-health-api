@@ -84,8 +84,12 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
         # write all read the tree the previous reparent committed.
         await _acquire_reparent_lock(session)
     # populate_existing, because a unit this session loaded before the lock
-    # would otherwise keep the parent it read then.
+    # would otherwise keep the parent it read then. The row lock is the one
+    # the UPDATE takes anyway, taken at the load so a concurrent delete is
+    # waited out and read as not found (ADR 0048).
     fresh = select(OrgUnit).where(OrgUnit.id == org_unit_id).execution_options(populate_existing=True)
+    if updates:
+        fresh = fresh.with_for_update(key_share=True)
     org_unit = await existence.get_by_query(session, OrgUnit, fresh, org_unit_id)
     old_parent_id = org_unit.parent_id
     parent_reference = {}

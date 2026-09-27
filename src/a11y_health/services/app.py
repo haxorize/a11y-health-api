@@ -43,7 +43,7 @@ async def get_app(session: AsyncSession, app_id: int) -> App:
 
 async def create_app(session: AsyncSession, data: AppCreate) -> App:
     await existence.get_by_pk(session, Brand, data.brand_id)
-    await existence.get_by_pk(session, OrgUnit, data.org_unit_id)
+    org_unit_reference = await existence.require_reference(session, OrgUnit, data.org_unit_id, FK_APP_ORG_UNIT_ID)
     slug = derive_slug(data.name)
     app = App(**data.model_dump(), slug=slug)
     # The Org Unit can be deleted after its check above, and its foreign key
@@ -51,10 +51,7 @@ async def create_app(session: AsyncSession, data: AppCreate) -> App:
     # operation deletes a Brand.
     async with integrity.guard_constraints(
         session,
-        {
-            UQ_APP_SLUG: DuplicateSlugError(slug),
-            FK_APP_ORG_UNIT_ID: existence.not_found(OrgUnit, data.org_unit_id),
-        },
+        {UQ_APP_SLUG: DuplicateSlugError(slug), **org_unit_reference},
     ):
         session.add(app)
     return app
@@ -67,10 +64,8 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
     reassigning = new_org_unit_id is not None and new_org_unit_id != old_org_unit_id
 
     if new_org_unit_id is not None:
-        await existence.get_by_pk(session, OrgUnit, new_org_unit_id)
-        async with integrity.guard_constraints(
-            session, {FK_APP_ORG_UNIT_ID: existence.not_found(OrgUnit, new_org_unit_id)}
-        ):
+        org_unit_reference = await existence.require_reference(session, OrgUnit, new_org_unit_id, FK_APP_ORG_UNIT_ID)
+        async with integrity.guard_constraints(session, org_unit_reference):
             app.org_unit_id = new_org_unit_id
 
     await session.refresh(app)

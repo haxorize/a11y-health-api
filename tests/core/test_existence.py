@@ -83,26 +83,50 @@ class TestEntityLabels:
             await existence.get_by_query(db_session, PageResult, stmt, row.id)  # ty: ignore[invalid-argument-type]
 
 
-def _constructs_or_raises_not_found(tree: ast.AST) -> bool:
-    aliases = {"NotFoundError"} | {
-        alias.asname
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-        if alias.name == "NotFoundError" and alias.asname
-    }
+# Outside the guard only these are named: the private builder, or a public
+# one added beside them, would let a module build the error itself. Named off
+# the functions, so a rename moves the pin rather than leaving a stale literal.
+_GUARD_ENTRY_POINTS = frozenset(
+    entry.__name__ for entry in (existence.get_by_pk, existence.get_by_query, existence.require_reference)
+)
+_GUARD_LEAF = existence.__name__.rpartition(".")[2]
 
-    def names_it(expr: ast.expr | None) -> bool:
+
+def _builds_not_found(tree: ast.AST) -> bool:
+    error_names = {"NotFoundError"}
+    guard_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            from_guard = node.module is not None and node.module.rpartition(".")[2] == _GUARD_LEAF
+            for alias in node.names:
+                if alias.name == "NotFoundError" and alias.asname:
+                    error_names.add(alias.asname)
+                elif alias.name == _GUARD_LEAF:
+                    guard_names.add(alias.asname or alias.name)
+                elif from_guard and alias.name not in _GUARD_ENTRY_POINTS:
+                    return True
+
+    def names_the_error(expr: ast.expr | None) -> bool:
         if isinstance(expr, ast.Call):
             expr = expr.func
         if isinstance(expr, ast.Name):
-            return expr.id in aliases
+            return expr.id in error_names
         return isinstance(expr, ast.Attribute) and expr.attr == "NotFoundError"
 
+    def names_a_guard_builder(node: ast.AST) -> bool:
+        # `import a11y_health.core.existence` reaches it as a dotted chain.
+        if not isinstance(node, ast.Attribute) or node.attr in _GUARD_ENTRY_POINTS:
+            return False
+        owner = node.value
+        return (isinstance(owner, ast.Name) and owner.id in guard_names) or (
+            isinstance(owner, ast.Attribute) and owner.attr == _GUARD_LEAF
+        )
+
     return any(
-        names_it(node if isinstance(node, ast.Call) else node.exc)
+        names_a_guard_builder(node)
+        or (isinstance(node, ast.Call) and names_the_error(node))
+        or (isinstance(node, ast.Raise) and names_the_error(node.exc))
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call | ast.Raise)
     )
 
 
@@ -127,11 +151,12 @@ def _function_local_import_lines(tree: ast.AST) -> list[int]:
 
 
 class TestTwoTierCallRule:
-    def test_not_found_raises_only_from_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
+    def test_not_found_is_built_only_by_the_guard(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
         # Constructing the error is what fixes its message text, so the pin
-        # covers construction as well as raise sites — binding one to a
-        # variable (or aliasing the import) before raising must not escape it.
-        offenders = [module.name for module in source_edges if _constructs_or_raises_not_found(parsed(module))]
+        # covers construction, and any name reaching the guard's private
+        # builder, not only raise sites. A write takes its mapping entry from
+        # `require_reference` and the Integrity Guard raises that value.
+        offenders = [module.name for module in source_edges if _builds_not_found(parsed(module))]
         assert offenders == [existence.__name__]
 
     def test_services_have_no_function_local_imports(self, source_edges: Mapping[Module, frozenset[str]]) -> None:
@@ -156,25 +181,55 @@ class TestTwoTierCallRule:
         assert offenders == []
 
 
+_BUILDER = existence._not_found.__name__
+
+
 class TestNotFoundDetection:
-    # A second raise site fails the walk above only if the detector sees it in
-    # every spelling a service could write it in.
+    # A second build site fails the walk above only if the detector sees it in
+    # every spelling a service could write it in. The `not_found` cases are
+    # the public builder the guard once had, and a public builder added again.
     @pytest.mark.parametrize(
         "source",
         [
             "from a11y_health.core.exceptions import NotFoundError\nraise NotFoundError(App, 1)\n",
             "from a11y_health.core import exceptions\nraise exceptions.NotFoundError(App, 1)\n",
             "from a11y_health.core.exceptions import NotFoundError as Missing\nerror = Missing(App, 1)\nraise error\n",
+            "from a11y_health.core import existence\nraise existence.not_found(App, 1)\n",
+            "from a11y_health.core.existence import not_found\nraise not_found(App, 1)\n",
+            "from a11y_health.core import existence\ne = existence.not_found(App, 1)\n",
+            f"from a11y_health.core import existence\nraise existence.{_BUILDER}(App, 1)\n",
+            f"from ..core.existence import {_BUILDER} as build\nraise build(App, 1)\n",
+            f"from a11y_health.core import existence as guard\ne = guard.{_BUILDER}(App, 1)\n",
+            f"import a11y_health.core.existence\ne = a11y_health.core.existence.{_BUILDER}(App, 1)\n",
         ],
-        ids=["direct", "attribute", "aliased-and-bound"],
+        ids=[
+            "direct",
+            "attribute",
+            "aliased-and-bound",
+            "public-builder-raised",
+            "public-builder-imported",
+            "public-builder-bound",
+            "private-builder",
+            "private-builder-relative-import",
+            "private-builder-aliased-module",
+            "private-builder-dotted",
+        ],
     )
     def test_a_second_site_is_detected(self, source: str) -> None:
-        assert _constructs_or_raises_not_found(ast.parse(source))
+        assert _builds_not_found(ast.parse(source))
 
     def test_a_module_that_only_catches_it_is_not_a_site(self) -> None:
         source = "try:\n    pass\nexcept NotFoundError:\n    pass\n"
 
-        assert not _constructs_or_raises_not_found(ast.parse(source))
+        assert not _builds_not_found(ast.parse(source))
+
+    def test_the_entry_points_and_a_mapped_raise_are_not_sites(self) -> None:
+        # The Integrity Guard's raise of a mapped value is how a write's
+        # not-found mode reaches the caller, so it has to stay unflagged.
+        calls = "".join(f"existence.{name}(session, App, 1)\n" for name in sorted(_GUARD_ENTRY_POINTS))
+        source = f"from a11y_health.core import existence\n{calls}raise constraint_errors[violated]\n"
+
+        assert not _builds_not_found(ast.parse(source))
 
 
 class TestFunctionLocalImportDetection:

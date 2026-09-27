@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 
 from sqlalchemy import func, literal, literal_column, not_, select
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from a11y_health.core import existence, integrity
-from a11y_health.core.exceptions import CircularReferenceError, DuplicateRootError, HasDependentsError
+from a11y_health.core.exceptions import CircularReferenceError, DuplicateRootError, HasDependentsError, NotFoundError
 from a11y_health.models.app import FK_APP_ORG_UNIT_ID
 from a11y_health.models.org_unit import FK_ORG_UNIT_PARENT_ID, UQ_ORG_UNIT_SINGLE_ROOT, OrgUnit
 from a11y_health.models.score_snapshot import FK_SCORE_SNAPSHOT_ORG_UNIT_ID
@@ -33,27 +33,27 @@ async def _check_no_other_root(session: AsyncSession, promoted_id: int | None = 
         raise DuplicateRootError(OrgUnit, existing_root_id)
 
 
-def _write_race_guard(session: AsyncSession, parent_id: int | None) -> AbstractAsyncContextManager[None]:
+def _write_race_guard(
+    session: AsyncSession, parent_reference: Mapping[str, NotFoundError]
+) -> AbstractAsyncContextManager[None]:
     """Both violations are only reachable through a concurrent transaction: the
     single-root one when it won the root race after `_check_no_other_root`
-    passed, the parent reference when it deleted the parent after its
-    existence check (ADR 0048)."""
+    passed, the parent reference when it deleted the parent after
+    `require_reference` checked it (ADR 0048). A write setting no parent
+    passes an empty `parent_reference`, since a null key cannot violate it."""
     return integrity.guard_constraints(
-        session,
-        {
-            UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit),
-            FK_ORG_UNIT_PARENT_ID: existence.not_found(OrgUnit, parent_id),
-        },
+        session, {UQ_ORG_UNIT_SINGLE_ROOT: DuplicateRootError(OrgUnit), **parent_reference}
     )
 
 
 async def create_org_unit(session: AsyncSession, data: OrgUnitCreate) -> OrgUnit:
+    parent_reference = {}
     if data.parent_id is not None:
-        await get_org_unit(session, data.parent_id)
+        parent_reference = await existence.require_reference(session, OrgUnit, data.parent_id, FK_ORG_UNIT_PARENT_ID)
     else:
         await _check_no_other_root(session)
     org_unit = OrgUnit(**data.model_dump())
-    async with _write_race_guard(session, data.parent_id):
+    async with _write_race_guard(session, parent_reference):
         session.add(org_unit)
     return org_unit
 
@@ -70,8 +70,8 @@ async def get_org_unit(session: AsyncSession, org_unit_id: int) -> OrgUnit:
     return await existence.get_by_pk(session, OrgUnit, org_unit_id)
 
 
-# One key for the whole tree: every ancestor chain ends at the Root Org Unit,
-# so any two reparents can close a cycle between them (ADR 0047).
+# One key for the whole tree: a narrower key would come from reading the tree,
+# and that read is what races (ADR 0047).
 async def _acquire_reparent_lock(session: AsyncSession) -> None:
     await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(_REPARENT_LOCK_KEY, 0))))
 
@@ -83,19 +83,23 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
         # Ahead of the load, so the old parent, the ancestry check and the
         # write all read the tree the previous reparent committed.
         await _acquire_reparent_lock(session)
-    org_unit = await get_org_unit(session, org_unit_id)
+    # populate_existing, because a unit this session loaded before the lock
+    # would otherwise keep the parent it read then.
+    fresh = select(OrgUnit).where(OrgUnit.id == org_unit_id).execution_options(populate_existing=True)
+    org_unit = await existence.get_by_query(session, OrgUnit, fresh, org_unit_id)
     old_parent_id = org_unit.parent_id
+    parent_reference = {}
     if is_reparent:
         new_parent_id = updates["parent_id"]
         if new_parent_id is not None:
-            await get_org_unit(session, new_parent_id)
+            parent_reference = await existence.require_reference(session, OrgUnit, new_parent_id, FK_ORG_UNIT_PARENT_ID)
             # The subtree is inclusive of the unit itself, so self-parenting
             # and descendant-parenting fail as one membership check.
             if new_parent_id in await get_descendant_ids(session, [org_unit_id]):
                 raise CircularReferenceError(OrgUnit, org_unit_id, new_parent_id)
         else:
             await _check_no_other_root(session, promoted_id=org_unit_id)
-    async with _write_race_guard(session, updates.get("parent_id")):
+    async with _write_race_guard(session, parent_reference):
         for field, value in updates.items():
             setattr(org_unit, field, value)
     await session.refresh(org_unit)

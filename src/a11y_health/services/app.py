@@ -77,7 +77,23 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
 
 
 async def delete_app(session: AsyncSession, app_id: int) -> None:
-    app = await get_app(session, app_id)
+    # KEY SHARE is what the rollup's Org Unit Score Snapshot insert takes on
+    # the unit later; taking it before the delete puts the Org Unit ahead of
+    # the App, the order Org Unit deletion locks them in (ADR 0048).
+    # populate_existing, so an App this session loaded earlier names the unit
+    # locked here, which is the one the rollup reads.
+    locked = (
+        select(App)
+        .join(OrgUnit, OrgUnit.id == App.org_unit_id)
+        .where(App.id == app_id)
+        .with_for_update(key_share=True, of=OrgUnit)
+        .execution_options(populate_existing=True)
+    )
+    while (app := (await session.execute(locked)).scalar_one_or_none()) is None:
+        # A miss while the App exists means the unit it was in was deleted
+        # during the wait, after the App moved out; the next pass locks the
+        # unit it is in now.
+        await existence.get_by_query(session, App, select(App).where(App.id == app_id), app_id)
     await session.delete(app)
     await session.flush()
     await scoring_orchestration.on_app_latest_snapshot_changed(session, app)

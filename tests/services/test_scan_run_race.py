@@ -2,25 +2,34 @@
 
 Each test leaves one session's write to a Scan Run uncommitted, runs a
 second session's write against the same run, and records whether the second
-was waiting on a lock when the first committed. Real commits on separate
-connections (`committed_session_factory`) put the two in separate
-transactions that contend on real locks, each reading only what the other has
-committed.
+was waiting on a lock when the first committed. The first App deletion race
+instead pauses completion right after its Scan Run lock, so the deletion runs
+into it mid-operation. Real commits on separate connections
+(`committed_session_factory`) put the two in separate transactions that
+contend on real locks, each reading only what the other has committed.
 """
+
+import asyncio
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
+from a11y_health.models.app import App
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.models.page_result import PageResult
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.scan_run import ScanRunStatusUpdate
+from a11y_health.services import app as app_service
 from a11y_health.services import page_result as page_result_service
 from a11y_health.services import scan_run as scan_run_service
 from tests.factories import (
+    RACE_DEADLINE,
     SessionFactory,
+    backend_pid,
+    cancel_tasks,
+    finished_or_blocked,
     make_axe_payload,
     make_scan_run_with_parents,
     race_behind_open_transaction,
@@ -126,6 +135,75 @@ async def test_a_page_added_mid_delete_waits_and_is_not_found(committed_session_
         )
 
     waited, outcome = await race_behind_open_transaction(committed_session_factory, delete, add_page)
+
+    assert waited
+    assert isinstance(outcome, NotFoundError)
+    assert str(outcome) == f"Scan run {scan_run_id} not found"
+
+
+# Reds with a 40P01 on completion's App Score Snapshot insert when completion
+# locks the Scan Run before the App: the deletion holds the App row and waits
+# on the run in its cascade, and the insert's key check waits on the App.
+async def test_an_app_deleted_mid_completion_waits_for_it(committed_session_factory: SessionFactory, mocker) -> None:
+    setup, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
+    app_id = (await scan_run_service.get_scan_run(setup, scan_run_id)).app_id
+    await setup.rollback()
+    completing = committed_session_factory()
+    deleting = committed_session_factory()
+    poll = committed_session_factory()
+
+    run_locked = asyncio.Event()
+    resume = asyncio.Event()
+    real_lock_scan_run = scan_run_service.lock_scan_run
+
+    async def pause_after_lock(session: AsyncSession, locked_id: int, *, shared: bool) -> ScanRun:
+        scan_run = await real_lock_scan_run(session, locked_id, shared=shared)
+        run_locked.set()
+        await resume.wait()
+        return scan_run
+
+    mocker.patch.object(scan_run_service, "lock_scan_run", pause_after_lock)
+
+    async def complete() -> None:
+        await scan_run_service.update_scan_run_status(completing, scan_run_id, _COMPLETE)
+        await completing.commit()
+
+    async def delete() -> None:
+        await app_service.delete_app(deleting, app_id)
+        await deleting.commit()
+
+    completion = asyncio.create_task(complete())
+    deletion: asyncio.Task[None] | None = None
+    try:
+        await asyncio.wait_for(run_locked.wait(), timeout=RACE_DEADLINE)
+        deleting_pid = await backend_pid(deleting)
+        deletion = asyncio.create_task(delete())
+        assert await finished_or_blocked(poll, deletion, deleting_pid)
+        resume.set()
+        await asyncio.wait_for(completion, timeout=RACE_DEADLINE)
+        await asyncio.wait_for(deletion, timeout=RACE_DEADLINE)
+    finally:
+        await cancel_tasks(completion, deletion)
+
+    assert await setup.get(App, app_id) is None
+
+
+# The other order: completion waits on the App the deletion holds, and finds
+# the run gone with it.
+async def test_a_completion_behind_an_app_deletion_waits_and_is_not_found(
+    committed_session_factory: SessionFactory,
+) -> None:
+    setup, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
+    app_id = (await scan_run_service.get_scan_run(setup, scan_run_id)).app_id
+    await setup.rollback()
+
+    async def delete(session: AsyncSession) -> None:
+        await app_service.delete_app(session, app_id)
+
+    async def complete(session: AsyncSession) -> None:
+        await scan_run_service.update_scan_run_status(session, scan_run_id, _COMPLETE)
+
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, delete, complete)
 
     assert waited
     assert isinstance(outcome, NotFoundError)

@@ -66,7 +66,21 @@ async def lock_scan_run(session: AsyncSession, scan_run_id: int, *, shared: bool
     return await existence.get_by_query(session, ScanRun, locked, scan_run_id)
 
 
+async def _lock_app_of_scan_run(session: AsyncSession, scan_run_id: int) -> None:
+    # KEY SHARE is what the App Score Snapshot insert takes on the App later;
+    # taking it first puts the App ahead of the Scan Run, the order App
+    # deletion's cascade locks them in (ADR 0048).
+    locked = (
+        select(ScanRun)
+        .join(App, App.id == ScanRun.app_id)
+        .where(ScanRun.id == scan_run_id)
+        .with_for_update(key_share=True, of=App)
+    )
+    await existence.get_by_query(session, ScanRun, locked, scan_run_id)
+
+
 async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRun:
+    await _lock_app_of_scan_run(session, scan_run_id)
     # Locked ahead of every check, so a second completion waits and then reads
     # the status the first committed, and so does a page add (ADR 0048).
     scan_run = await lock_scan_run(session, scan_run_id, shared=False)

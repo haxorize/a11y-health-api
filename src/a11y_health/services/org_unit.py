@@ -15,23 +15,19 @@ from a11y_health.services import scoring_orchestration
 from a11y_health.services._org_subtree import get_descendant_ids
 
 
-async def get_root_org_unit_id(session: AsyncSession, *, exclude_id: int | None = None) -> int | None:
-    """The Root Org Unit's id, or `None` when the tree has no root, which is
-    before onboarding or once the root is deleted, never a failed lookup.
-
-    `exclude_id` leaves one Org Unit out, so a unit being reparented to the
-    root never counts as its own competitor. The unordered `limit(1)` is safe
-    because ADR 0026's partial unique index allows one parentless row at most.
-    """
+async def get_root_org_unit_id(session: AsyncSession) -> int | None:
+    """The Root Org Unit's id, or `None` before onboarding or once the Root Org
+    Unit is deleted, never a failed lookup."""
     stmt = select(OrgUnit.id).where(OrgUnit.parent_id.is_(None))
-    if exclude_id is not None:
-        stmt = stmt.where(OrgUnit.id != exclude_id)
+    # Unordered is safe: ADR 0026's partial unique index allows one parentless
+    # row at most.
     return (await session.execute(stmt.limit(1))).scalar_one_or_none()
 
 
-async def _check_no_other_root(session: AsyncSession, exclude_id: int | None = None) -> None:
-    existing_root_id = await get_root_org_unit_id(session, exclude_id=exclude_id)
-    if existing_root_id is not None:
+async def _check_no_other_root(session: AsyncSession, promoted_id: int | None = None) -> None:
+    # A unit promoted while already the Root Org Unit is not its own competitor.
+    existing_root_id = await get_root_org_unit_id(session)
+    if existing_root_id is not None and existing_root_id != promoted_id:
         raise DuplicateRootError(OrgUnit, existing_root_id)
 
 
@@ -77,7 +73,7 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
             if new_parent_id in await get_descendant_ids(session, [org_unit_id]):
                 raise CircularReferenceError(OrgUnit, org_unit_id, new_parent_id)
         else:
-            await _check_no_other_root(session, exclude_id=org_unit_id)
+            await _check_no_other_root(session, promoted_id=org_unit_id)
     async with _root_race_guard(session):
         for field, value in updates.items():
             setattr(org_unit, field, value)
@@ -118,8 +114,8 @@ async def get_ancestors(session: AsyncSession, org_unit_id: int) -> list[OrgUnit
 # `integrity.guard_constraints` turns the violation into `HasDependentsError`.
 async def delete_org_unit(session: AsyncSession, org_unit_id: int) -> None:
     org_unit = await get_org_unit(session, org_unit_id)
-    # One instance for all three dependent FKs: guard raises at most once per
-    # call.
+    # One instance for all three dependent FKs: `guard_constraints` raises at
+    # most once per call.
     dependents = HasDependentsError(OrgUnit, org_unit_id)
     async with integrity.guard_constraints(
         session,

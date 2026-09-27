@@ -300,6 +300,10 @@ async def test_delete_app_moves_both_rollup_owners_latest_snapshots(db_session: 
     root = await make_org_unit(db_session, name="Root")
     org_unit = await make_org_unit(db_session, name="Owning Unit", parent_id=root.id)
     brand = await make_brand(db_session)
+    if brand.id == org_unit.id:
+        # The two sequences advance under rolled-back tests too, so whether
+        # they meet depends on what ran first; one more brand steps past.
+        brand = await make_brand(db_session)
     assert org_unit.id != brand.id
     kept = await make_app(db_session, name="Kept", slug="kept", brand_id=brand.id, org_unit_id=org_unit.id)
     doomed = await make_app(db_session, name="Doomed", slug="doomed", brand_id=brand.id, org_unit_id=org_unit.id)

@@ -433,16 +433,10 @@
       "OrgUnitUpdate": {
         "properties": {
           "name": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "description": "Omit to leave unchanged",
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
           },
           "parent_id": {
             "anyOf": [

@@ -112,6 +112,28 @@ async def test_update_org_unit(db_client: AsyncClient, db_session: AsyncSession)
     assert response.json()["name"] == "Humana Inc."
 
 
+async def test_update_org_unit_refuses_a_null_name(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    # Red when OrgUnitUpdate.name admits None: the null reaches the NOT NULL
+    # column and the unmapped violation is a 500.
+    org_unit = await make_org_unit(db_session, name="Humana")
+
+    response = await db_client.patch(f"/api/v1/org-units/{org_unit.id}", json={"name": None})
+
+    assert response.status_code == 422
+    assert (await db_client.get(f"/api/v1/org-units/{org_unit.id}")).json()["name"] == "Humana"
+
+
+async def test_update_org_unit_without_a_name_keeps_it(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    parent = await make_org_unit(db_session, name="Humana")
+    child = await make_org_unit(db_session, name="Pharmacy", parent_id=parent.id)
+    other = await make_org_unit(db_session, name="Clinical", parent_id=parent.id)
+
+    response = await db_client.patch(f"/api/v1/org-units/{child.id}", json={"parent_id": other.id})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Pharmacy"
+
+
 async def test_update_org_unit_not_found(db_client: AsyncClient) -> None:
     response = await db_client.patch(
         "/api/v1/org-units/999999",

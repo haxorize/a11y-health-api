@@ -11,7 +11,10 @@ class OrgUnitCreate(BaseModel):
 
 
 class OrgUnitUpdate(BaseModel):
-    name: str | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    # Optional but not nullable: pydantic never validates the default, so an
+    # explicit null fails as a str while omission stays legal. The update
+    # reads only the fields set, so the None default is never seen as a name.
+    name: str = Field(default=None, max_length=NAME_MAX_LENGTH, description="Omit to leave unchanged")  # ty: ignore[invalid-assignment]
     parent_id: int | None = Field(default=None, description="Omit to leave unchanged; send null to make a root node")
 
 

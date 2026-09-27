@@ -13,38 +13,27 @@ holds the migration harness to the same floor, so a test whose world lies
 below it is refused at the revision the roundtrip is.
 """
 
-import asyncio
-import os
-import re
-import sys
-from pathlib import Path
-
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.migrations.harness import IrreversibleRevisionError, restore_world, script_directory
-
-_REPO = Path(__file__).resolve().parents[2]
-
-
-def _downgrade_floor() -> str:
-    # Read from the Makefile rather than restated here: a copy in the suite
-    # would be the drift this guard exists to catch, one layer further in.
-    makefile = (_REPO / "Makefile").read_text()
-    match = re.search(r"^DOWNGRADE_FLOOR := (\w+)$", makefile, re.MULTILINE)
-    assert match is not None, "Makefile no longer defines DOWNGRADE_FLOOR as a bare assignment"
-    return match.group(1)
+from tests.migrations.harness import (
+    IrreversibleRevisionError,
+    Roundtrip,
+    downgrade_floor,
+    restore_world,
+    script_directory,
+)
 
 
 def test_the_downgrade_floor_names_a_revision_that_exists() -> None:
-    floor = _downgrade_floor()
+    floor = downgrade_floor()
     assert script_directory().get_revision(floor) is not None, (
         f"DOWNGRADE_FLOOR is {floor}, which is not a revision in migrations/versions/"
     )
 
 
 def test_the_downgrade_floor_is_below_the_head() -> None:
-    floor = _downgrade_floor()
+    floor = downgrade_floor()
     script = script_directory()
     heads = script.get_heads()
     assert len(heads) == 1, f"expected a single head, found {heads}"
@@ -69,38 +58,10 @@ def test_the_downgrade_floor_is_below_the_head() -> None:
     )
 
 
-# In a child process because migrations/env.py reads DATABASE_URL at import and
-# calls asyncio.run, which this test's running loop forbids. One child for all
-# three commands: each extra interpreter costs its imports again, per commit.
-_ROUNDTRIP = """
-import sys
-from alembic import command
-from alembic.config import Config
-
-config = Config("alembic.ini")
-command.upgrade(config, "head")
-command.downgrade(config, sys.argv[1])
-command.upgrade(config, "head")
-"""
-
-
-async def test_the_revisions_above_the_floor_reverse(empty_database_url: str) -> None:
-    # What `make migrate-roundtrip` runs. Built from the base in a database of
-    # its own, never DATABASE_URL: the head's upgrade re-runs a DELETE its
-    # downgrade does not restore, so aimed at a developer's database this would
-    # remove rollup snapshots without a word.
-    child = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-c",
-        _ROUNDTRIP,
-        _downgrade_floor(),
-        cwd=_REPO,
-        env={**os.environ, "DATABASE_URL": empty_database_url},
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await child.communicate()
-    assert child.returncode == 0, f"the roundtrip failed:\n{stderr.decode()}"
+async def test_the_revisions_above_the_floor_reverse(roundtrip: Roundtrip) -> None:
+    # What `make migrate-roundtrip` runs; the session's `roundtrip` fixture
+    # runs the child, and this is the test that owns its outcome.
+    assert roundtrip.returncode == 0, f"the roundtrip failed:\n{roundtrip.stderr}"
 
 
 async def test_the_harness_stops_at_the_downgrade_floor(db_session: AsyncSession) -> None:
@@ -108,7 +69,7 @@ async def test_the_harness_stops_at_the_downgrade_floor(db_session: AsyncSession
     # the first one a walk from the head toward the base is refused at.
     script = script_directory()
     [root] = script.get_bases()
-    floor = script.get_revision(_downgrade_floor())
+    floor = script.get_revision(downgrade_floor())
     assert floor is not None
     with pytest.raises(IrreversibleRevisionError) as exc_info:
         await restore_world(db_session, root)

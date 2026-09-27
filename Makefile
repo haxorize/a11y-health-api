@@ -9,7 +9,7 @@
 export UV_LOCKED := 1
 
 # The revision `migrate-roundtrip` downgrades to. No recipe expands it:
-# test_downgrade_floor.py reads this line, for the roundtrip and for the
+# tests/migrations/harness.py reads this line, for the roundtrip and for the
 # migration harness, which refuses to walk below it.
 #
 # b362121027a0 is the deepest revision the roundtrip can reach: its own

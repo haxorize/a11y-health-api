@@ -2,11 +2,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from a11y_health.core.slug import derive_slug
+from a11y_health.core.slug import NAME_MAX_LENGTH, derive_slug
 
 
 class AppCreate(BaseModel):
-    name: str = Field(max_length=255)
+    name: str = Field(max_length=NAME_MAX_LENGTH)
     brand_id: int
     org_unit_id: int
 

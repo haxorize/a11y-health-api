@@ -8,7 +8,7 @@ description: Database conventions for this project (PostgreSQL schema design + S
 ## Data types
 
 - **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` for PKs; `UUID` only when opacity or federation is needed
-- **Strings**: `TEXT` always; enforce length with `CHECK (LENGTH(col) <= n)`, never `VARCHAR(n)` or `CHAR(n)`
+- **Strings**: `TEXT` always; enforce length with `CHECK (LENGTH(col) <= n)`, never `VARCHAR(n)` or `CHAR(n)`. The model reads `n` from its named constant in `core/slug.py` (`NAME_MAX_LENGTH`, `SLUG_MAX_LENGTH`), the one the request schema's `max_length` reads too; the migration writes it as a literal, and `tests/migrations/test_check_constraints.py` holds every migrated check constraint equal to the model's
 - **Timestamps**: `TIMESTAMPTZ` always, never `TIMESTAMP`; default `now()` for creation times. In SQLAlchemy ORM, use `DateTime(timezone=True)` — it maps to `TIMESTAMPTZ` in PostgreSQL
 - **Booleans**: `BOOLEAN NOT NULL` unless tri-state is intentional
 - **Scores and ratios**: `FLOAT`. Nothing here is financial, so `NUMERIC` has no site in this schema
@@ -33,7 +33,7 @@ FK_APP_ORG_UNIT_ID = "fk_app_org_unit_id"
 class App(TimestampMixin, Base):
     __tablename__ = "app"
     __table_args__ = (
-        CheckConstraint("LENGTH(name) <= 255", name=CK_APP_NAME_LENGTH),
+        CheckConstraint(f"LENGTH(name) <= {NAME_MAX_LENGTH}", name=CK_APP_NAME_LENGTH),
         UniqueConstraint("slug", name=UQ_APP_SLUG),
         Index("ix_app_org_unit_id", "org_unit_id"),
     )

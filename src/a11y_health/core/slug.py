@@ -7,9 +7,11 @@ import re
 import unicodedata
 from collections.abc import Mapping
 
-# Mirrors CK_APP_SLUG_LENGTH on the app table. The name's own 255 limit does
-# not bound the slug: NFKD folding expands compatibility characters ("ﬃ" →
-# "ffi"), so derivation must enforce the slug bound itself.
+# The one spelling of each bound. The length check constraints and the request
+# schemas read them here rather than off a model, so derivation never imports
+# one. The name bound does not bound the slug: NFKD folding expands
+# compatibility characters ("ﬃ" → "ffi"), so derivation enforces it itself.
+NAME_MAX_LENGTH = 255
 SLUG_MAX_LENGTH = 255
 
 

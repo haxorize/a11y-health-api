@@ -20,7 +20,12 @@ revision in `skips`, declaring it changes no schema the test exercises; the
 walk then passes it undone and carries on.
 """
 
+import asyncio
+import os
+import re
+import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from types import ModuleType
@@ -53,6 +58,54 @@ DUPLICATE_CLEANUP = "b362121027a0"
 @cache
 def script_directory() -> ScriptDirectory:
     return ScriptDirectory.from_config(Config(str(_REPO / "alembic.ini")))
+
+
+def downgrade_floor() -> str:
+    # Read from the Makefile rather than restated here: a copy in the suite
+    # would be the drift this guard exists to catch, one layer further in.
+    makefile = (_REPO / "Makefile").read_text()
+    match = re.search(r"^DOWNGRADE_FLOOR := (\w+)$", makefile, re.MULTILINE)
+    assert match is not None, "Makefile no longer defines DOWNGRADE_FLOOR as a bare assignment"
+    return match.group(1)
+
+
+# In a child process because migrations/env.py reads DATABASE_URL at import and
+# calls asyncio.run, which the suite's running loop forbids. One child for all
+# three commands: each extra interpreter costs its imports again, per commit.
+_ROUNDTRIP = """
+import sys
+from alembic import command
+from alembic.config import Config
+
+config = Config("alembic.ini")
+command.upgrade(config, "head")
+command.downgrade(config, sys.argv[1])
+command.upgrade(config, "head")
+"""
+
+
+@dataclass(frozen=True)
+class Roundtrip:
+    database_url: str
+    returncode: int | None
+    stderr: str
+
+
+async def run_roundtrip(database_url: str) -> Roundtrip:
+    """Leaves the database at the head, reached back up from the floor, which
+    is the migrated schema every other reader of it compares against."""
+    child = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        _ROUNDTRIP,
+        downgrade_floor(),
+        cwd=_REPO,
+        env={**os.environ, "DATABASE_URL": database_url},
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await child.communicate()
+    return Roundtrip(database_url, child.returncode, stderr.decode())
 
 
 def load_migration(revision: str) -> ModuleType:

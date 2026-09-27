@@ -15,7 +15,9 @@ Open this before writing a CLI test, a migration-body test, or a session-scoped 
 
 Run a shipped `upgrade()`/`downgrade()` bound to `db_session` through `harness.py`. Restore the pre-migration schema via the shipped `downgrade()` — hand-written DDL only when the needed downgrade is irreversible, and then with the reason stated in place. `test_rederive_app_slugs.py` is the worked example of driving an `upgrade()`; `test_single_root_org_unit_index.py` is the one for restoring through a `downgrade()`.
 
-`test_downgrade_floor.py` is the odd one out in this directory: it needs no database, reads `DOWNGRADE_FLOOR` out of the `Makefile`, resolves it through alembic, and fails if it resolves to the head, however the value is spelled.
+`test_downgrade_floor.py` is the odd one out in this directory: it reads `DOWNGRADE_FLOOR` out of the `Makefile` through `harness.downgrade_floor()`, resolves it through alembic, and fails if it resolves to the head, however the value is spelled. Its roundtrip test owns the outcome of the session-scoped `roundtrip` fixture, which runs upgrade, downgrade to the floor, and upgrade again in one child process over a per-run database of its own, once per session.
+
+`test_check_constraints.py` reads the head that roundtrip leaves and compares every check constraint with the one the models' metadata builds in the `engine` fixture's database, since Alembic's autogenerate compares no check-constraint text. A new reader of the migrated schema takes the `roundtrip` fixture rather than starting a child of its own: each interpreter costs its imports again, per commit.
 
 ## `deadlock_timeout` is superuser-set
 

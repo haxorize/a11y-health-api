@@ -74,8 +74,9 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
         org_unit_reference = await existence.require_reference(session, OrgUnit, new_org_unit_id, FK_APP_ORG_UNIT_ID)
         async with integrity.guard_constraints(session, org_unit_reference):
             app.org_unit_id = new_org_unit_id
-
-    await session.refresh(app)
+        # Only after a write: with none, the row was read unlocked, and a
+        # refresh would fail unmapped on one deleted since (ADR 0048).
+        await session.refresh(app)
 
     if reassigning:
         await scoring_orchestration.on_app_reassigned(session, old_org_unit_id, new_org_unit_id)
@@ -83,24 +84,39 @@ async def update_app(session: AsyncSession, app_id: int, data: AppUpdate) -> App
     return app
 
 
-async def delete_app(session: AsyncSession, app_id: int) -> None:
-    # KEY SHARE is what the rollup's Org Unit Score Snapshot insert takes on
-    # the unit later; taking it before the delete puts the Org Unit ahead of
-    # the App, the order Org Unit deletion locks them in (ADR 0048).
-    # populate_existing, so an App this session loaded earlier names the unit
-    # locked here, which is the one the rollup reads.
-    locked = (
-        select(App)
+async def _lock_app_for_delete(session: AsyncSession, app_id: int) -> App:
+    # KEY SHARE on the unit, the lock the rollup's Org Unit Score Snapshot
+    # insert takes on it later, then the App itself: the order Org Unit
+    # deletion locks them in (ADR 0048). The unit lock blocks only that
+    # deletion, so App deletions and renames in the unit still run together.
+    unit_locked = (
+        select(App.org_unit_id)
         .join(OrgUnit, OrgUnit.id == App.org_unit_id)
         .where(App.id == app_id)
-        .with_for_update(key_share=True, of=OrgUnit)
-        .execution_options(populate_existing=True)
+        .with_for_update(read=True, key_share=True, of=OrgUnit)
     )
-    while (app := (await session.execute(locked)).scalar_one_or_none()) is None:
-        # A miss while the App exists means the unit it was in was deleted
-        # during the wait, after the App moved out; the next pass locks the
-        # unit it is in now.
-        await existence.get_by_query(session, App, select(App).where(App.id == app_id), app_id)
+    while True:
+        org_unit_id = (await session.execute(unit_locked)).scalar_one_or_none()
+        if org_unit_id is None:
+            # The App is gone, or the unit it was in was deleted during the
+            # wait after it moved out; the next pass locks the unit it is in.
+            await existence.get_by_query(session, App, select(App).where(App.id == app_id), app_id)
+            continue
+        # populate_existing, so an App this session loaded earlier names the
+        # unit locked here, which is the one the rollup reads.
+        app_locked = (
+            select(App)
+            .where(App.id == app_id, App.org_unit_id == org_unit_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if (app := (await session.execute(app_locked)).scalar_one_or_none()) is not None:
+            return app
+        # Moved or deleted while this waited: the next pass reads which.
+
+
+async def delete_app(session: AsyncSession, app_id: int) -> None:
+    app = await _lock_app_for_delete(session, app_id)
     await session.delete(app)
     await session.flush()
     await scoring_orchestration.on_app_latest_snapshot_changed(session, app)

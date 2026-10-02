@@ -17,7 +17,7 @@ src/a11y_health/
     exceptions.py     # domain exceptions raised by services, caught by endpoints + ENTITY_LABELS
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
-    existence.py      # the Existence Guard: get_by_pk/get_by_query; require_reference() adds a write's FK mapping
+    existence.py      # the Existence Guard: get_by_pk/get_by_query/lock_by_pk; require_reference() adds a write's FK mapping
     integrity.py      # the Integrity Guard: guard_constraints() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
     slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.

@@ -135,6 +135,17 @@ async def test_update_root_with_null_parent_is_noop(db_session: AsyncSession) ->
     assert updated.parent_id is None
 
 
+# Reds when an update with nothing to write locks its row or re-reads it: the
+# load is the only statement (ADR 0048).
+async def test_update_org_unit_with_nothing_to_write_only_loads(db_session: AsyncSession) -> None:
+    created = await make_org_unit(db_session, name="Humana")
+    async with recorded_statements(db_session) as statements:
+        await org_unit_service.update_org_unit(db_session, created.id, OrgUnitUpdate())
+
+    assert len(statements) == 1
+    assert statements[0].startswith("SELECT") and " FOR " not in statements[0]
+
+
 async def test_update_org_unit_not_found(db_session: AsyncSession) -> None:
     with pytest.raises(NotFoundError, match="Org unit"):
         await org_unit_service.update_org_unit(db_session, 999999, OrgUnitUpdate(name="Ghost"))

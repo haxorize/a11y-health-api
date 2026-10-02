@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core import existence
 from a11y_health.core.exceptions import InvalidStatusTransitionError, NotFoundError, ScanRunCompletedError
 from a11y_health.models.app import App
 from a11y_health.models.enums import ScanRunStatus
@@ -76,17 +77,19 @@ async def test_a_second_completion_waits_and_is_refused(committed_session_factor
     assert isinstance(outcome, InvalidStatusTransitionError)
 
 
-# Reds at the refusal when the page add reads the run unlocked, or keeps the
-# instance loaded before the completion committed: either way it still waits,
-# since its foreign-key check takes KEY SHARE, which completion's FOR UPDATE
-# blocks, and then inserts the page.
-async def test_a_page_added_mid_completion_waits_and_is_refused(committed_session_factory: SessionFactory) -> None:
+# Reds at the refusal when Page Result creation reads the run unlocked, or
+# keeps the instance loaded before the completion committed: either way it
+# still waits, since its foreign-key check takes KEY SHARE, which completion's
+# FOR UPDATE blocks, and then inserts the page.
+async def test_a_page_result_created_mid_completion_waits_and_is_refused(
+    committed_session_factory: SessionFactory,
+) -> None:
     setup, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
 
     async def complete(session: AsyncSession) -> None:
         await scan_run_service.update_scan_run_status(session, scan_run_id, _COMPLETE)
 
-    async def read_then_add_page(session: AsyncSession) -> None:
+    async def read_then_create_page_result(session: AsyncSession) -> None:
         # An ingest session read the run as Pending on its earlier pages; bound
         # for the reason the completion race gives.
         loaded = await session.get(ScanRun, scan_run_id)
@@ -95,25 +98,31 @@ async def test_a_page_added_mid_completion_waits_and_is_refused(committed_sessio
         )
         assert loaded is not None
 
-    waited, outcome = await race_behind_open_transaction(committed_session_factory, complete, read_then_add_page)
+    waited, outcome = await race_behind_open_transaction(
+        committed_session_factory, complete, read_then_create_page_result
+    )
 
     assert waited
     assert isinstance(outcome, ScanRunCompletedError)
     assert await _page_count(setup, scan_run_id) == 1
 
 
-# Reds at `waited` when the page add takes an exclusive lock on the run.
-async def test_concurrent_page_adds_do_not_wait_on_each_other(committed_session_factory: SessionFactory) -> None:
+# Reds at `waited` when Page Result creation locks the run exclusively.
+async def test_concurrent_page_result_creations_do_not_wait_on_each_other(
+    committed_session_factory: SessionFactory,
+) -> None:
     setup, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
 
-    def add_page(url: str):
-        async def add(session: AsyncSession) -> None:
+    def create_page_result(url: str):
+        async def create(session: AsyncSession) -> None:
             await page_result_service.create_page_result(session, scan_run_id, make_axe_payload(url=url))
 
-        return add
+        return create
 
     waited, outcome = await race_behind_open_transaction(
-        committed_session_factory, add_page("https://example.com/2"), add_page("https://example.com/3")
+        committed_session_factory,
+        create_page_result("https://example.com/2"),
+        create_page_result("https://example.com/3"),
     )
 
     assert not waited
@@ -121,20 +130,22 @@ async def test_concurrent_page_adds_do_not_wait_on_each_other(committed_session_
     assert await _page_count(setup, scan_run_id) == 3
 
 
-# Reds with an IntegrityError on the page's foreign key when the page add
-# reads the run without a lock.
-async def test_a_page_added_mid_delete_waits_and_is_not_found(committed_session_factory: SessionFactory) -> None:
+# Reds with an IntegrityError on the page's foreign key when Page Result
+# creation reads the run without a lock.
+async def test_a_page_result_created_mid_delete_waits_and_is_not_found(
+    committed_session_factory: SessionFactory,
+) -> None:
     _, scan_run_id = await _pending_run_with_one_page(committed_session_factory)
 
     async def delete(session: AsyncSession) -> None:
         await scan_run_service.delete_scan_run(session, scan_run_id)
 
-    async def add_page(session: AsyncSession) -> None:
+    async def create_page_result(session: AsyncSession) -> None:
         await page_result_service.create_page_result(
             session, scan_run_id, make_axe_payload(url="https://example.com/2")
         )
 
-    waited, outcome = await race_behind_open_transaction(committed_session_factory, delete, add_page)
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, delete, create_page_result)
 
     assert waited
     assert isinstance(outcome, NotFoundError)
@@ -154,15 +165,15 @@ async def test_an_app_deleted_mid_completion_waits_for_it(committed_session_fact
 
     run_locked = asyncio.Event()
     resume = asyncio.Event()
-    real_lock_scan_run = scan_run_service.lock_scan_run
+    real_lock_by_pk = existence.lock_by_pk
 
-    async def pause_after_lock(session: AsyncSession, locked_id: int, *, shared: bool) -> ScanRun:
-        scan_run = await real_lock_scan_run(session, locked_id, shared=shared)
+    async def pause_after_lock(session: AsyncSession, model: type[ScanRun], locked_id: int, *, shared: bool) -> ScanRun:
+        scan_run = await real_lock_by_pk(session, model, locked_id, shared=shared)
         run_locked.set()
         await resume.wait()
         return scan_run
 
-    mocker.patch.object(scan_run_service, "lock_scan_run", pause_after_lock)
+    mocker.patch.object(existence, "lock_by_pk", pause_after_lock)
 
     async def complete() -> None:
         await scan_run_service.update_scan_run_status(completing, scan_run_id, _COMPLETE)

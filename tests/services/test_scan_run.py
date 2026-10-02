@@ -112,6 +112,21 @@ async def test_update_status_pending_to_completed(db_session: AsyncSession) -> N
     assert updated.status == ScanRunStatus.COMPLETED
 
 
+# Reds when completion locks its App in a weaker mode: under KEY SHARE it runs
+# beside an App move in flight, whose rollup then misses the new snapshot, and
+# FOR UPDATE would block every insert naming the App (ADR 0048).
+async def test_completion_locks_its_app_ahead_of_the_run(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    await create_page_result(db_session, scan_run.id, make_axe_payload())
+    async with recorded_statements(db_session) as statements:
+        await scan_run_service.update_scan_run_status(
+            db_session, scan_run.id, ScanRunStatusUpdate(status=ScanRunStatus.COMPLETED)
+        )
+
+    assert statements[0].endswith("FOR NO KEY UPDATE OF app")
+    assert statements[1].endswith("FOR UPDATE")
+
+
 async def test_complete_empty_run_rejected(db_session: AsyncSession) -> None:
     # A Scan Run has one or more Page Results (DOMAIN.md): completing an empty
     # run would mint a 0.0 snapshot that scores "no data" as "all critical".
@@ -197,6 +212,16 @@ async def test_delete_scan_run_rolls_up_its_own_apps_owners(db_session: AsyncSes
 
     assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.4)
     assert (await latest_brand_snapshot(db_session, brand.id)).score == approx(0.4)
+
+
+# Reds when the delete stops locking its App as completion does, which lets it
+# run beside an App move and roll up the unit the App left (ADR 0048).
+async def test_delete_scan_run_locks_its_app_first(db_session: AsyncSession) -> None:
+    scan_run = await make_scan_run_with_parents(db_session)
+    async with recorded_statements(db_session) as statements:
+        await scan_run_service.delete_scan_run(db_session, scan_run.id)
+
+    assert statements[0].endswith("FOR NO KEY UPDATE OF app")
 
 
 async def test_delete_scan_run_not_found(db_session: AsyncSession) -> None:

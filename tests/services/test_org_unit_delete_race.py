@@ -102,10 +102,11 @@ async def test_a_write_naming_a_unit_deleted_underneath_it_is_not_found(
     assert str(outcome) == f"Org unit {deleted_id} not found"
 
 
-# Reds with a 40P01 when the App's delete locks the App before its Org Unit:
-# the unit's delete holds the unit and waits on the App in its dependents
-# check, and the App's rollup then inserts the unit's snapshot, whose key
-# check waits on the unit.
+# Reds when the App's delete locks the App before its Org Unit. If the
+# unit's dependents check reaches the deleted App first, it waits on it while
+# holding the unit, the App's rollup then inserts the unit's snapshot, whose
+# key check waits on the unit, and the pair ends in a 40P01. If it reaches the
+# kept App first, it is refused at once and reds at `finished_or_blocked`.
 async def test_an_org_unit_deleted_mid_app_delete_waits_and_has_dependents(
     committed_session_factory: SessionFactory, mocker
 ) -> None:
@@ -191,3 +192,64 @@ async def test_an_app_moved_out_of_a_unit_deleted_underneath_its_delete_is_delet
     assert waited
     assert outcome is None
     assert await setup.get(App, app_id) is None
+
+
+# ADR 0048's other order: an Org Unit deletion ahead of an App deletion is
+# refused at once, since the App it finds holds no conflicting lock. Reds at
+# `waited` when the refusal leaves the unit locked for the rest of its
+# transaction, which the App deletion's unit lock would then wait out.
+async def test_an_app_deleted_behind_a_refused_org_unit_delete_does_not_wait(
+    committed_session_factory: SessionFactory,
+) -> None:
+    setup = committed_session_factory()
+    unit_id = (await make_org_unit(setup, name="Unit")).id
+    app_id = (await make_app(setup, org_unit_id=unit_id)).id
+    await setup.commit()
+    refusals: list[HasDependentsError] = []
+
+    async def delete_unit(session: AsyncSession) -> None:
+        try:
+            await org_unit_service.delete_org_unit(session, unit_id)
+        except HasDependentsError as error:
+            refusals.append(error)
+
+    async def delete_app(session: AsyncSession) -> None:
+        await app_service.delete_app(session, app_id)
+
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, delete_unit, delete_app)
+
+    assert len(refusals) == 1
+    assert not waited
+    assert outcome is None
+    assert await setup.get(App, app_id) is None
+
+
+# ADR 0048 takes no unit lock before an App move: the move holds the App, and
+# its rollup's snapshot insert takes KEY SHARE on the unit it leaves, which a
+# deletion of that unit waits out and then finds the App that stayed. Reds with
+# a 40P01 or an unmapped error if a lock the move takes crosses the deletion's
+# unit-then-App order.
+async def test_an_org_unit_deleted_behind_an_app_moving_out_of_it_waits_and_has_dependents(
+    committed_session_factory: SessionFactory,
+) -> None:
+    setup = committed_session_factory()
+    root_id = (await make_org_unit(setup, name="Root")).id
+    left_id = (await make_org_unit(setup, name="Left", parent_id=root_id)).id
+    joined_id = (await make_org_unit(setup, name="Joined", parent_id=root_id)).id
+    app_id = (await make_app(setup, slug="moved", org_unit_id=left_id)).id
+    await make_score_snapshot(setup, app_id=app_id)
+    # Scored, so the move's rollup still writes the unit it leaves.
+    stayed_id = (await make_app(setup, slug="stayed", org_unit_id=left_id)).id
+    await make_score_snapshot(setup, app_id=stayed_id)
+    await setup.commit()
+
+    async def move_app(session: AsyncSession) -> None:
+        await app_service.update_app(session, app_id, AppUpdate(org_unit_id=joined_id))
+
+    async def delete_left(session: AsyncSession) -> None:
+        await org_unit_service.delete_org_unit(session, left_id)
+
+    waited, outcome = await race_behind_open_transaction(committed_session_factory, move_app, delete_left)
+
+    assert waited
+    assert isinstance(outcome, HasDependentsError)

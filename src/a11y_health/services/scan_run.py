@@ -54,22 +54,12 @@ _VALID_TRANSITIONS: dict[ScanRunStatus, set[ScanRunStatus]] = {
 }
 
 
-async def lock_scan_run(session: AsyncSession, scan_run_id: int, *, shared: bool) -> ScanRun:
-    # populate_existing, because an instance this session loaded before the
-    # wait would otherwise keep the status it read then.
-    locked = (
-        select(ScanRun)
-        .where(ScanRun.id == scan_run_id)
-        .with_for_update(read=shared)
-        .execution_options(populate_existing=True)
-    )
-    return await existence.get_by_query(session, ScanRun, locked, scan_run_id)
-
-
 async def _lock_app_of_scan_run(session: AsyncSession, scan_run_id: int) -> None:
-    # KEY SHARE is what the App Score Snapshot insert takes on the App later;
-    # taking it first puts the App ahead of the Scan Run, the order App
-    # deletion's cascade locks them in (ADR 0048).
+    # FOR NO KEY UPDATE, the mode an App move loads its row with, so a move in
+    # flight is waited out and the rollup reads the unit the App ends up in;
+    # under KEY SHARE the move's own rollup would miss this write (ADR 0048).
+    # Taken first, it puts the App ahead of the Scan Run, the order App
+    # deletion's cascade locks them in.
     locked = (
         select(ScanRun)
         .join(App, App.id == ScanRun.app_id)
@@ -82,8 +72,8 @@ async def _lock_app_of_scan_run(session: AsyncSession, scan_run_id: int) -> None
 async def update_scan_run_status(session: AsyncSession, scan_run_id: int, data: ScanRunStatusUpdate) -> ScanRun:
     await _lock_app_of_scan_run(session, scan_run_id)
     # Locked ahead of every check, so a second completion waits and then reads
-    # the status the first committed, and so does a page add (ADR 0048).
-    scan_run = await lock_scan_run(session, scan_run_id, shared=False)
+    # the status the first committed, as Page Result creation does (ADR 0048).
+    scan_run = await existence.lock_by_pk(session, ScanRun, scan_run_id, shared=False)
     if data.status not in _VALID_TRANSITIONS[scan_run.status]:
         raise InvalidStatusTransitionError(ScanRun, scan_run_id, scan_run.status, data.status)
     if data.status == ScanRunStatus.COMPLETED:
@@ -152,8 +142,12 @@ async def get_scan_run_summary(session: AsyncSession, scan_run_id: int) -> Score
 
 
 async def delete_scan_run(session: AsyncSession, scan_run_id: int) -> None:
+    await _lock_app_of_scan_run(session, scan_run_id)
     scan_run = await get_scan_run(session, scan_run_id)
-    app = await existence.get_by_pk(session, App, scan_run.app_id)
+    # populate_existing, so an App this session loaded before the lock names
+    # the unit it is in now, which is the one the rollup reads.
+    fresh = select(App).where(App.id == scan_run.app_id).execution_options(populate_existing=True)
+    app = await existence.get_by_query(session, App, fresh, scan_run.app_id)
     await session.delete(scan_run)
     await session.flush()
     await scoring_orchestration.on_app_latest_snapshot_changed(session, app)

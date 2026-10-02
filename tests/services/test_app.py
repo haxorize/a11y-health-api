@@ -267,6 +267,17 @@ async def test_list_apps_combined_brand_and_org_unit(db_session: AsyncSession) -
     assert page.items[0].slug == "match"
 
 
+# Reds when an update with nothing to write locks its row or re-reads it: the
+# load is the only statement (ADR 0048).
+async def test_update_app_with_nothing_to_write_only_loads(db_session: AsyncSession) -> None:
+    app = await make_app_with_org_unit(db_session)
+    async with recorded_statements(db_session) as statements:
+        await app_service.update_app(db_session, app.id, AppUpdate())
+
+    assert len(statements) == 1
+    assert statements[0].startswith("SELECT") and " FOR " not in statements[0]
+
+
 async def test_update_app_not_found(db_session: AsyncSession) -> None:
     org_unit = await make_org_unit(db_session)
     with pytest.raises(NotFoundError, match="App"):
@@ -280,6 +291,19 @@ async def test_delete_app(db_session: AsyncSession) -> None:
     await app_service.delete_app(db_session, created.id)
     with pytest.raises(NotFoundError):
         await app_service.get_app(db_session, created.id)
+
+
+# Reds when the unit lock is stronger than KEY SHARE, which serializes App
+# deletions and renames in one unit, or when the App is not locked after it,
+# which lets a move in flight leave its new unit counting a deleted App
+# (ADR 0048).
+async def test_delete_app_locks_its_unit_then_itself(db_session: AsyncSession) -> None:
+    app = await make_app_with_org_unit(db_session)
+    async with recorded_statements(db_session) as statements:
+        await app_service.delete_app(db_session, app.id)
+
+    assert statements[0].endswith("FOR KEY SHARE OF org_unit")
+    assert statements[1].endswith("FOR UPDATE")
 
 
 async def test_delete_app_cascades_dependents(db_session: AsyncSession) -> None:

@@ -106,7 +106,10 @@ async def update_org_unit(session: AsyncSession, org_unit_id: int, data: OrgUnit
     async with _write_race_guard(session, parent_reference):
         for field, value in updates.items():
             setattr(org_unit, field, value)
-    await session.refresh(org_unit)
+    # Only after a write: with none, the row was read unlocked, and a refresh
+    # would fail unmapped on one deleted since (ADR 0048).
+    if updates:
+        await session.refresh(org_unit)
     if is_reparent and org_unit.parent_id != old_parent_id:
         await scoring_orchestration.on_org_unit_reparented(
             session, old_parent_id=old_parent_id, new_parent_id=org_unit.parent_id

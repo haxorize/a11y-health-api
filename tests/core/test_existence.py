@@ -87,7 +87,8 @@ class TestEntityLabels:
 # one added beside them, would let a module build the error itself. Named off
 # the functions, so a rename moves the pin rather than leaving a stale literal.
 _GUARD_ENTRY_POINTS = frozenset(
-    entry.__name__ for entry in (existence.get_by_pk, existence.get_by_query, existence.require_reference)
+    entry.__name__
+    for entry in (existence.get_by_pk, existence.get_by_query, existence.lock_by_pk, existence.require_reference)
 )
 _GUARD_LEAF = existence.__name__.rpartition(".")[2]
 
@@ -105,6 +106,11 @@ def _builds_not_found(tree: ast.AST) -> bool:
                     guard_names.add(alias.asname or alias.name)
                 elif from_guard and alias.name not in _GUARD_ENTRY_POINTS:
                     return True
+        elif isinstance(node, ast.Import):
+            # Unaliased, the dotted chain below already catches it.
+            guard_names.update(
+                alias.asname for alias in node.names if alias.asname and alias.name.rpartition(".")[2] == _GUARD_LEAF
+            )
 
     def names_the_error(expr: ast.expr | None) -> bool:
         if isinstance(expr, ast.Call):
@@ -201,6 +207,7 @@ class TestNotFoundDetection:
             f"from ..core.existence import {_BUILDER} as build\nraise build(App, 1)\n",
             f"from a11y_health.core import existence as guard\ne = guard.{_BUILDER}(App, 1)\n",
             f"import a11y_health.core.existence\ne = a11y_health.core.existence.{_BUILDER}(App, 1)\n",
+            f"import a11y_health.core.existence as ex\ne = ex.{_BUILDER}(App, 1)\n",
         ],
         ids=[
             "direct",
@@ -213,6 +220,7 @@ class TestNotFoundDetection:
             "private-builder-relative-import",
             "private-builder-aliased-module",
             "private-builder-dotted",
+            "aliased-module-import",
         ],
     )
     def test_a_second_site_is_detected(self, source: str) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.core import existence
 from a11y_health.core.exceptions import ScanRunCompletedError
 from a11y_health.models.enums import FindingType, ScanRunStatus
 from a11y_health.models.node_finding import NodeFinding
@@ -15,7 +16,6 @@ from a11y_health.models.page_result import PageResult
 from a11y_health.models.rule_finding import RuleFinding
 from a11y_health.models.scan_run import ScanRun
 from a11y_health.schemas.axe_payload import AxeRule, parse_axe_payload
-from a11y_health.services.scan_run import lock_scan_run
 
 
 async def _persist_findings(
@@ -74,9 +74,9 @@ def _assert_scan_run_pending(scan_run: ScanRun) -> None:
 
 async def create_page_result(session: AsyncSession, scan_run_id: int, raw_document: dict[str, Any]) -> PageResult:
     payload = parse_axe_payload(raw_document)
-    # Shared, so page adds still run together while one waits out an
-    # in-flight completion and then reads the run as Completed (ADR 0048).
-    scan_run = await lock_scan_run(session, scan_run_id, shared=True)
+    # Shared, so Page Result creations still run together while one waits out
+    # an in-flight completion and then reads the run as Completed (ADR 0048).
+    scan_run = await existence.lock_by_pk(session, ScanRun, scan_run_id, shared=True)
     _assert_scan_run_pending(scan_run)
 
     page_result = PageResult(

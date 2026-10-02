@@ -50,7 +50,7 @@ _CATEGORIES = {c.value: c for c in Category}
 # Case-sensitive, as the UI's guard in `help-link.ts` is, so the two agree on
 # which stored links render as links.
 _WEB_ADDRESS = re.compile(r"^https?://")
-_WHITESPACE_OR_CONTROL = re.compile(r"[\s\x00-\x1f\x7f]")
+_WHITESPACE_OR_CONTROL = re.compile(r"[\s\x00-\x1f\x7f-\x9f]")
 
 
 def _is_web_address(value: str) -> bool:
@@ -107,13 +107,11 @@ class AxeRule(BaseModel):
         self._derived = _read_rule_tags(self.tags)
         return self
 
-    # `model_copy` skips validators, so a copy given new tags would otherwise
-    # keep the values read from the old ones.
+    # `model_copy` skips validators, so a copy is validated again whole: new
+    # tags are read, and a new link is held to the same web-address rule.
+    # `deep` is moot, since validation builds fresh objects.
     def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
-        copy = super().model_copy(update=update, deep=deep)
-        if update and "tags" in update:
-            copy._derived = _read_rule_tags(copy.tags)
-        return copy
+        return self.model_validate({**self.model_dump(), **(update or {})})
 
     @property
     def category(self) -> Category:

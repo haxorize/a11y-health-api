@@ -225,6 +225,10 @@ class TestAxeRuleSemanticValidation:
             "https://",
             "http://\nx",
             "https://x.test/a\tb",
+            "https://x.test/\x80",
+            # `urlsplit` raises on an unclosed IPv6 bracket rather than
+            # returning no host.
+            "http://[x",
         ],
         ids=repr,
     )
@@ -299,6 +303,12 @@ class TestAxeRuleSemanticValidation:
         copy = rule.model_copy(update={"tags": ["cat.forms", "wcag111"]})
         assert (copy.category, copy.wcag_criteria) == (Category.FORMS, ["1.1.1"])
         assert rule.category == Category.COLOR
+
+    def test_a_copy_with_a_link_that_is_not_a_web_address_is_refused(self) -> None:
+        violation = make_violation("color-contrast", "serious")
+        [rule] = parse_axe_payload(make_axe_payload(violations=[violation])).findings.violations
+        with pytest.raises(ValidationError, match="must be an http or https address"):
+            rule.model_copy(update={"help_url": "javascript:alert(1)"})
 
     def test_classified_fields_attached_to_rule(self) -> None:
         violation = make_violation("color-contrast", "serious")

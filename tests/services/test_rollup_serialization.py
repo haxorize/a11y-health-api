@@ -92,7 +92,7 @@ async def _race_stale_rollup_against_newer_observation(
         # With the lock in place B cannot finish while A holds its stale view;
         # B completing here means the rollup ran unserialized — fail loudly
         # now rather than only via the final-state assertion.
-        blocked = await finished_or_blocked(poll, task_b, b_pid)
+        blocked = await finished_or_blocked(poll, task_b, b_pid, locktype="advisory")
         assert blocked, "session B completed without blocking on the per-owner rollup lock"
 
         resume_stale_rollup.set()

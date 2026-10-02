@@ -438,24 +438,30 @@ async def backend_pid(session: AsyncSession) -> int:
     return (await session.execute(text("SELECT pg_backend_pid()"))).scalar_one()
 
 
-async def _waits_on_a_lock(poll: AsyncSession, pid: int) -> bool:
+async def _waits_on_a_lock(poll: AsyncSession, pid: int, locktype: str | None) -> bool:
     # pg_locks is read live on every call, where pg_stat_activity would be
     # snapshotted at its first read in the poll's transaction.
-    result = await poll.execute(
-        text("SELECT EXISTS (SELECT FROM pg_locks WHERE pid = :pid AND NOT granted)"),
-        {"pid": pid},
-    )
+    sql = "SELECT EXISTS (SELECT FROM pg_locks WHERE pid = :pid AND NOT granted"
+    params: dict[str, Any] = {"pid": pid}
+    # Built conditionally: a NULL-or-equal bind leaves asyncpg no type to infer.
+    if locktype is not None:
+        sql += " AND locktype = :locktype"
+        params["locktype"] = locktype
+    result = await poll.execute(text(sql + ")"), params)
     return result.scalar_one()
 
 
-async def finished_or_blocked(poll: AsyncSession, task: asyncio.Task[Any], pid: int) -> bool:
+async def finished_or_blocked(
+    poll: AsyncSession, task: asyncio.Task[Any], pid: int, *, locktype: str | None = None
+) -> bool:
     """Wait until `task` finishes or the backend `pid` it runs on waits on a
-    lock, and return whether it was waiting. Ends `poll`'s transaction."""
+    lock, of `locktype` when given, and return whether it was waiting. Ends
+    `poll`'s transaction."""
 
     # Polling is forced here: Postgres emits no event for a backend waiting on
     # a lock.
     async def poll_until() -> None:
-        while not task.done() and not await _waits_on_a_lock(poll, pid):  # noqa: ASYNC110
+        while not task.done() and not await _waits_on_a_lock(poll, pid, locktype):  # noqa: ASYNC110
             await asyncio.sleep(0.05)
 
     try:

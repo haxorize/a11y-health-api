@@ -112,7 +112,7 @@ async def _race_a_reparent_into_a_deadlock(
 
         # Fails fast if a regression drops the per-owner lock and lets the
         # holder acquire without ever waiting.
-        blocked = await finished_or_blocked(poll, holder_acquire, holder_pid)
+        blocked = await finished_or_blocked(poll, holder_acquire, holder_pid, locktype="advisory")
         assert blocked, "holder acquired the child lock without blocking on the rollup lock"
 
         # Resuming closes the cycle. The request aborts with 40P01 and the
@@ -149,7 +149,7 @@ async def test_the_race_leaves_every_pooled_connection_at_the_engine_deadlock_ti
     client: AsyncClient, committed_session_factory: SessionFactory, mocker, engine: AsyncEngine
 ) -> None:
     race = await _race_a_reparent_into_a_deadlock(client, committed_session_factory, mocker)
-    holder_pid = (await race.holder.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+    holder_pid = await backend_pid(race.holder)
     await race.holder.close()
 
     pool = engine.pool

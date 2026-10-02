@@ -131,7 +131,7 @@ Declared in `pyproject.toml` under `[tool.pytest.ini_options]`:
 
 `addopts = ["--strict-markers", "--strict-config"]` is on, so a typo'd marker fails the run. Add new markers to `pyproject.toml` before using them.
 
-An integration file is marked whole, not per function — six carry it (`tests/api/test_rollup_deadlock.py`, `tests/services/test_rollup_serialization.py`, `tests/services/test_org_unit_reparent_race.py`, `tests/services/test_scan_run_race.py`, `tests/services/test_org_unit_delete_race.py`, `tests/cli/test_live_server.py`):
+An integration file is marked whole, not per function — seven carry it (`tests/api/test_rollup_deadlock.py`, `tests/services/test_rollup_serialization.py`, `tests/services/test_org_unit_reparent_race.py`, `tests/services/test_scan_run_race.py`, `tests/services/test_org_unit_delete_race.py`, `tests/services/test_update_race.py`, `tests/cli/test_live_server.py`):
 
 ```python
 pytestmark = pytest.mark.integration
@@ -139,7 +139,7 @@ pytestmark = pytest.mark.integration
 
 ## References
 
-- [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it
+- [references/factories.md](references/factories.md) — open before adding or changing a helper in `tests/factories.py`: naming, parent-chain composites, sequenced defaults, the shared scoring arrange helpers, and query helpers. Calling an existing factory needs nothing from it, except § Race helpers, which a two-session race test reads before it waits on a lock
 - [references/layout.md](references/layout.md) — open before adding a file under a mirrored test directory: what each one holds
 - [references/test-recipes.md](references/test-recipes.md) — open when you want a coverage report or a runner flag
 - [references/cli-and-migration-tests.md](references/cli-and-migration-tests.md) — open before writing a CLI test, a migration-body test, or a session-scoped fixture that swaps an attribute

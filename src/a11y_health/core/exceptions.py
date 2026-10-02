@@ -59,9 +59,9 @@ class DuplicateRootError(DomainError):
     def __init__(self, entity: LabeledModel, existing_root_id: object | None = None) -> None:
         self.resource = resource = ENTITY_LABELS[entity]
         self.existing_root_id = existing_root_id
-        # existing_root_id is None on the race path: `_write_race_guard` in
-        # services/org_unit.py builds this instance before its flush, so the
-        # winner is never looked up.
+        # existing_root_id is None on the race path: the root race guard
+        # builds this instance before its flush, so the winner is never
+        # looked up.
         if existing_root_id is None:
             message = f"A top-level {resource.lower()} already exists: only one is allowed"
         else:

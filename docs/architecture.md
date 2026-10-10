@@ -108,7 +108,7 @@ Each **Page Health** carries a weight in the vocabulary: Critical 0, Serious 0.4
 score = (0·critical_pages + 0.4·serious_pages + 0.8·fair_pages + 1.0·good_pages) / total_pages
 ```
 
-The result is saved as a **Score Snapshot** holding the **Score Aggregates**: the score plus the raw counts of total pages, total violations, pages with violations, and pages with critical violations. An app snapshot's `snapshot_at` is the **Scan Run**'s `scanned_at`, the observation time rather than the upload time.
+The result is saved as a **Score Snapshot** holding the **Score Aggregates**: the score plus the raw counts of total pages, total violations, pages with violations, and pages with critical violations. An app snapshot's `snapshot_at` is the **Scan Run**'s `scanned_at`, the observation time rather than the upload time. A run's `scanned_at` must carry a UTC offset; an offset-less value is a framework 422 ([ADR 0049](adr/0049-scan-run-creation-rejects-an-offset-less-scanned-at.md)).
 
 ### Step 3: the score rolls up to Org Units and Brands
 

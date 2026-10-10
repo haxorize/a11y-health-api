@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from a11y_health.models.enums import ScanRunStatus
 from a11y_health.schemas.score_snapshot import ScoreAggregatesRead
 
 
 class ScanRunCreate(BaseModel):
-    scanned_at: datetime
+    scanned_at: AwareDatetime
 
 
 class ScanRunStatusUpdate(BaseModel):

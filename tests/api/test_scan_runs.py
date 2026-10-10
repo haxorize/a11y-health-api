@@ -1,4 +1,3 @@
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,18 +31,28 @@ async def test_create_scan_run(db_client: AsyncClient, db_session: AsyncSession)
     assert "updated_at" in data
 
 
-@pytest.mark.parametrize("scanned_at", ["2026-04-01T12:00:00", "2026-04-01T17:00:00+05:00"])
-async def test_create_scan_run_body_matches_get(
-    db_client: AsyncClient, db_session: AsyncSession, scanned_at: str
-) -> None:
+# Reds if `scanned_at` accepts an offset-less value: stored as a server-local
+# instant, one Scan Run posted with and without an offset would rank two ways.
+async def test_create_scan_run_without_offset_is_422(db_client: AsyncClient, db_session: AsyncSession) -> None:
     app = await make_app_with_org_unit(db_session)
 
-    created = await db_client.post(f"/api/v1/apps/{app.id}/scan-runs", json={"scanned_at": scanned_at})
+    response = await db_client.post(f"/api/v1/apps/{app.id}/scan-runs", json={"scanned_at": "2026-04-01T12:00:00"})
+
+    assert response.status_code == 422
+    assert [error["loc"] for error in response.json()["detail"]] == [["body", "scanned_at"]]
+    assert [error["type"] for error in response.json()["detail"]] == ["timezone_aware"]
+
+
+async def test_create_scan_run_body_matches_get(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    app = await make_app_with_org_unit(db_session)
+
+    created = await db_client.post(f"/api/v1/apps/{app.id}/scan-runs", json={"scanned_at": "2026-04-01T17:00:00+05:00"})
     # db_client shares one session across requests; expiring it makes the GET
     # read the row, as production's per-request session would.
     db_session.expire_all()
     fetched = await db_client.get(f"/api/v1/scan-runs/{created.json()['id']}")
 
+    assert created.json()["scanned_at"] == "2026-04-01T12:00:00Z"
     assert created.json() == fetched.json()
 
 

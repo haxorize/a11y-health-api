@@ -55,6 +55,8 @@ The published contract is unchanged: the pages body is free-form in `openapi.jso
 - **A bad help link fails the whole `import`, not its own date directory.** `import` loads every date directory before the first upload and raises once for all of them, as the 2026-09-04 amendment says, so one relative link stops every directory from uploading until it is fixed. `ingest` loads a single directory, so there the cost is that directory.
 - **`fileName` is not the only Axe Payload text left unchecked.** Entries under `passes` and `inapplicable`, including their `helpUrl` values, and a node's `html` and `target` are stored verbatim in the Raw JSON, and `html` and `target` are served on the Rule Finding as text; nothing screens any of them for a link scheme. No operation in `openapi.json` serves the Raw JSON. Only the typed rules' `helpUrl` is checked, because it is the only one of them the UI renders as a link.
 
+**Amended 2026-10-10 (#179):** the offset-less `endTime` UTC assumption in the 2026-08-05 amendment above is this boundary's alone. A client-supplied Scan Run `scanned_at` takes the opposite rule: it is refused when it carries no UTC offset, and [ADR 0049](0049-scan-run-creation-rejects-an-offset-less-scanned-at.md) owns that rule and the asymmetry between the two. Nothing about this boundary decision changes.
+
 ## Deferred
 
 - Checking `testSubject.fileName` as a web address, reopened when the product decides whether a Page Result's `url` is a URL or a file name.

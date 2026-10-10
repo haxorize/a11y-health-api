@@ -14,7 +14,7 @@
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Scan Run** | A single test execution across one or more pages of an **App**. Its timestamp is when the scan was performed, taken from the test data, not when it was uploaded. | Test run, scan, batch, execution, report |
+| **Scan Run** | A single test execution across one or more pages of an **App**. Its timestamp is when the scan was performed, taken from the test data, not when it was uploaded, and it must carry a UTC offset when posted, as ADR 0049 settles. | Test run, scan, batch, execution, report |
 | **Scan Run Status** | The lifecycle state of a **Scan Run**: **Pending**, accepting **Page Results**, or **Completed**, finalized and scored. The only transition is Pending to Completed, and ADR 0044 settles what refuses it and why. Completing a run and adding a **Page Result** to it run one at a time, as ADR 0048 settles, so a second completion is refused as an invalid transition and a **Page Result** arriving mid-completion is refused because the run is **Completed**. | State, phase, stage |
 | **Page Result** | The outcome of scanning a single URL within a **Scan Run**, including raw JSON, health category, and summary counts. | Page scan, page report, test result |
 | **Raw JSON** | The full axe DevTools JSON preserved on a **Page Result** for reprocessing and debugging, stored exactly as uploaded (including fields the ingestion schema does not model) and never rewritten or re-serialized. | Payload (unqualified), source data |

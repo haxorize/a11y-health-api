@@ -75,6 +75,7 @@ src/a11y_health/
 
 - Pydantic V2 only: `@field_validator` / `@model_validator` (not V1's `@validator`), `model_config = ConfigDict(...)` (not `class Config`), `model_dump()` / `model_validate()` (not `dict()` / `parse_obj()`)
 - Use `Literal` types for constrained string values
+- Type a client-supplied timestamp `AwareDatetime`, so an offset-less value is a framework 422 (ADR 0049); assume UTC only where the timestamp comes from a document we do not control
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models
 - Do not use `RootModel` for wrapping single values

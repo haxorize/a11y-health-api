@@ -178,7 +178,8 @@ class AxePayload(BaseModel):
         # An offset-less endTime is otherwise uncomparable against the UTC mtime
         # fallback and against sibling scans (the CLI compares their scanned_at
         # to pick the newest name, and the server pages Scan Runs by it) —
-        # assume UTC.
+        # assume UTC. A posted Scan Run's scanned_at takes the opposite rule
+        # and is refused without an offset (ADR 0049); don't unify the two.
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 

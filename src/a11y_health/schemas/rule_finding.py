@@ -93,7 +93,7 @@ class NodeFindingRead(BaseModel):
 
 
 # The served form of Node Checks (DOMAIN.md). Each check stays axe's own object;
-# typing the stored column is #170's follow-on, not this read.
+# typing the stored column is #200, not this read.
 class NodeChecks(BaseModel):
     any: list[dict[str, Any]]
     all: list[dict[str, Any]]

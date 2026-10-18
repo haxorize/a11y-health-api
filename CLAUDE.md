@@ -21,7 +21,9 @@ Postgres **15** specifically (`brew install postgresql@15`) — CI's service con
 
 Shared skills: phi-safe-code
 
-The line above is read by the humana/skills repo's `scripts/install.sh --project <this repo>`, which links each named skill into `.claude/skills/` and lists the link in `.git/info/exclude`, so it is never committed; run it once per clone, then restart the session.
+The line above is read by the humana/skills repo's `scripts/install.sh --project <this repo>`, which links each named skill into `.claude/skills/` and lists the link in `.git/info/exclude`, so it is never committed; run it once per clone, then restart the session. These are not the workspace's synced shared skills (`contract-change`), which are committed copies hash-locked in `skills-sync.lock` (the workspace's `../docs/adr/0001-shared-skills-are-copied-with-a-hash-lock.md`).
+
+The repo opts into `phi-safe-code` for one sink: `node_finding.html` (`models/node_finding.py`) stores a scanned page's DOM, which carries whatever data that page rendered. There is no project allowed-field list, retention figure or stricter category, so the skill's rules apply as written.
 
 ## Commands
 

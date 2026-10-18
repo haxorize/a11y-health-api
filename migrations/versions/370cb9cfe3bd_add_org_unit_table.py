@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["parent_id"],
             ["org_unit.id"],
+            name=op.f("org_unit_parent_id_fkey"),
         ),
         sa.PrimaryKeyConstraint("id"),
     )

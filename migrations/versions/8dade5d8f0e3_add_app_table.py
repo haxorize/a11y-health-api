@@ -42,7 +42,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("LENGTH(name) <= 255", name="ck_app_name_length"),
         sa.CheckConstraint("LENGTH(slug) <= 255", name="ck_app_slug_length"),
-        sa.ForeignKeyConstraint(["org_unit_id"], ["org_unit.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["org_unit_id"], ["org_unit.id"], name=op.f("app_org_unit_id_fkey"), ondelete="RESTRICT"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("slug", name="uq_app_slug"),
     )

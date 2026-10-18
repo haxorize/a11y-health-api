@@ -40,7 +40,16 @@ class ScoreSnapshot(TimestampMixin, Base):
             unique=True,
             postgresql_where=text("brand_id IS NOT NULL"),
         ),
-        Index("ix_score_snapshot_app_id", "app_id"),
+        # The Latest Score Snapshot probe reads one App's first entry; the
+        # rollup uniques above serve the other Owners, since they allow no
+        # tie (ADR 0051). `app_id` leading keeps the CASCADE check from `app`
+        # indexed.
+        Index(
+            "ix_score_snapshot_app_id_snapshot_at_id",
+            "app_id",
+            text("snapshot_at DESC"),
+            text("id DESC"),
+        ),
     )
 
     app_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("app.id", ondelete="CASCADE"), nullable=True)

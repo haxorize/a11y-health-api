@@ -18,6 +18,10 @@ config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Operations take this metadata's naming convention, so a foreign key, unique
+# constraint or index a revision leaves unnamed gets the convention's name. The
+# revisions written before the convention pin PostgreSQL's default names with
+# `op.f()` instead (ADR 0051).
 target_metadata = Base.metadata
 
 

@@ -52,28 +52,22 @@ def _brand_apps(brand_id: int) -> Select[tuple[int]]:
     return select(App.id).where(App.brand_id == brand_id)
 
 
-async def _latest_of(
-    session: AsyncSession, snapshots: Select | CompoundSelect, partition_on: list[InstrumentedAttribute]
-) -> list[ScoreSnapshot]:
-    result = await session.execute(select_latest_snapshots(snapshots, partition_on=partition_on))
+async def _latest_of(session: AsyncSession, stmt: Select | CompoundSelect) -> list[ScoreSnapshot]:
+    result = await session.execute(select(ScoreSnapshot).from_statement(stmt))
     return list(result.scalars().all())
 
 
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
-    app_child = select(ScoreSnapshot).join(App, ScoreSnapshot.app_id == App.id).where(App.org_unit_id == org_unit_id)
-    ou_child = (
-        select(ScoreSnapshot)
-        .join(OrgUnit, ScoreSnapshot.org_unit_id == OrgUnit.id)
-        .where(OrgUnit.parent_id == org_unit_id)
-    )
-    return await _latest_of(
-        session, app_child.union_all(ou_child), partition_on=[ScoreSnapshot.app_id, ScoreSnapshot.org_unit_id]
-    )
+    # One probe per Owner type: App and Org Unit ids come from separate
+    # sequences and can collide, so they are never probed as one set.
+    app_children = select_latest_snapshots(App, ScoreSnapshot.app_id).where(App.org_unit_id == org_unit_id)
+    ou_children = select_latest_snapshots(OrgUnit, ScoreSnapshot.org_unit_id).where(OrgUnit.parent_id == org_unit_id)
+    return await _latest_of(session, app_children.union_all(ou_children))
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    snapshots = select(ScoreSnapshot).where(ScoreSnapshot.app_id.in_(_brand_apps(brand_id)))
-    return await _latest_of(session, snapshots, partition_on=[ScoreSnapshot.app_id])
+    brand_apps = select_latest_snapshots(App, ScoreSnapshot.app_id).where(App.id.in_(_brand_apps(brand_id)))
+    return await _latest_of(session, brand_apps)
 
 
 async def _org_unit_parent(session: AsyncSession, org_unit_id: int) -> int | None:
@@ -160,24 +154,25 @@ async def list_latest_scores(
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> CursorPage[ScoreSnapshot]:
-    owner_col = OWNERS[owner_type].id_column
-    snapshots = select(ScoreSnapshot).where(owner_col.is_not(None))
+    spec = OWNERS[owner_type]
+    # The Owner entity rides along as the keyset's source: paging on its id
+    # rather than the snapshot's owner column lets the walk stop at the page.
+    stmt = select_latest_snapshots(spec.entity, spec.id_column).add_columns(spec.entity)
     if brand_id is not None:
         await existence.get_by_pk(session, Brand, brand_id)
-        snapshots = snapshots.where(_brand_scope(owner_type, brand_id))
+        stmt = stmt.where(_brand_scope(owner_type, brand_id))
     if under_org_unit_id is not None:
         await existence.get_by_pk(session, OrgUnit, under_org_unit_id)
-        snapshots = snapshots.where(_under_org_unit_scope(owner_type, under_org_unit_id, direct_only))
+        stmt = stmt.where(_under_org_unit_scope(owner_type, under_org_unit_id, direct_only))
     if owner_id is not None:
         # Exact-match, unlike list_apps' org_unit_id filter, which expands to
         # the subtree unless direct_only: a rollup owner's snapshot already
         # aggregates everything it covers (an org unit's subtree, a brand's
         # flat app set), so expansion would double-count. Any future
         # owner-valued filter on a scores read follows this exact-match side.
-        snapshots = snapshots.where(owner_col.in_(owner_id))
-    stmt = select_latest_snapshots(snapshots, partition_on=[owner_col])
+        stmt = stmt.where(spec.entity.id.in_(owner_id))
     # Keyset on the owner id alone: it is unique here (one row per owner),
-    # never NULL (the filter above), and an owner's position can't move when
+    # never NULL (a primary key), and an owner's position can't move when
     # the latest view recomputes between requests. Keying on snapshot_at — or
     # adding the usual id tiebreak — would let a mid-walk import re-serve an
     # already-served owner (its new latest row compares greater than the
@@ -185,7 +180,7 @@ async def list_latest_scores(
     return await paginate(
         session,
         stmt,
-        keyset=[owner_col],
+        keyset=[spec.entity.id],
         cursor=cursor,
         limit=limit,
     )
@@ -195,7 +190,7 @@ def _brand_scope(owner_type: ScoreSnapshotOwnerType, brand_id: int) -> ColumnEle
     if owner_type is ScoreSnapshotOwnerType.APP:
         # Brand ownership is flat, like the brand rollup: the one membership
         # predicate decides, wherever the app sits in the org tree.
-        return OWNERS[owner_type].id_column.in_(_brand_apps(brand_id))
+        return OWNERS[owner_type].entity.id.in_(_brand_apps(brand_id))
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT or owner_type is ScoreSnapshotOwnerType.BRAND:
         # Only apps carry brand ownership. An org unit has no brand, and a
         # brand isn't owned by a brand — the scoping brand's own rollup
@@ -210,7 +205,7 @@ def _under_org_unit_scope(
     under_org_unit_id: int,
     direct_only: bool,
 ) -> ColumnElement[bool]:
-    owner_col = OWNERS[owner_type].id_column
+    owner_col = OWNERS[owner_type].entity.id
     if owner_type is ScoreSnapshotOwnerType.APP:
         # An app placed anywhere in the subtree — including on the named unit
         # itself — is "under" it, matching list_apps' org_unit_id expansion.

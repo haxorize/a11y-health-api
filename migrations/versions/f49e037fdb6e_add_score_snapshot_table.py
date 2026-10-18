@@ -37,8 +37,10 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
-        sa.ForeignKeyConstraint(["app_id"], ["app.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["scan_run_id"], ["scan_run.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["app_id"], ["app.id"], name=op.f("score_snapshot_app_id_fkey"), ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id"], ["scan_run.id"], name=op.f("score_snapshot_scan_run_id_fkey"), ondelete="RESTRICT"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("scan_run_id", name="uq_score_snapshot_scan_run_id"),
     )

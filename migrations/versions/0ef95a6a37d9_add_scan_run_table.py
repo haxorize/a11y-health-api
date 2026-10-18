@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("scanned_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["app_id"], ["app.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["app_id"], ["app.id"], name=op.f("scan_run_app_id_fkey"), ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_scan_run_app_id", "scan_run", ["app_id"], unique=False)

@@ -33,7 +33,9 @@ def upgrade() -> None:
         sa.Column("inapplicable_count", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["scan_run_id"], ["scan_run.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["scan_run_id"], ["scan_run.id"], name=op.f("page_result_scan_run_id_fkey"), ondelete="RESTRICT"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_page_result_scan_run_id", "page_result", ["scan_run_id"], unique=False)
@@ -51,7 +53,9 @@ def upgrade() -> None:
         sa.Column("wcag_criterion", sa.Text(), nullable=True),
         sa.Column("classifications", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("tags", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.ForeignKeyConstraint(["page_result_id"], ["page_result.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["page_result_id"], ["page_result.id"], name=op.f("rule_finding_page_result_id_fkey"), ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_rule_finding_page_result_id", "rule_finding", ["page_result_id"], unique=False)
@@ -64,7 +68,9 @@ def upgrade() -> None:
         sa.Column("impact", sa.Enum("critical", "serious", "moderate", "minor", name="impact"), nullable=False),
         sa.Column("failure_summary", sa.Text(), nullable=True),
         sa.Column("checks", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.ForeignKeyConstraint(["rule_finding_id"], ["rule_finding.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["rule_finding_id"], ["rule_finding.id"], name=op.f("node_finding_rule_finding_id_fkey"), ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_node_finding_rule_finding_id", "node_finding", ["rule_finding_id"], unique=False)

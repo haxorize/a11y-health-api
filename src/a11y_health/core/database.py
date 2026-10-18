@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Identity, func
+from sqlalchemy import BigInteger, DateTime, Identity, MetaData, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -65,7 +65,18 @@ def bind_session_source(source: SessionSource) -> Iterator[None]:
         _session_source = previous
 
 
+# No `ck` key: every explicit check name already carries its `ck_<table>_`
+# prefix, which a `%(constraint_name)s` template would double. No `pk` key:
+# autogenerate never compares primary key names, so one would let the models
+# and the database disagree unseen (ADR 0051).
 class Base(DeclarativeBase):
+    metadata = MetaData(
+        naming_convention={
+            "fk": "fk_%(table_name)s_%(column_0_name)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ix": "ix_%(table_name)s_%(column_0_name)s",
+        }
+    )
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
 
 

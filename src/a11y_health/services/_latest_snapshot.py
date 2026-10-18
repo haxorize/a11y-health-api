@@ -1,35 +1,36 @@
 """The one definition of Latest Score Snapshot: newest `snapshot_at`, ties
-broken by `id`, per partition. Shared by the Owner Dispatcher's rollup children
+broken by `id`, per Owner. Shared by the Owner Dispatcher's rollup children
 reads and its `/scores/latest` read path (`owner.py`) so the two can never
 select differently (ADR 0023). See `docs/architecture.md` ("The scoring &
 rollup model").
+
+Each Owner is probed for its first row in that order, so a read costs one
+index probe per Owner rather than a ranking of every snapshot (ADR 0051).
 """
 
-from collections.abc import Sequence
+from sqlalchemy import Select, select, true
+from sqlalchemy.orm import InstrumentedAttribute, aliased
 
-from sqlalchemy import CompoundSelect, Select, func, or_, select
-from sqlalchemy.orm import InstrumentedAttribute
-
+from a11y_health.models.app import App
+from a11y_health.models.brand import Brand
+from a11y_health.models.org_unit import OrgUnit
 from a11y_health.models.score_snapshot import ScoreSnapshot
 
 
 def select_latest_snapshots(
-    snapshots: Select | CompoundSelect, partition_on: Sequence[InstrumentedAttribute]
+    owner: type[App] | type[OrgUnit] | type[Brand], owner_col: InstrumentedAttribute[int | None]
 ) -> Select:
-    """`snapshots` must select ScoreSnapshot rows. Multiple `partition_on`
-    columns partition as a tuple — never coalesced, since owner ids come from
-    separate per-table sequences and can collide across owner types. Rows NULL
-    in every partition column are excluded, not lumped into one shared NULL
-    partition."""
-    sub = snapshots.subquery()
-    partition_cols = [sub.c[col.key] for col in partition_on]
-    row_num = (
-        func.row_number()
-        .over(
-            partition_by=partition_cols,
-            order_by=(sub.c.snapshot_at.desc(), sub.c.id.desc()),
-        )
-        .label("rn")
+    """Selects from `owner`'s table, so a caller narrows the Owners with
+    `.where()` on its columns and can order or page on its `id`, which is
+    what lets a LIMIT stop the walk. An Owner with no snapshot yields no
+    row."""
+    probed = aliased(ScoreSnapshot)
+    latest = (
+        select(probed)
+        .where(getattr(probed, owner_col.key) == owner.id)
+        .order_by(probed.snapshot_at.desc(), probed.id.desc())
+        .limit(1)
+        .subquery()
+        .lateral()
     )
-    ranked = select(sub.c.id, row_num).where(or_(*(col.is_not(None) for col in partition_cols))).subquery()
-    return select(ScoreSnapshot).join(ranked, ScoreSnapshot.id == ranked.c.id).where(ranked.c.rn == 1)
+    return select(aliased(ScoreSnapshot, latest)).select_from(owner).join(latest, true())

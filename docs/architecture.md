@@ -172,7 +172,7 @@ The module owns the request-facing half too: an endpoint declares one `paginatio
 
 When you touch it:
 
-- **No NULL may reach a keyset column of the paged rows.** A NULL breaks the row-value comparison and silently drops rows. A `NOT NULL` column guarantees it; `list_latest_scores` filters its nullable owner column instead, which is why `paginate` leaves this to the caller rather than checking it at entry.
+- **No NULL may reach a keyset column of the paged rows.** A NULL breaks the row-value comparison and silently drops rows. `paginate` refuses a nullable keyset column before the first query, so a keyset column is declared `NOT NULL` or is a primary key (ADR 0017).
 - **An optional `into` callback maps each row into a response object.** `list_page_metrics` and `list_findings` use it.
 
 ---

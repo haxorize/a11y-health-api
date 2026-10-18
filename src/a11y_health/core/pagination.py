@@ -217,13 +217,15 @@ def _selects(description: dict[str, Any], owner: object) -> bool:
 
 
 # The row position each keyset column's cursor value is read back from: the
-# first selected entity the column belongs to. Checks the column's type on the
-# way, so both preconditions fail before the first query.
+# first selected entity the column belongs to. Checks the column's type and
+# nullability on the way, so every precondition fails before the first query.
 def _keyset_positions(stmt: Select, keyset: Sequence[InstrumentedAttribute]) -> list[int]:
     descriptions = stmt.column_descriptions
     positions = []
     for attr in keyset:
         _keyset_type(attr)
+        if attr.expression.nullable:
+            raise KeysetMisconfigurationError(attr, "nullable")
         owner = attr.class_
         position = next((i for i, d in enumerate(descriptions) if _selects(d, owner)), None)
         if position is None:
@@ -282,17 +284,11 @@ async def paginate[T](
     second query, so under READ COMMITTED a commit landing between the two can
     make `total` lag the page by the concurrent writes; a refetch corrects it.
 
-    Caller contract not captured by the types: no NULL may reach a keyset
-    column of the paged rows. A NULL makes the row-value `>` comparison return
-    NULL and silently drops rows. Declaring the column NOT NULL is one way;
-    filtering the NULLs out is the other, which is how `list_latest_scores`
-    pages a nullable owner column. That second way is why this is not checked
-    at entry (ADR 0017).
-
     Raises `InvalidCursorError` on a malformed cursor (handled as 400) and,
     before any query, `KeysetMisconfigurationError` if a keyset column's type
-    isn't int/datetime/str or its entity is not in the result row, as it is
-    for `select(Entity)` and `select(Entity, agg, ...)`.
+    isn't int/datetime/str, its entity is not in the result row (as it is for
+    `select(Entity)` and `select(Entity, agg, ...)`), or it is nullable: a
+    NULL makes the row-value `>` comparison return NULL and drops rows.
     """
     positions = _keyset_positions(stmt, keyset)
     unpaged = stmt

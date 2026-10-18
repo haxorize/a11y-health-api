@@ -186,6 +186,7 @@ _UNTYPED_COLUMN = SimpleNamespace(class_=Brand, key="untyped", type=NullType())
         pytest.param(select(Brand), [ScoreSnapshot.id], "ScoreSnapshot.id", id="entity-not-selected"),
         pytest.param(select(_BRAND_ALIAS), [Brand.id], "Brand.id", id="only-an-alias-selected"),
         pytest.param(select(Brand), [_UNTYPED_COLUMN], "Brand.untyped", id="no-python-type"),
+        pytest.param(select(ScoreSnapshot), [ScoreSnapshot.app_id], "ScoreSnapshot.app_id", id="nullable"),
     ],
 )
 async def test_paginate_refuses_a_misconfigured_keyset_before_the_first_query(

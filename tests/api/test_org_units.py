@@ -1,8 +1,12 @@
+import json
+from pathlib import Path
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a11y_health.main import app
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
+
+_REPO = Path(__file__).resolve().parents[2]
 
 
 async def test_create_org_unit(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -175,10 +179,10 @@ async def test_get_ancestors_not_found(db_client: AsyncClient) -> None:
 
 
 def test_the_ancestors_operation_id_names_its_resource() -> None:
-    # The route function's name is the operation id the UI's generated client
-    # keys `getOrgUnitAncestorsOptions` on (#181). Red when the function is
-    # renamed back to `get_ancestors`.
-    operation = app.openapi()["paths"]["/api/v1/org-units/{org_unit_id}/ancestors"]["get"]
+    # FastAPI takes the operation id from the route function's name, and the
+    # UI's generated client keys `getOrgUnitAncestorsOptions` on it.
+    spec = json.loads((_REPO / "openapi.json").read_text())
+    operation = spec["paths"]["/api/v1/org-units/{org_unit_id}/ancestors"]["get"]
 
     assert operation["operationId"] == "get_org_unit_ancestors"
 

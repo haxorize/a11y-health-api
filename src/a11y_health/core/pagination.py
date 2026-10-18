@@ -103,10 +103,9 @@ class TotaledCursorPage[T]:
     total: int
 
 
-# The pagination response envelope: one page of a listing as served, not the
-# domain's Page Result or Page Health. `CursorPage` is its service-layer twin,
-# which `from_cursor_page` converts into this; a page carrying a total goes
-# through `TotaledPageEnvelope` instead.
+# One page of a listing as served, not a Page Result (DOMAIN.md). The class
+# name is the OpenAPI component name the UI's types follow, so a rename is a
+# contract change.
 class PageEnvelope[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None

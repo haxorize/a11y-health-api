@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.ids import EntityId
-from a11y_health.core.pagination import Page, PageParams
+from a11y_health.core.pagination import PageEnvelope, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
 from a11y_health.services import owner as owner_service
@@ -22,7 +22,7 @@ async def list_latest_scores(
     brand_id: EntityId | None = None,
     under_org_unit_id: EntityId | None = None,
     direct_only: bool = False,
-) -> Page[ScoreSnapshotRead]:
+) -> PageEnvelope[ScoreSnapshotRead]:
     page = await owner_service.list_latest_scores(
         db,
         owner_type,
@@ -33,4 +33,4 @@ async def list_latest_scores(
         cursor=pagination.cursor,
         limit=pagination.limit,
     )
-    return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
+    return PageEnvelope.from_cursor_page(page, ScoreSnapshotRead.model_validate)

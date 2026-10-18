@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.ids import EntityId
-from a11y_health.core.pagination import OrderParam, Page, PageParams
+from a11y_health.core.pagination import OrderParam, PageEnvelope, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
@@ -28,7 +28,7 @@ async def list_apps(
     brand_id: Annotated[list[EntityId] | None, Query()] = None,
     org_unit_id: Annotated[list[EntityId] | None, Query()] = None,
     direct_only: bool = False,
-) -> Page[AppRead]:
+) -> PageEnvelope[AppRead]:
     page = await app_service.list_apps(
         db,
         brand_id=brand_id,
@@ -37,7 +37,7 @@ async def list_apps(
         cursor=pagination.cursor,
         limit=pagination.limit,
     )
-    return Page.from_cursor_page(page, AppRead.model_validate)
+    return PageEnvelope.from_cursor_page(page, AppRead.model_validate)
 
 
 @router.get("/slug/{slug}", responses=error_responses(ErrorCode.NOT_FOUND))
@@ -64,7 +64,7 @@ async def list_app_scores(
     app_id: EntityId,
     pagination: PageParams,
     order: OrderParam,
-) -> Page[ScoreSnapshotRead]:
+) -> PageEnvelope[ScoreSnapshotRead]:
     page = await owner_service.list_scores(
         db,
         ScoreSnapshotOwnerType.APP,
@@ -73,7 +73,7 @@ async def list_app_scores(
         limit=pagination.limit,
         descending=order.descending,
     )
-    return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
+    return PageEnvelope.from_cursor_page(page, ScoreSnapshotRead.model_validate)
 
 
 @router.delete(

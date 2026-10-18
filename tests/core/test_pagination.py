@@ -14,10 +14,10 @@ from a11y_health.core.pagination import (
     CursorPage,
     InvalidCursorError,
     KeysetMisconfigurationError,
-    Page,
+    PageEnvelope,
     PaginationParams,
     TotaledCursorPage,
-    TotaledPage,
+    TotaledPageEnvelope,
     encode_cursor,
     paginate,
 )
@@ -312,11 +312,11 @@ class TestPaginationParams:
         assert PaginationParams(limit=limit).limit == limit
 
 
-class TestPageFromCursorPage:
+class TestPageEnvelopeFromCursorPage:
     def test_maps_items_and_preserves_cursor(self) -> None:
         internal = CursorPage(items=[1, 2, 3], next_cursor="cursor-xyz")
 
-        page = Page.from_cursor_page(internal, str)
+        page = PageEnvelope.from_cursor_page(internal, str)
 
         assert page.items == ["1", "2", "3"]
         assert page.next_cursor == "cursor-xyz"
@@ -324,7 +324,7 @@ class TestPageFromCursorPage:
     def test_default_mapper_passes_items_through_unchanged(self) -> None:
         internal = CursorPage(items=["already", "shaped"], next_cursor="c1")
 
-        page = Page.from_cursor_page(internal)
+        page = PageEnvelope.from_cursor_page(internal)
 
         assert page.items == ["already", "shaped"]
         assert page.next_cursor == "c1"
@@ -332,7 +332,7 @@ class TestPageFromCursorPage:
     def test_empty_result_yields_no_items_and_no_cursor(self) -> None:
         internal: CursorPage[int] = CursorPage(items=[], next_cursor=None)
 
-        page = Page.from_cursor_page(internal, str)
+        page = PageEnvelope.from_cursor_page(internal, str)
 
         assert page.items == []
         assert page.next_cursor is None
@@ -340,21 +340,22 @@ class TestPageFromCursorPage:
     def test_absent_cursor_stays_absent(self) -> None:
         internal = CursorPage(items=[1], next_cursor=None)
 
-        page = Page.from_cursor_page(internal, str)
+        page = PageEnvelope.from_cursor_page(internal, str)
 
         assert page.next_cursor is None
 
 
-class TestTotaledPageFromTotaledCursorPage:
+class TestTotaledPageEnvelopeFromTotaledCursorPage:
     # Pins the type-level guard: as a subclass, a totaled page would type-check
-    # into `Page.from_cursor_page` and lose `total` without a runtime error.
+    # into `PageEnvelope.from_cursor_page` and lose `total` without a runtime
+    # error.
     def test_a_totaled_cursor_page_is_not_a_cursor_page(self) -> None:
         assert not issubclass(TotaledCursorPage, CursorPage)
 
     def test_preserves_items_cursor_and_total(self) -> None:
         internal = TotaledCursorPage(items=["already", "shaped"], next_cursor="cursor-xyz", total=7)
 
-        page = TotaledPage.from_totaled_cursor_page(internal)
+        page = TotaledPageEnvelope.from_totaled_cursor_page(internal)
 
         assert page.items == ["already", "shaped"]
         assert page.next_cursor == "cursor-xyz"
@@ -363,7 +364,7 @@ class TestTotaledPageFromTotaledCursorPage:
     def test_empty_result_yields_no_items_and_zero_total(self) -> None:
         internal: TotaledCursorPage[int] = TotaledCursorPage(items=[], next_cursor=None, total=0)
 
-        page = TotaledPage.from_totaled_cursor_page(internal)
+        page = TotaledPageEnvelope.from_totaled_cursor_page(internal)
 
         assert page.items == []
         assert page.next_cursor is None

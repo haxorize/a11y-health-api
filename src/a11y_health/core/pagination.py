@@ -92,9 +92,10 @@ class CursorPage[T]:
     next_cursor: str | None
 
 
-# Not a CursorPage subclass: a totaled page reaching `Page.from_cursor_page`
-# would pay the count query and drop `total`, and without the subtype that
-# mis-call is a type error rather than a runtime one.
+# Not a CursorPage subclass: a totaled page reaching
+# `PageEnvelope.from_cursor_page` would pay the count query and drop `total`,
+# and without the subtype that mis-call is a type error rather than a runtime
+# one.
 @dataclass(frozen=True)
 class TotaledCursorPage[T]:
     items: list[T]
@@ -105,8 +106,8 @@ class TotaledCursorPage[T]:
 # The pagination response envelope: one page of a listing as served, not the
 # domain's Page Result or Page Health. `CursorPage` is its service-layer twin,
 # which `from_cursor_page` converts into this; a page carrying a total goes
-# through `TotaledPage` instead.
-class Page[T](BaseModel):
+# through `TotaledPageEnvelope` instead.
+class PageEnvelope[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
 
@@ -115,36 +116,40 @@ class Page[T](BaseModel):
     # PageMetricsRead).
     @overload
     @classmethod
-    def from_cursor_page[I](cls, page: CursorPage[I]) -> Page[I]: ...
+    def from_cursor_page[I](cls, page: CursorPage[I]) -> PageEnvelope[I]: ...
     @overload
     @classmethod
-    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> Page[R]: ...
+    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R]) -> PageEnvelope[R]: ...
     @classmethod
-    def from_cursor_page[I, R](cls, page: CursorPage[I], item: Callable[[I], R] | None = None) -> Page[I] | Page[R]:
+    def from_cursor_page[I, R](
+        cls, page: CursorPage[I], item: Callable[[I], R] | None = None
+    ) -> PageEnvelope[I] | PageEnvelope[R]:
         if item is None:
-            return Page(items=page.items, next_cursor=page.next_cursor)
-        return Page(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
+            return PageEnvelope(items=page.items, next_cursor=page.next_cursor)
+        return PageEnvelope(items=[item(i) for i in page.items], next_cursor=page.next_cursor)
 
 
-# Per-operation extension, not a field on Page: only operations whose consumers
-# need an exact filtered count pay the count query, and every other envelope
-# keeps its two-field shape.
-class TotaledPage[T](Page[T]):
+# Per-operation extension, not a field on PageEnvelope: only operations whose
+# consumers need an exact filtered count pay the count query, and every other
+# envelope keeps its two-field shape.
+class TotaledPageEnvelope[T](PageEnvelope[T]):
     total: int
 
     @overload
     @classmethod
-    def from_totaled_cursor_page[I](cls, page: TotaledCursorPage[I]) -> TotaledPage[I]: ...
+    def from_totaled_cursor_page[I](cls, page: TotaledCursorPage[I]) -> TotaledPageEnvelope[I]: ...
     @overload
     @classmethod
-    def from_totaled_cursor_page[I, R](cls, page: TotaledCursorPage[I], item: Callable[[I], R]) -> TotaledPage[R]: ...
+    def from_totaled_cursor_page[I, R](
+        cls, page: TotaledCursorPage[I], item: Callable[[I], R]
+    ) -> TotaledPageEnvelope[R]: ...
     @classmethod
     def from_totaled_cursor_page[I, R](
         cls, page: TotaledCursorPage[I], item: Callable[[I], R] | None = None
-    ) -> TotaledPage[I] | TotaledPage[R]:
+    ) -> TotaledPageEnvelope[I] | TotaledPageEnvelope[R]:
         if item is None:
-            return TotaledPage(items=page.items, next_cursor=page.next_cursor, total=page.total)
-        return TotaledPage(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)
+            return TotaledPageEnvelope(items=page.items, next_cursor=page.next_cursor, total=page.total)
+        return TotaledPageEnvelope(items=[item(i) for i in page.items], next_cursor=page.next_cursor, total=page.total)
 
 
 def encode_cursor(*values: int | str | datetime) -> str:

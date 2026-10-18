@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.ids import EntityId
-from a11y_health.core.pagination import OrderParam, Page, PageParams
+from a11y_health.core.pagination import OrderParam, PageEnvelope, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.brand import BrandRead
 from a11y_health.schemas.score_snapshot import ScoreSnapshotRead
@@ -31,7 +31,7 @@ async def list_brand_scores(
     brand_id: EntityId,
     pagination: PageParams,
     order: OrderParam,
-) -> Page[ScoreSnapshotRead]:
+) -> PageEnvelope[ScoreSnapshotRead]:
     page = await owner_service.list_scores(
         db,
         ScoreSnapshotOwnerType.BRAND,
@@ -40,4 +40,4 @@ async def list_brand_scores(
         limit=pagination.limit,
         descending=order.descending,
     )
-    return Page.from_cursor_page(page, ScoreSnapshotRead.model_validate)
+    return PageEnvelope.from_cursor_page(page, ScoreSnapshotRead.model_validate)

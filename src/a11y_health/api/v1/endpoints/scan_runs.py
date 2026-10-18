@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
 from a11y_health.core.ids import EntityId
-from a11y_health.core.pagination import Page, PageParams, TotaledPage
+from a11y_health.core.pagination import PageEnvelope, PageParams, TotaledPageEnvelope
 from a11y_health.schemas.page_result import PageMetricsRead, PageResultRead
 from a11y_health.schemas.scan_run import ScanRunCreate, ScanRunRead, ScanRunStatusUpdate, ScanRunSummaryRead
 from a11y_health.services import page_result as page_result_service
@@ -29,9 +29,9 @@ async def list_scan_runs(
     db: DbSession,
     app_id: EntityId,
     pagination: PageParams,
-) -> TotaledPage[ScanRunRead]:
+) -> TotaledPageEnvelope[ScanRunRead]:
     page = await scan_run_service.list_scan_runs(db, app_id, cursor=pagination.cursor, limit=pagination.limit)
-    return TotaledPage.from_totaled_cursor_page(page, ScanRunRead.model_validate)
+    return TotaledPageEnvelope.from_totaled_cursor_page(page, ScanRunRead.model_validate)
 
 
 @router.get("/{scan_run_id}", responses=error_responses(ErrorCode.NOT_FOUND))
@@ -45,9 +45,9 @@ async def list_scan_run_pages(
     db: DbSession,
     scan_run_id: EntityId,
     pagination: PageParams,
-) -> Page[PageMetricsRead]:
+) -> PageEnvelope[PageMetricsRead]:
     page = await scan_run_service.list_page_metrics(db, scan_run_id, cursor=pagination.cursor, limit=pagination.limit)
-    return Page.from_cursor_page(page)
+    return PageEnvelope.from_cursor_page(page)
 
 
 @pages_router.post(

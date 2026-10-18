@@ -1,6 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a11y_health.main import app
 from tests.factories import assert_error, make_app, make_brand, make_org_unit
 
 
@@ -171,6 +172,15 @@ async def test_get_ancestors(db_client: AsyncClient, db_session: AsyncSession) -
 async def test_get_ancestors_not_found(db_client: AsyncClient) -> None:
     response = await db_client.get("/api/v1/org-units/999999/ancestors")
     assert response.status_code == 404
+
+
+def test_the_ancestors_operation_id_names_its_resource() -> None:
+    # The route function's name is the operation id the UI's generated client
+    # keys `getOrgUnitAncestorsOptions` on (#181). Red when the function is
+    # renamed back to `get_ancestors`.
+    operation = app.openapi()["paths"]["/api/v1/org-units/{org_unit_id}/ancestors"]["get"]
+
+    assert operation["operationId"] == "get_org_unit_ancestors"
 
 
 async def test_update_rejects_circular_parent(db_client: AsyncClient, db_session: AsyncSession) -> None:

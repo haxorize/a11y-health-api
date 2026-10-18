@@ -65,7 +65,7 @@ src/a11y_health/
       db: DbSession,
       pagination: PageParams,
       brand_id: Annotated[list[EntityId] | None, Query()] = None,
-  ) -> Page[AppRead]: ...
+  ) -> PageEnvelope[AppRead]: ...
   ```
 - Paginated endpoints: see [Pagination](#pagination)
 - Return Pydantic response models with explicit type annotations
@@ -143,9 +143,9 @@ Cursor-based (keyset) pagination via `core/pagination.py` — one deep module ow
 async def list_apps(
     db: DbSession,
     pagination: PageParams,
-) -> Page[AppRead]:
+) -> PageEnvelope[AppRead]:
     page = await app_service.list_apps(db, cursor=pagination.cursor, limit=pagination.limit)
-    return Page.from_cursor_page(page, AppRead.model_validate)
+    return PageEnvelope.from_cursor_page(page, AppRead.model_validate)
 ```
 
 **Service:**
@@ -160,7 +160,7 @@ Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `ke
 
 **Enforcement** — contract tests in `tests/test_cursor_pagination.py` sweep every served operation. Accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). The sweep reaches sub-dependencies, so a shared dependency growing its own `cursor` or `limit` fails the rule above as well: two definitions of one wire parameter publish conflicting schemas. A forgotten declaration fails the suite, not review.
 
-Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `Page[T]` (Pydantic) with `Page.from_cursor_page`.
+Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `PageEnvelope[T]` (Pydantic) with `PageEnvelope.from_cursor_page`.
 
 ## Error responses
 

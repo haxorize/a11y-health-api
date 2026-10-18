@@ -17,7 +17,13 @@ from typing import Any
 from fastapi.routing import iter_route_contexts
 
 from a11y_health.core.error_contract import ErrorCode
-from a11y_health.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page, PaginationParams, TotaledPage
+from a11y_health.core.pagination import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    PageEnvelope,
+    PaginationParams,
+    TotaledPageEnvelope,
+)
 from a11y_health.main import app
 from tests._declaration_honesty import declared_codes
 
@@ -35,7 +41,7 @@ class _Operation:
 def _serves_pages(ctx: Any) -> bool:
     # docs/spec routes are plain starlette Routes with no response_model
     model = getattr(ctx, "response_model", None)
-    return isinstance(model, type) and issubclass(model, Page)
+    return isinstance(model, type) and issubclass(model, PageEnvelope)
 
 
 @functools.cache
@@ -52,7 +58,7 @@ def _paginated_operations() -> tuple[_Operation, ...]:
         for method in sorted(ctx.methods or ()):
             published = _spec()["paths"].get(ctx.path_format, {}).get(method.lower())
             assert published is not None, (
-                f"{method} {ctx.path_format} serves the Page envelope but is missing from the "
+                f"{method} {ctx.path_format} serves the PageEnvelope but is missing from the "
                 f"OpenAPI document — paginated operations must publish their contract"
             )
             operations.append(_Operation(method, ctx, published))
@@ -76,7 +82,7 @@ def _published_parameters(op: _Operation) -> dict[str, dict[str, Any]]:
 def test_every_operation_serving_the_page_envelope_accepts_a_cursor() -> None:
     for op in _paginated_operations():
         assert "cursor" in _published_parameters(op), (
-            f"{op} serves the Page envelope but does not accept a cursor — consume PageParams from core.pagination"
+            f"{op} serves the PageEnvelope but does not accept a cursor — consume PageParams from core.pagination"
         )
 
 
@@ -89,8 +95,8 @@ def test_every_operation_accepting_a_cursor_serves_the_page_envelope() -> None:
         for method, operation in operations.items():
             if any(param["name"] == "cursor" for param in operation.get("parameters", [])):
                 assert (path, method) in paginated, (
-                    f"{method.upper()} {path} accepts a cursor but does not serve the Page "
-                    f"envelope — unbounded list operations return Page[...] (ADR 0025 keeps "
+                    f"{method.upper()} {path} accepts a cursor but does not serve the PageEnvelope"
+                    f" — unbounded list operations return PageEnvelope[...] (ADR 0025 keeps "
                     f"bounded reference lists bare and cursor-free)"
                 )
 
@@ -107,14 +113,14 @@ def test_every_paginated_operation_uses_the_pagination_owned_definition() -> Non
             f"{op} declares pagination parameters outside PageParams — consume PageParams from core.pagination instead"
         )
         assert any(dep.call is PaginationParams for dep in dependants), (
-            f"{op} serves the Page envelope but does not consume PageParams from core.pagination"
+            f"{op} serves the PageEnvelope but does not consume PageParams from core.pagination"
         )
 
 
 def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
     for op in _paginated_operations():
         assert ErrorCode.INVALID_CURSOR in declared_codes(op.context), (
-            f"{op} serves the Page envelope but does not declare the invalid-cursor error mode — "
+            f"{op} serves the PageEnvelope but does not declare the invalid-cursor error mode — "
             f"add ErrorCode.INVALID_CURSOR to its error_responses()"
         )
 
@@ -123,20 +129,20 @@ def test_every_paginated_operation_declares_the_invalid_cursor_mode() -> None:
 # one declaring invalid_cursor does: it must publish `total` as a required
 # response property, so a client can rely on it without probing.
 def test_every_totaled_operation_publishes_a_required_total() -> None:
-    totaled = [op for op in _paginated_operations() if issubclass(op.context.response_model, TotaledPage)]
+    totaled = [op for op in _paginated_operations() if issubclass(op.context.response_model, TotaledPageEnvelope)]
     assert totaled, "totaled-operation sweep found nothing — detection is broken"
     for op in totaled:
         ref = op.published["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
         schema = _spec()["components"]["schemas"][ref.rsplit("/", 1)[-1]]
         assert "total" in schema.get("required", []), (
-            f"{op} serves the TotaledPage envelope but its response schema does not require `total`"
+            f"{op} serves the TotaledPageEnvelope but its response schema does not require `total`"
         )
 
 
 def test_openapi_page_size_bounds_and_default_propagate_from_the_module() -> None:
     for op in _paginated_operations():
         limit = _published_parameters(op).get("limit")
-        assert limit is not None, f"{op} serves the Page envelope but publishes no `limit`"
+        assert limit is not None, f"{op} serves the PageEnvelope but publishes no `limit`"
         assert limit["schema"]["minimum"] == 1, f"{op}"
         assert limit["schema"]["maximum"] == MAX_PAGE_SIZE, f"{op}"
         assert limit["schema"]["default"] == DEFAULT_PAGE_SIZE, f"{op}"

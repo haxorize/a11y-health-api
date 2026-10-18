@@ -124,7 +124,7 @@ Omit deferred columns from list-level Read schemas — they are not loaded by de
   apps = (await session.execute(select(App).where(App.id.in_(app_ids)))).scalars().all()
   ```
 - **Batch inserts** at Page Result creation — never loop single-row INSERTs. `session.execute(insert(Model), list_of_dicts)` issues one statement per chunk
-- **Cursor/keyset pagination** for list endpoints, never `OFFSET` — implementation (helpers, composite cursors, `Page[T]`) is owned by the fastapi skill's Pagination section
+- **Cursor/keyset pagination** for list endpoints, never `OFFSET` — implementation (helpers, composite cursors, `PageEnvelope[T]`) is owned by the fastapi skill's Pagination section
 - **AsyncSession isn't concurrent-safe**: never `asyncio.gather` (or otherwise interleave) operations on a shared session — concurrent use deadlocks or corrupts state. One session per concurrent task
 - **Never check-then-insert.** A uniqueness or FK rule is enforced by the constraint and translated by `core/integrity.py`'s `guard_constraints()` ([ADR 0028](../../../docs/adr/0028-integrity-guard-constraint-identity-savepoint.md)), never by a SELECT before the INSERT. Postgres UPSERT (`on_conflict_do_update`, `on_conflict_do_nothing`) and `COPY` have no site in this schema today; the guarded flush is the answer here
 - **Short transactions**: never `await` HTTP or external I/O inside an open transaction. Locks held during I/O serialize unrelated requests and pin connections from the async pool. Do the I/O first, then open the transaction for the write

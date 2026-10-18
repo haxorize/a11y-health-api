@@ -38,8 +38,8 @@ async def no_server() -> AsyncIterator[httpx.AsyncClient]:
 # stall lasts exactly as long as the client's patience and never delays
 # shutdown; `redirect` bounces to a real route; `body-limit` answers a POST
 # declaring more than PROXY_BODY_LIMIT bytes with an HTML 413 before reading
-# the body and closes the connection, as an ingress with a request-size cap
-# does (#140) — smaller requests still reach the app.
+# the body, then discards the body and closes the connection, as an ingress
+# with a request-size cap does (#140) — smaller requests still reach the app.
 PROXY_HEADER = "x-test-proxy"
 PROXY_STALL = "stall"
 PROXY_REDIRECT = "redirect"
@@ -83,6 +83,11 @@ class _FakeProxy:
         elif behavior == PROXY_BODY_LIMIT and int(request_headers.get("content-length", 0)) > PROXY_BODY_LIMIT_BYTES:
             headers = [(b"content-type", b"text/html"), (b"connection", b"close")]
             await send({"type": "http.response.start", "status": 413, "headers": headers})
+            # Discarded before the close, as an ingress's lingering close does:
+            # request bytes arriving after it make the kernel reset the
+            # connection, which can destroy the 413 before the client reads it.
+            while (await receive()).get("more_body"):
+                pass
             await send({"type": "http.response.body", "body": b"<html><body>Request Entity Too Large</body></html>"})
         else:
             record = Forwarded(tuple(scope["client"]), scope["method"], scope["path"], request_headers)

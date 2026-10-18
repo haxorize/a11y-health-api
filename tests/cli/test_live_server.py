@@ -9,6 +9,7 @@ of it are `live_server` in conftest."""
 
 import os
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -193,3 +194,30 @@ async def test_large_post_rejected_by_a_proxy_is_one_failed_page_and_the_run_con
     uploads = [f for f in on_the_wire if f.method == "POST" and f.path.endswith("/pages")]
     assert len(uploads) == 1
     assert len({f.peer for f in on_the_wire}) == 2
+
+
+async def test_the_body_limit_proxy_reads_the_whole_body_before_its_413_completes(_fake_proxy: Any) -> None:
+    # A close with request bytes still arriving makes the kernel reset the
+    # connection, and the reset can destroy the 413 before the client reads
+    # it, which the test above then sees as an unreachable API. Over the socket
+    # the race is timing, so the proxy's side of it is pinned here instead.
+    unread = [
+        {"type": "http.request", "body": b"p" * PROXY_BODY_LIMIT_BYTES, "more_body": True},
+        {"type": "http.request", "body": b"p", "more_body": False},
+    ]
+    unread_at_close: list[int] = []
+
+    async def receive() -> dict[str, Any]:
+        return unread.pop(0)
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            assert message["status"] == 413
+        elif not message.get("more_body"):
+            unread_at_close.append(len(unread))
+
+    content_length = str(PROXY_BODY_LIMIT_BYTES + 1).encode()
+    headers = [(PROXY_HEADER.encode(), PROXY_BODY_LIMIT.encode()), (b"content-length", content_length)]
+    await _fake_proxy({"type": "http", "method": "POST", "path": "/pages", "headers": headers}, receive, send)
+
+    assert unread_at_close == [0]

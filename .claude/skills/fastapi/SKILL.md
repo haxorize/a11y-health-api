@@ -160,7 +160,7 @@ Use a composite keyset for non-unique sort keys (timestamp + id tiebreaker): `ke
 
 **Enforcement** — contract tests in `tests/test_cursor_pagination.py` sweep every served operation. Accepting a cursor requires consuming `PageParams` and declaring `ErrorCode.INVALID_CURSOR` (raised by `paginate` on a malformed cursor, mapped to 400 by the Error Contract). The sweep reaches sub-dependencies, so a shared dependency growing its own `cursor` or `limit` fails the rule above as well: two definitions of one wire parameter publish conflicting schemas. A forgotten declaration fails the suite, not review.
 
-Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `PageEnvelope[T]` (Pydantic) with `PageEnvelope.from_cursor_page`.
+Service returns the internal `CursorPage[T]` (dataclass); the endpoint converts to the wire-format `PageEnvelope[T]` (Pydantic) with `PageEnvelope.from_cursor_page`. A totaled listing (`paginate(..., with_total=True)`) returns `TotaledCursorPage[T]`, which converts with `TotaledPageEnvelope.from_totaled_cursor_page`.
 
 ## Error responses
 

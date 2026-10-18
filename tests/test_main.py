@@ -23,6 +23,21 @@ def test_every_operation_id_in_the_generated_document_is_distinct() -> None:
     assert [op_id for op_id, n in counts.items() if n > 1] == []
 
 
+def test_every_operation_on_one_path_carries_the_same_tags() -> None:
+    # A tag-grouped reader of the contract sees one URL's verbs under one
+    # heading. Red when one verb of a path is served from a router with
+    # another tag, as `/scan-runs/{scan_run_id}/pages` once was.
+    paths = app.openapi()["paths"]
+    split = {
+        path: tags
+        for path, ops in paths.items()
+        if len(tags := {tuple(sorted(op.get("tags", []))) for op in ops.values()}) > 1
+    }
+
+    assert len(paths["/api/v1/scan-runs/{scan_run_id}/pages"]) == 2
+    assert split == {}
+
+
 # With credentials allowed, a wildcard cannot be sent back as `*` (the Fetch
 # spec refuses it), so an allowed origin is echoed; an origin outside a fixed
 # list is refused at preflight.

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from a11y_health.core.exceptions import DomainError
+from a11y_health.core.ids import BIGINT_MAX
 
 
 class InvalidCursorError(DomainError):
@@ -165,6 +166,15 @@ def _decode_cursor(cursor: str, *, expected: int) -> list:
     return decoded
 
 
+# Every int keyset is an identity column, so a forged value outside its range
+# is a bad cursor rather than an asyncpg overflow (ADR 0050).
+def _require_id(raw: Any) -> int:
+    value = int(raw)
+    if not 1 <= value <= BIGINT_MAX:
+        raise ValueError(value)
+    return value
+
+
 def _require_str(raw: object) -> str:
     if not isinstance(raw, str):
         raise InvalidCursorError
@@ -174,7 +184,7 @@ def _require_str(raw: object) -> str:
 # The supported keyset types, each with its cursor decoding: one table, so the
 # entry check and the coercion cannot disagree on what is supported.
 _KEYSET_COERCIONS: dict[type, Callable[[Any], object]] = {
-    int: int,
+    int: _require_id,
     datetime: datetime.fromisoformat,
     str: _require_str,
 }

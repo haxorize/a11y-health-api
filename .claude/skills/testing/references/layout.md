@@ -8,9 +8,12 @@ tests/
     test_health.py          # tests for api/v1/endpoints/health.py
     test_deps.py            # api/deps.py's session scope
     test_<router>.py        # one file per router, not per endpoint module — scan_runs.py declares
-                            # three. Its two scan-run routers share test_scan_runs.py; pages_router
-                            # is test_pages.py; a nested read takes its own file
-                            # (test_scan_run_pages.py, test_scan_run_summary.py)
+                            # three — and a nested read takes its own file. The two scan-run
+                            # routers share test_scan_runs.py; pages_router's create is
+                            # test_pages.py and its list read test_scan_run_pages.py; the summary
+                            # read is test_scan_run_summary.py
+    test_out_of_range_ids.py  # ADR 0050's edges, one site per kind of id input: 422 outside the
+                              # identity range, the lookup's 404 inside it
     test_rollup_deadlock.py # the #104 deadlock 409 through the full request stack; `integration`
   services/
     test_<resource>.py      # direct service-layer tests, one per public services/ module. The

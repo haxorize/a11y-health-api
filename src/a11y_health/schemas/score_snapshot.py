@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # The wire form of Score Aggregates (DOMAIN.md): its fields are a subset of
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 class ScoreAggregatesRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    score: float
+    score: float = Field(description="A 0 to 1 fraction, not a percentage: a perfect score is 1.0.")
     total_violations: int
     pages_with_violations: int
     pages_with_critical_violations: int

@@ -14,10 +14,11 @@ tests/
   __init__.py              # one in every test directory except fixtures/, which holds data
   conftest.py              # the shared fixtures, listed under Fixtures below
   test_config.py           # top-level Settings/config tests
-  test_main.py             # application assembly: operation-id uniqueness, CORS by allowed origins, lifespan
+  test_main.py             # application assembly: operation-id uniqueness, one tag set per path, CORS by allowed origins, lifespan
   _declaration_honesty.py  # the ADR 0033 mechanism; conftest wires it suite-wide
   test_declaration_honesty.py  # its own suite — canaries, include-level, enumeration
   test_cursor_pagination.py  # the Cursor Pagination conformance sweep over every served operation
+  test_id_bounds.py        # ADR 0050's sweep: every `id`/`*_id` request site in the spec carries the identity bounds
   import_graph.py          # shared import-reading helpers for the topology guards
   test_import_graph.py     # the shared walk's own coverage, pinned on a non-empty set
   test_import_honesty.py   # the ADR 0038 private-module rule, checked repo-wide

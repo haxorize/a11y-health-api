@@ -2,13 +2,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from a11y_health.core.ids import EntityId
 from a11y_health.core.slug import NAME_MAX_LENGTH, derive_slug
 
 
 class AppCreate(BaseModel):
     name: str = Field(max_length=NAME_MAX_LENGTH)
-    brand_id: int
-    org_unit_id: int
+    brand_id: EntityId
+    org_unit_id: EntityId
 
     @field_validator("name")
     @classmethod
@@ -18,7 +19,7 @@ class AppCreate(BaseModel):
 
 
 class AppUpdate(BaseModel):
-    org_unit_id: int | None = None
+    org_unit_id: EntityId | None = None
 
 
 class AppRead(BaseModel):

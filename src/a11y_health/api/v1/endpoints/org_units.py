@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
+from a11y_health.core.ids import EntityId
 from a11y_health.core.pagination import OrderParam, Page, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.org_unit import OrgUnitCreate, OrgUnitRead, OrgUnitUpdate
@@ -23,14 +24,14 @@ async def create_org_unit(db: DbSession, data: OrgUnitCreate) -> OrgUnitRead:
 @router.get("")
 async def list_org_units(
     db: DbSession,
-    parent_id: Annotated[list[int] | None, Query()] = None,
+    parent_id: Annotated[list[EntityId] | None, Query()] = None,
 ) -> list[OrgUnitRead]:
     org_units = await org_unit_service.list_org_units(db, parent_id=parent_id)
     return [OrgUnitRead.model_validate(ou) for ou in org_units]
 
 
 @router.get("/{org_unit_id}", responses=error_responses(ErrorCode.NOT_FOUND))
-async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
+async def get_org_unit(db: DbSession, org_unit_id: EntityId) -> OrgUnitRead:
     org_unit = await org_unit_service.get_org_unit(db, org_unit_id)
     return OrgUnitRead.model_validate(org_unit)
 
@@ -38,7 +39,7 @@ async def get_org_unit(db: DbSession, org_unit_id: int) -> OrgUnitRead:
 @router.get("/{org_unit_id}/scores", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_CURSOR))
 async def list_org_unit_scores(
     db: DbSession,
-    org_unit_id: int,
+    org_unit_id: EntityId,
     pagination: PageParams,
     order: OrderParam,
 ) -> Page[ScoreSnapshotRead]:
@@ -56,7 +57,7 @@ async def list_org_unit_scores(
 # Ancestors arrive nearest parent first and the Root Org Unit last, with the
 # unit itself excluded.
 @router.get("/{org_unit_id}/ancestors", responses=error_responses(ErrorCode.NOT_FOUND))
-async def get_ancestors(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
+async def get_ancestors(db: DbSession, org_unit_id: EntityId) -> list[OrgUnitRead]:
     ancestors = await org_unit_service.get_ancestors(db, org_unit_id)
     return [OrgUnitRead.model_validate(a) for a in ancestors]
 
@@ -67,7 +68,7 @@ async def get_ancestors(db: DbSession, org_unit_id: int) -> list[OrgUnitRead]:
         ErrorCode.NOT_FOUND, ErrorCode.CIRCULAR_REFERENCE, ErrorCode.DUPLICATE_ROOT, ErrorCode.CONCURRENT_ROLLUP
     ),
 )
-async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) -> OrgUnitRead:
+async def update_org_unit(db: DbSession, org_unit_id: EntityId, data: OrgUnitUpdate) -> OrgUnitRead:
     updated = await org_unit_service.update_org_unit(db, org_unit_id, data)
     return OrgUnitRead.model_validate(updated)
 
@@ -75,5 +76,5 @@ async def update_org_unit(db: DbSession, org_unit_id: int, data: OrgUnitUpdate) 
 @router.delete(
     "/{org_unit_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.HAS_DEPENDENTS)
 )
-async def delete_org_unit(db: DbSession, org_unit_id: int) -> None:
+async def delete_org_unit(db: DbSession, org_unit_id: EntityId) -> None:
     await org_unit_service.delete_org_unit(db, org_unit_id)

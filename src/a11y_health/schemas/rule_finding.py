@@ -77,18 +77,31 @@ class RuleFindingRead(_RuleFindingBase):
         return cls(**_base_fields(finding), node_finding_count=node_finding_count)
 
 
+_UNTRUSTED = "untrusted. Render it as text, never as HTML."
+
+
 class NodeFindingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    html: str
-    target: list[str]
+    html: str = Field(description=f"Markup copied from the scanned page: {_UNTRUSTED}")
+    target: list[str] = Field(description=f"Selectors copied from the scanned page: {_UNTRUSTED}")
     impact: Impact
-    failure_summary: str | None
+    failure_summary: str | None = Field(
+        description=f"axe's summary, quoting markup from the scanned page: {_UNTRUSTED}"
+    )
+
+
+# The served form of Node Checks (DOMAIN.md). Each check stays axe's own object;
+# typing the stored column is #170's follow-on, not this read.
+class NodeChecks(BaseModel):
+    any: list[dict[str, Any]]
+    all: list[dict[str, Any]]
+    none: list[dict[str, Any]]
 
 
 class NodeFindingDetail(NodeFindingRead):
-    checks: dict[str, Any]
+    checks: NodeChecks = Field(description=f"Copied from the scanned page's axe result, markup included: {_UNTRUSTED}")
 
 
 # Deliberately no node_finding_count here — the detail embeds the Node Findings

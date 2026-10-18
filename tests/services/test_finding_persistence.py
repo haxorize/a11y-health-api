@@ -45,7 +45,7 @@ async def test_violations_stored_as_rule_findings(db_session: AsyncSession, page
 
 
 async def test_node_findings_stored(db_session: AsyncSession, axe_payload: dict[str, Any]) -> None:
-    # Red when the mint transposes any two check buckets. Every stored node in
+    # Red when the mint transposes any two check groups. Every stored node in
     # the fixture carries empty `all` and `none`, so the node under test gets a
     # distinct check in each, or an all/none swap would pass unseen.
     source = axe_payload["findings"]["violations"][0]["nodes"][0]
@@ -78,7 +78,7 @@ async def test_node_findings_stored(db_session: AsyncSession, axe_payload: dict[
     assert node.failure_summary == source["failureSummary"]
 
     def check_ids(checks: dict[str, Any]) -> dict[str, list[str]]:
-        return {bucket: [check["id"] for check in checks[bucket]] for bucket in ("any", "all", "none")}
+        return {group: [check["id"] for check in checks[group]] for group in ("any", "all", "none")}
 
     assert check_ids(node.checks) == check_ids(source)
 

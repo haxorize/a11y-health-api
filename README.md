@@ -147,6 +147,7 @@ src/a11y_health/
 │   ├── error_contract.py   # Error mode table: status + Error Code (ADR 0022)
 │   ├── exceptions.py       # The DomainError hierarchy the table keys on (ADR 0022)
 │   ├── existence.py        # The Existence Guard (ADR 0024)
+│   ├── ids.py              # The identity range every request id is bounded to (ADR 0050)
 │   ├── integrity.py        # The Integrity Guard's guarded flush (ADR 0028)
 │   ├── pagination.py       # Keyset pagination: params and query (ADR 0017)
 │   └── slug.py             # The single source of App Slugs (ADR 0019)

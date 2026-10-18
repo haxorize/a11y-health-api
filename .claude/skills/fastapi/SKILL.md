@@ -18,6 +18,7 @@ src/a11y_health/
     error_body.py     # ErrorCode + the served/client body shapes (no FastAPI import)
     error_contract.py # ERROR_MODES, the handler, error_responses()
     existence.py      # the Existence Guard: get_by_pk/get_by_query/lock_by_pk; require_reference() adds a write's FK mapping
+    ids.py            # EntityId: every request id, bounded to the bigint identity range (ADR 0050)
     integrity.py      # the Integrity Guard: guard_constraints() turns a named constraint violation into a domain error
     pagination.py     # paginate(): cursor decode, keyset walk, encode
     slug.py           # derive_slug(): an App's Slug from its name, immutable thereafter.
@@ -54,6 +55,7 @@ src/a11y_health/
   app_router = APIRouter(prefix="/apps/{app_id}/scan-runs", tags=["scan-runs"])
   router = APIRouter(prefix="/scan-runs", tags=["scan-runs"])
   ```
+- Every verb of one path carries one tag set, so a path's operations share a router or its tags; `tests/test_main.py` fails a split
 - Prefer `Annotated` for all parameter declarations — `Depends`, `Query`, `Path`, `Body`. Lifts the default to the parameter's `=` slot, so no `Query()` default object and no `# noqa: B008`:
   ```python
   DbSession = Annotated[AsyncSession, Depends(get_db)]
@@ -62,7 +64,7 @@ src/a11y_health/
   async def list_apps(
       db: DbSession,
       pagination: PageParams,
-      brand_id: Annotated[list[int] | None, Query()] = None,
+      brand_id: Annotated[list[EntityId] | None, Query()] = None,
   ) -> Page[AppRead]: ...
   ```
 - Paginated endpoints: see [Pagination](#pagination)
@@ -75,6 +77,7 @@ src/a11y_health/
 
 - Pydantic V2 only: `@field_validator` / `@model_validator` (not V1's `@validator`), `model_config = ConfigDict(...)` (not `class Config`), `model_dump()` / `model_validate()` (not `dict()` / `parse_obj()`)
 - Use `Literal` types for constrained string values
+- Type every id a request carries — path parameter, body field, query filter — `EntityId` from `core/ids.py`, so an out-of-range id is a framework 422 rather than an asyncpg 500 (ADR 0050); `tests/test_id_bounds.py` fails a bare `int` at any site whose name is `id` or ends in `_id`. Read schemas keep `int`
 - Type a client-supplied timestamp `AwareDatetime`, so an offset-less value is a framework 422 (ADR 0049); assume UTC only where the timestamp comes from a document we do not control
 - Naming: `<Resource>Create`, `<Resource>Update`, `<Resource>Read`
 - Use `model_config = ConfigDict(from_attributes=True)` on Read models

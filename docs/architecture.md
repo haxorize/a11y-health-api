@@ -30,7 +30,7 @@ PostgreSQL
 - **Services** (`services/`) own the queries, the validation that needs the database, and the domain operations. They take a session plus plain arguments and return ORM objects or a `CursorPage`, almost never HTTP types, so tests can call them without the web layer. **Page Result** creation alone takes a raw document, crossing the **Axe Boundary** itself so the `invalid_axe_payload` mode is its own ([ADR 0009](adr/0009-axe-payload-pydantic-boundary.md)).
 - **Models** (`models/`) are SQLAlchemy table definitions, and they hold the layer-neutral leaves no other layer owns. `models/classification.py` holds the **Classification** value object and the **Classification Token** vocabulary naming it, kept together because its four production consumers span layers, the roster and the placement argument in [ADR 0031](adr/0031-typed-classification-compact-wire-shape.md).
 - **Schemas** (`schemas/`) are Pydantic request and response bodies, kept apart from the models so stored and wire shapes evolve independently.
-- **`core/`** holds the cross-cutting machinery every layer uses: `database.py`, `error_body.py`, `error_contract.py`, `exceptions.py`, `existence.py`, `integrity.py`, `pagination.py`, and `slug.py`.
+- **`core/`** holds the cross-cutting machinery every layer uses: `database.py`, `error_body.py`, `error_contract.py`, `exceptions.py`, `existence.py`, `ids.py`, `integrity.py`, `pagination.py`, and `slug.py`.
 
 A whole endpoint is usually three lines under its decorator, whose `responses=` argument declares the operation's error modes (see [How errors become HTTP status codes](#how-errors-become-http-status-codes)). `DbSession` comes from `api/deps.py`:
 
@@ -54,7 +54,7 @@ Callers follow a two-tier call rule:
 - **Each entity's own service keeps its named accessors** (`get_app`, `get_brand`, and the rest), delegating to the guard. Endpoints read through these, never through the guard.
 - **Every other module calls the guard directly**, with the model class. No service imports a sibling service just to ask whether something exists; `tests/core/test_existence.py` checks that, and the **Sibling-Import Rule** in `DOMAIN.md` records the wider invariant.
 
-Listing parameters split on whether the guard applies. A scope, such as `/scores/latest`'s `under_org_unit_id`, names one entity the answer is relative to, so it is guarded and an unknown id returns 404. A filter, such as the apps listing's `org_unit_id`, narrows by matching values and is not guarded: unknown ids match nothing. A new parameter picks a side ([ADR 0024](adr/0024-existence-guard-core-module-two-tier-rule.md)).
+Listing parameters split on whether the guard applies. A scope, such as `/scores/latest`'s `under_org_unit_id`, names one entity the answer is relative to, so it is guarded and an unknown id returns 404; an id outside the identity range never reaches the guard and is the framework's 422 ([ADR 0050](adr/0050-every-request-id-is-bounded-to-the-identity-range.md)). A filter, such as the apps listing's `org_unit_id`, narrows by matching values and is not guarded: unknown ids match nothing. A new parameter picks a side ([ADR 0024](adr/0024-existence-guard-core-module-two-tier-rule.md)).
 
 ### How the database session and transactions work
 

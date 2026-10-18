@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
+from a11y_health.core.ids import EntityId
 from a11y_health.core.pagination import OrderParam, Page, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.brand import BrandRead
@@ -19,7 +20,7 @@ async def list_brands(db: DbSession) -> list[BrandRead]:
 
 
 @router.get("/{brand_id}", responses=error_responses(ErrorCode.NOT_FOUND))
-async def get_brand(db: DbSession, brand_id: int) -> BrandRead:
+async def get_brand(db: DbSession, brand_id: EntityId) -> BrandRead:
     brand = await brand_service.get_brand(db, brand_id)
     return BrandRead.model_validate(brand)
 
@@ -27,7 +28,7 @@ async def get_brand(db: DbSession, brand_id: int) -> BrandRead:
 @router.get("/{brand_id}/scores", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_CURSOR))
 async def list_brand_scores(
     db: DbSession,
-    brand_id: int,
+    brand_id: EntityId,
     pagination: PageParams,
     order: OrderParam,
 ) -> Page[ScoreSnapshotRead]:

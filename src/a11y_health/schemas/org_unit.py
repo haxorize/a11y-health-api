@@ -2,12 +2,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from a11y_health.core.ids import EntityId
 from a11y_health.core.slug import NAME_MAX_LENGTH
 
 
 class OrgUnitCreate(BaseModel):
     name: str = Field(max_length=NAME_MAX_LENGTH)
-    parent_id: int | None = None
+    parent_id: EntityId | None = None
 
 
 class OrgUnitUpdate(BaseModel):
@@ -15,7 +16,9 @@ class OrgUnitUpdate(BaseModel):
     # explicit null fails as a str while omission stays legal. The update
     # reads only the fields set, so the None default is never seen as a name.
     name: str = Field(default=None, max_length=NAME_MAX_LENGTH, description="Omit to leave unchanged")  # ty: ignore[invalid-assignment]
-    parent_id: int | None = Field(default=None, description="Omit to leave unchanged; send null to make a root node")
+    parent_id: EntityId | None = Field(
+        default=None, description="Omit to leave unchanged; send null to make a root node"
+    )
 
 
 class OrgUnitRead(BaseModel):

@@ -4,6 +4,8 @@
       "AppCreate": {
         "properties": {
           "brand_id": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 1.0,
             "title": "Brand Id",
             "type": "integer"
           },
@@ -13,6 +15,8 @@
             "type": "string"
           },
           "org_unit_id": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 1.0,
             "title": "Org Unit Id",
             "type": "integer"
           }
@@ -75,6 +79,8 @@
           "org_unit_id": {
             "anyOf": [
               {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -315,12 +321,46 @@
         "title": "Impact",
         "type": "string"
       },
+      "NodeChecks": {
+        "properties": {
+          "all": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "All",
+            "type": "array"
+          },
+          "any": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Any",
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "None",
+            "type": "array"
+          }
+        },
+        "required": [
+          "any",
+          "all",
+          "none"
+        ],
+        "title": "NodeChecks",
+        "type": "object"
+      },
       "NodeFindingDetail": {
         "properties": {
           "checks": {
-            "additionalProperties": true,
-            "title": "Checks",
-            "type": "object"
+            "$ref": "#/components/schemas/NodeChecks",
+            "description": "Copied from the scanned page's axe result, markup included: untrusted. Render it as text, never as HTML."
           },
           "failure_summary": {
             "anyOf": [
@@ -331,9 +371,11 @@
                 "type": "null"
               }
             ],
+            "description": "axe's summary, quoting markup from the scanned page: untrusted. Render it as text, never as HTML.",
             "title": "Failure Summary"
           },
           "html": {
+            "description": "Markup copied from the scanned page: untrusted. Render it as text, never as HTML.",
             "title": "Html",
             "type": "string"
           },
@@ -345,6 +387,7 @@
             "$ref": "#/components/schemas/Impact"
           },
           "target": {
+            "description": "Selectors copied from the scanned page: untrusted. Render it as text, never as HTML.",
             "items": {
               "type": "string"
             },
@@ -373,6 +416,8 @@
           "parent_id": {
             "anyOf": [
               {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -441,6 +486,8 @@
           "parent_id": {
             "anyOf": [
               {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -885,6 +932,7 @@
             "type": "integer"
           },
           "score": {
+            "description": "A 0 to 1 fraction, not a percentage: a perfect score is 1.0.",
             "title": "Score",
             "type": "number"
           },
@@ -980,6 +1028,7 @@
             "title": "Scan Run Id"
           },
           "score": {
+            "description": "A 0 to 1 fraction, not a percentage: a perfect score is 1.0.",
             "title": "Score",
             "type": "number"
           },
@@ -1190,6 +1239,8 @@
               "anyOf": [
                 {
                   "items": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "type": "array"
@@ -1209,6 +1260,8 @@
               "anyOf": [
                 {
                   "items": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "type": "array"
@@ -1429,6 +1482,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1488,6 +1543,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1541,6 +1598,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1619,6 +1678,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1713,6 +1774,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1778,6 +1841,8 @@
             "name": "app_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "App Id",
               "type": "integer"
             }
@@ -1908,6 +1973,8 @@
             "name": "brand_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Brand Id",
               "type": "integer"
             }
@@ -1963,6 +2030,8 @@
             "name": "brand_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Brand Id",
               "type": "integer"
             }
@@ -2092,6 +2161,8 @@
               "anyOf": [
                 {
                   "items": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "type": "array"
@@ -2210,6 +2281,8 @@
             "name": "org_unit_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Org Unit Id",
               "type": "integer"
             }
@@ -2269,6 +2342,8 @@
             "name": "org_unit_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Org Unit Id",
               "type": "integer"
             }
@@ -2322,6 +2397,8 @@
             "name": "org_unit_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Org Unit Id",
               "type": "integer"
             }
@@ -2402,6 +2479,8 @@
             "name": "org_unit_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Org Unit Id",
               "type": "integer"
             }
@@ -2461,6 +2540,8 @@
             "name": "org_unit_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Org Unit Id",
               "type": "integer"
             }
@@ -2566,6 +2647,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -2625,6 +2708,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -2678,6 +2763,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -2758,6 +2845,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -2961,6 +3050,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -3016,6 +3107,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -3025,6 +3118,8 @@
             "name": "finding_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Finding Id",
               "type": "integer"
             }
@@ -3080,6 +3175,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -3163,7 +3260,7 @@
         },
         "summary": "List Scan Run Pages",
         "tags": [
-          "scan-runs"
+          "pages"
         ]
       },
       "post": {
@@ -3174,6 +3271,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -3267,6 +3366,8 @@
             "name": "scan_run_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
               "title": "Scan Run Id",
               "type": "integer"
             }
@@ -3333,6 +3434,8 @@
               "anyOf": [
                 {
                   "items": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "type": "array"
@@ -3351,6 +3454,8 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -3367,6 +3472,8 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {

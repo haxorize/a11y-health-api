@@ -124,6 +124,19 @@ def test_openapi_declares_typed_classification_schema() -> None:
     assert schemas["FindingFilterOptionsRead"]["properties"]["classifications"]["items"] == option_ref
 
 
+def test_openapi_declares_the_node_checks_groups() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    checks = schemas["NodeChecks"]
+    assert sorted(checks["required"]) == ["all", "any", "none"]
+    assert {name: field["type"] for name, field in checks["properties"].items()} == {
+        "any": "array",
+        "all": "array",
+        "none": "array",
+    }
+    assert schemas["NodeFindingDetail"]["properties"]["checks"]["$ref"] == "#/components/schemas/NodeChecks"
+
+
 async def test_list_findings_empty(db_client: AsyncClient, db_session: AsyncSession) -> None:
     scan_run = await make_scan_run_with_parents(db_session)
 
@@ -248,7 +261,13 @@ async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSessi
         html="<span>bad</span>",
         target=[".main > span"],
         failure_summary="Insufficient contrast",
-        checks={"any": [{"id": "color-contrast", "data": {}, "message": "low ratio"}], "all": [], "none": []},
+        # A distinct check in each group, so serving one group under another's
+        # name is red.
+        checks={
+            "any": [{"id": "color-contrast", "data": {}, "message": "low ratio"}],
+            "all": [{"id": "focusable-content", "data": None, "message": "not focusable"}],
+            "none": [{"id": "aria-hidden-body", "data": None, "message": "hidden"}],
+        },
     )
 
     response = await db_client.get(f"/api/v1/scan-runs/{scan_run.id}/findings/{finding.id}")
@@ -266,8 +285,8 @@ async def test_get_finding_detail(db_client: AsyncClient, db_session: AsyncSessi
     assert nf["failure_summary"] == "Insufficient contrast"
     assert nf["checks"] == {
         "any": [{"id": "color-contrast", "data": {}, "message": "low ratio"}],
-        "all": [],
-        "none": [],
+        "all": [{"id": "focusable-content", "data": None, "message": "not focusable"}],
+        "none": [{"id": "aria-hidden-body", "data": None, "message": "hidden"}],
     }
 
 

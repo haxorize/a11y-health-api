@@ -153,6 +153,8 @@ async def test_paginate_limit_zero_returns_empty_without_crashing(db_session: As
     ("keyset", "bad_value"),
     [
         ([Brand.id], "not-an-int"),  # int column, non-numeric scalar -> ValueError
+        ([Brand.id], 2**63),  # int column, past the identity range -> ValueError
+        ([Brand.id], 0),  # int column, below the identity range -> ValueError
         ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], 12345),  # datetime column, numeric -> TypeError
         ([Brand.name], 123),  # str column, non-str scalar -> rejected before it reaches SQL
     ],

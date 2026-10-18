@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query
 
 from a11y_health.api.deps import DbSession
 from a11y_health.core.error_contract import ErrorCode, error_responses
+from a11y_health.core.ids import EntityId
 from a11y_health.core.pagination import OrderParam, Page, PageParams
 from a11y_health.models.enums import ScoreSnapshotOwnerType
 from a11y_health.schemas.app import AppCreate, AppRead, AppUpdate
@@ -24,8 +25,8 @@ async def create_app(db: DbSession, data: AppCreate) -> AppRead:
 async def list_apps(
     db: DbSession,
     pagination: PageParams,
-    brand_id: Annotated[list[int] | None, Query()] = None,
-    org_unit_id: Annotated[list[int] | None, Query()] = None,
+    brand_id: Annotated[list[EntityId] | None, Query()] = None,
+    org_unit_id: Annotated[list[EntityId] | None, Query()] = None,
     direct_only: bool = False,
 ) -> Page[AppRead]:
     page = await app_service.list_apps(
@@ -46,13 +47,13 @@ async def get_app_by_slug(db: DbSession, slug: str) -> AppRead:
 
 
 @router.get("/{app_id}", responses=error_responses(ErrorCode.NOT_FOUND))
-async def get_app(db: DbSession, app_id: int) -> AppRead:
+async def get_app(db: DbSession, app_id: EntityId) -> AppRead:
     app = await app_service.get_app(db, app_id)
     return AppRead.model_validate(app)
 
 
 @router.patch("/{app_id}", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CONCURRENT_ROLLUP))
-async def update_app(db: DbSession, app_id: int, data: AppUpdate) -> AppRead:
+async def update_app(db: DbSession, app_id: EntityId, data: AppUpdate) -> AppRead:
     app = await app_service.update_app(db, app_id, data)
     return AppRead.model_validate(app)
 
@@ -60,7 +61,7 @@ async def update_app(db: DbSession, app_id: int, data: AppUpdate) -> AppRead:
 @router.get("/{app_id}/scores", responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.INVALID_CURSOR))
 async def list_app_scores(
     db: DbSession,
-    app_id: int,
+    app_id: EntityId,
     pagination: PageParams,
     order: OrderParam,
 ) -> Page[ScoreSnapshotRead]:
@@ -78,5 +79,5 @@ async def list_app_scores(
 @router.delete(
     "/{app_id}", status_code=204, responses=error_responses(ErrorCode.NOT_FOUND, ErrorCode.CONCURRENT_ROLLUP)
 )
-async def delete_app(db: DbSession, app_id: int) -> None:
+async def delete_app(db: DbSession, app_id: EntityId) -> None:
     await app_service.delete_app(db, app_id)

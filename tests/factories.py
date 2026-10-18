@@ -34,6 +34,11 @@ SessionFactory = Callable[[], AsyncSession]
 
 DEFAULT_SNAPSHOT_AT = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
 
+# The bigint identity ceiling as a literal, not core.ids's, so the id-bound
+# tests do not take the value they check from the code under test, and under
+# its own name so a search for core.ids's does not offer this one to dedupe.
+IDENTITY_CEILING = 9223372036854775807
+
 
 async def make_org_unit(db: AsyncSession, *, name: str = "Test Org", parent_id: int | None = None) -> OrgUnit:
     org_unit = OrgUnit(name=name, parent_id=parent_id)

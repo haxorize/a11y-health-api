@@ -31,7 +31,8 @@
 | **Rule Finding** | A single axe rule outcome (violation or incomplete) for a **Page Result**, with severity, classification, and WCAG metadata. The **Impact** reflects the worst across its **Node Findings**. | Issue, rule result, defect, result |
 | **Finding Type** | Whether a **Rule Finding** is a **Violation** (definite failure, counts toward scoring) or **Incomplete** (needs manual review, excluded from scoring). | Result type, finding kind |
 | **Violation** | A **Rule Finding** that is a definite failure and counts toward scoring. Every **Violation** counts, whether its **Classification** is WCAG or best-practice. | Issue, failure, error, defect |
-| **Node Finding** | A specific DOM element instance that triggered a **Rule Finding**, with HTML snippet, selector, and failure details. | Instance, node result, occurrence, element |
+| **Node Finding** | A specific DOM element instance that triggered a **Rule Finding**, with HTML snippet, selector, and failure details. The snippet and failure summary are copied from the scanned page, so both are untrusted. | Instance, node result, occurrence, element |
+| **Node Checks** | The one object holding the three groups of axe checks behind a **Node Finding**'s outcome: *any* (at least one must pass), *all* (every one must pass), and *none* (none may pass). Each check is copied unchanged from the **Axe Payload**, so it is axe's own and untrusted; a group the document omits is stored empty. | Check buckets, checks dict |
 | **Impact** | The severity of a **Rule Finding**: critical, serious, moderate, or minor. | Severity, priority, level |
 | **Classification** | A standard that a **Rule Finding** belongs to: a WCAG version-and-level pair, such as WCAG 2.1 AA, or best-practice. A WCAG **Classification** carries a version and a level; a best-practice **Classification** carries neither. | Standard (the wire member naming the wcag-versus-best-practice axis, not the whole), conformance, tag |
 | **Classification Token** | The compact token naming one **Classification**, such as wcag21aa or best-practice, and the findings filter's query vocabulary. The vocabulary is closed and each token maps to exactly one **Classification**, so the token map is also the one place a stored **Classification**'s shape comes from. | Tag, classification string |
@@ -85,6 +86,7 @@
 - A **Scan Run** has exactly one **Scan Run Status** (Pending → Completed), zero or more **Page Results** while Pending, and one or more once Completed
 - A **Page Result** has zero or more **Rule Findings**, and exactly one **Page Health** once its **Scan Run** completes — none while the run is Pending, since health is assigned at the Pending → Completed transition
 - A **Rule Finding** has exactly one **Finding Type** (**Violation** or **Incomplete**), zero or more **Node Findings** (in practice, violations always have at least one), one or more **Classifications** (in practice; a tolerant read drops invalid entries and can serve fewer, even zero), and zero or more **WCAG Criteria**
+- A **Node Finding** has exactly one **Node Checks**, and any of its three groups may be empty
 - A **Score Snapshot** belongs to exactly one **Owner**: an **App** (linked to a **Scan Run**), an **Org Unit** (recomputed via **Org Unit Rollup**), or a **Brand** (recomputed via **Brand Rollup**)
 - Deleting an **App** cascades to its **Scan Runs** and **Score Snapshots**; deleting an **Org Unit** that has dependents is refused (**Dependents Guard**)
 

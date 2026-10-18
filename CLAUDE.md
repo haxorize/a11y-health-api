@@ -19,6 +19,10 @@ Postgres **15** specifically (`brew install postgresql@15`) — CI's service con
 
 `gitleaks` on PATH (`brew install gitleaks`) — the first stage of `.githooks/pre-commit`, which scans the staged changes before any other check runs. That is not a guarantee a secret cannot reach history: the hook runs only once `core.hooksPath` is wired per clone (§ Commands), and `git commit --no-verify` skips it. The backstop is `ci.yml`'s lint job, which scans the whole history (`fetch-depth: 0`) on every push to `main` and every pull request against it.
 
+Shared skills: phi-safe-code
+
+The line above is read by the humana/skills repo's `scripts/install.sh --project <this repo>`, which links each named skill into `.claude/skills/` and lists the link in `.git/info/exclude`, so it is never committed; run it once per clone, then restart the session.
+
 ## Commands
 
 ```bash

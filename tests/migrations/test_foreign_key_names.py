@@ -4,6 +4,8 @@ and referent and ignores the name, so the drift job cannot see a rename that
 a migration missed (ADR 0051).
 """
 
+import re
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
@@ -31,3 +33,7 @@ async def test_the_migrated_foreign_key_names_are_the_models(migrated_database_u
     # An empty read on both sides would compare equal and prove nothing.
     assert migrated, "read no foreign keys from the migrated database"
     assert migrated == modeled
+    # Both sides carry an explicit `name=` verbatim, so only this catches a
+    # mapped constant that misspells the convention's `fk_<table>_<column>`.
+    columns = {key: re.findall(r"^FOREIGN KEY \((\w+)\)", definition) for key, definition in modeled.items()}
+    assert not [name for (tbl, name), found in columns.items() if [f"fk_{tbl}_{c}" for c in found] != [name]]

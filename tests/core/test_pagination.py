@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
-from sqlalchemy.types import NullType
+from sqlalchemy.types import NullType, String
 
 from a11y_health.core.pagination import (
     CursorPage,
@@ -173,6 +173,11 @@ _BRAND_ALIAS = aliased(Brand)
 # A column type with no Python type (NullType, TSVECTOR, INET) makes
 # `python_type` raise; no mapped column here has one, so a stand-in carries it.
 _UNTYPED_COLUMN = SimpleNamespace(class_=Brand, key="untyped", type=NullType())
+# A `column_property` keyset's expression is a label, which declares no
+# nullability.
+_LABELED_COLUMN = SimpleNamespace(
+    class_=Brand, key="labeled", type=String(), expression=func.lower(Brand.name).label("labeled")
+)
 
 
 # The session has no `execute`, so reaching the first query fails with an
@@ -187,6 +192,7 @@ _UNTYPED_COLUMN = SimpleNamespace(class_=Brand, key="untyped", type=NullType())
         pytest.param(select(_BRAND_ALIAS), [Brand.id], "Brand.id", id="only-an-alias-selected"),
         pytest.param(select(Brand), [_UNTYPED_COLUMN], "Brand.untyped", id="no-python-type"),
         pytest.param(select(ScoreSnapshot), [ScoreSnapshot.app_id], "ScoreSnapshot.app_id", id="nullable"),
+        pytest.param(select(Brand), [_LABELED_COLUMN], "Brand.labeled", id="undeclared-nullability"),
     ],
 )
 async def test_paginate_refuses_a_misconfigured_keyset_before_the_first_query(

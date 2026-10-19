@@ -224,7 +224,9 @@ def _keyset_positions(stmt: Select, keyset: Sequence[InstrumentedAttribute]) -> 
     positions = []
     for attr in keyset:
         _keyset_type(attr)
-        if attr.expression.nullable:
+        # An expression with no declared nullability (a `column_property`)
+        # can yield NULL too.
+        if getattr(attr.expression, "nullable", True):
             raise KeysetMisconfigurationError(attr, "nullable")
         owner = attr.class_
         position = next((i for i, d in enumerate(descriptions) if _selects(d, owner)), None)
@@ -288,7 +290,9 @@ async def paginate[T](
     before any query, `KeysetMisconfigurationError` if a keyset column's type
     isn't int/datetime/str, its entity is not in the result row (as it is for
     `select(Entity)` and `select(Entity, agg, ...)`), or it is nullable: a
-    NULL makes the row-value `>` comparison return NULL and drops rows.
+    NULL makes the row-value `>` comparison return NULL and drops rows. The
+    check reads the declaration only, so a column on the nullable side of an
+    outer join is still the caller's to keep NULL-free.
     """
     positions = _keyset_positions(stmt, keyset)
     unpaged = stmt

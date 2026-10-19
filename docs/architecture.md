@@ -172,7 +172,7 @@ The module owns the request-facing half too: an endpoint declares one `paginatio
 
 When you touch it:
 
-- **No NULL may reach a keyset column of the paged rows.** A NULL breaks the row-value comparison and silently drops rows. `paginate` refuses a nullable keyset column before the first query, so a keyset column is declared `NOT NULL` or is a primary key (ADR 0017).
+- **No NULL may reach a keyset column of the paged rows.** A NULL breaks the row-value comparison and silently drops rows. `paginate` refuses a nullable keyset column before the first query, so a keyset column is declared `NOT NULL` (ADR 0017). An outer join's nullable side passes that check, so keeping it NULL-free is the caller's job.
 - **An optional `into` callback maps each row into a response object.** `list_page_metrics` and `list_findings` use it.
 
 ---

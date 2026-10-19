@@ -1,3 +1,4 @@
+import base64
 import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
-from sqlalchemy.types import NullType, String
+from sqlalchemy.types import DateTime, NullType, String
 
 from a11y_health.core.pagination import (
     CursorPage,
@@ -152,7 +153,7 @@ async def test_paginate_limit_zero_returns_empty_without_crashing(db_session: As
 @pytest.mark.parametrize(
     ("keyset", "bad_value"),
     [
-        ([Brand.id], "not-an-int"),  # int column, non-numeric scalar -> ValueError
+        ([Brand.id], "not-an-int"),  # int column, a string -> ValueError
         ([Brand.id], 2**63),  # int column, past the identity range -> ValueError
         ([Brand.id], 0),  # int column, below the identity range -> ValueError
         ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], 12345),  # datetime column, numeric -> TypeError
@@ -169,6 +170,27 @@ async def test_paginate_decodable_cursor_with_wrong_typed_value_is_rejected(
         await paginate(db_session, select(keyset[0].class_), keyset=keyset, cursor=cursor, limit=2)
 
 
+# Values no keyset row yields, built from raw JSON so each reaches the decoder
+# as a forger would send it. Breaks if `_require_id` coerces with a bare
+# `int()`: the non-finite floats overflow into a 500 and the rest are read as
+# ids 1, 1, 1 and 5. Breaks too if a timestamp with no offset is read in the
+# server's zone (ADR 0050).
+@pytest.mark.parametrize(
+    ("keyset", "payload"),
+    [
+        *(([Brand.id], p) for p in ("[Infinity]", "[-Infinity]", "[1e400]", "[1.5]", "[1.0]", "[true]", '["5"]')),
+        ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["2026-01-01T00:00:00", 1]'),
+        ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["2026-01-01", 1]'),
+    ],
+)
+async def test_paginate_refuses_a_cursor_value_the_encoder_never_writes(
+    db_session: AsyncSession, keyset: list, payload: str
+) -> None:
+    cursor = base64.urlsafe_b64encode(payload.encode()).decode()
+    with pytest.raises(InvalidCursorError):
+        await paginate(db_session, select(keyset[0].class_), keyset=keyset, cursor=cursor, limit=2)
+
+
 _BRAND_ALIAS = aliased(Brand)
 # A column type with no Python type (NullType, TSVECTOR, INET) makes
 # `python_type` raise; no mapped column here has one, so a stand-in carries it.
@@ -178,6 +200,9 @@ _UNTYPED_COLUMN = SimpleNamespace(class_=Brand, key="untyped", type=NullType())
 _LABELED_COLUMN = SimpleNamespace(
     class_=Brand, key="labeled", type=String(), expression=func.lower(Brand.name).label("labeled")
 )
+# Every mapped timestamp keyset carries a time zone, so a stand-in carries one
+# without: its cursors would be naive, which the decode refuses (ADR 0050).
+_NAIVE_TIMESTAMP_COLUMN = SimpleNamespace(class_=Brand, key="naive", type=DateTime())
 
 
 # The session has no `execute`, so reaching the first query fails with an
@@ -193,6 +218,7 @@ _LABELED_COLUMN = SimpleNamespace(
         pytest.param(select(Brand), [_UNTYPED_COLUMN], "Brand.untyped", id="no-python-type"),
         pytest.param(select(ScoreSnapshot), [ScoreSnapshot.app_id], "ScoreSnapshot.app_id", id="nullable"),
         pytest.param(select(Brand), [_LABELED_COLUMN], "Brand.labeled", id="undeclared-nullability"),
+        pytest.param(select(Brand), [_NAIVE_TIMESTAMP_COLUMN], "Brand.naive", id="timestamp-without-time-zone"),
     ],
 )
 async def test_paginate_refuses_a_misconfigured_keyset_before_the_first_query(

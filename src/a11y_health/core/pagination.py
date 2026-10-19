@@ -171,17 +171,26 @@ def _decode_cursor(cursor: str, *, expected: int) -> list:
 
 
 # Every int keyset is an identity column, so a forged value outside its range
-# is a bad cursor rather than an asyncpg overflow (ADR 0050).
-def _require_id(raw: Any) -> int:
-    value = int(raw)
-    if not 1 <= value <= BIGINT_MAX:
-        raise ValueError(value)
+# is a bad cursor rather than an asyncpg overflow. The encoder writes an id as
+# a JSON integer, so no other JSON value is one (ADR 0050).
+def _require_id(raw: object) -> int:
+    if type(raw) is not int or not 1 <= raw <= BIGINT_MAX:
+        raise ValueError(raw)
+    return raw
+
+
+# The encoder writes an offset, and a timestamp without one would bind in the
+# server's zone as a shifted instant (ADR 0050).
+def _require_aware(raw: Any) -> datetime:
+    value = datetime.fromisoformat(raw)
+    if value.tzinfo is None:
+        raise ValueError(raw)
     return value
 
 
 def _require_str(raw: object) -> str:
     if not isinstance(raw, str):
-        raise InvalidCursorError
+        raise ValueError(raw)
     return raw
 
 
@@ -189,7 +198,7 @@ def _require_str(raw: object) -> str:
 # entry check and the coercion cannot disagree on what is supported.
 _KEYSET_COERCIONS: dict[type, Callable[[Any], object]] = {
     int: _require_id,
-    datetime: datetime.fromisoformat,
+    datetime: _require_aware,
     str: _require_str,
 }
 
@@ -201,6 +210,9 @@ def _keyset_type(attr: InstrumentedAttribute) -> type:
         raise KeysetMisconfigurationError(attr, f"unsupported type {attr.type!r}") from None
     if python_type not in _KEYSET_COERCIONS:
         raise KeysetMisconfigurationError(attr, f"unsupported type {python_type.__name__}")
+    # Its cursors would carry no offset, which `_require_aware` refuses.
+    if python_type is datetime and not attr.type.timezone:
+        raise KeysetMisconfigurationError(attr, "timestamp without time zone")
     return python_type
 
 
@@ -288,11 +300,12 @@ async def paginate[T](
 
     Raises `InvalidCursorError` on a malformed cursor (handled as 400) and,
     before any query, `KeysetMisconfigurationError` if a keyset column's type
-    isn't int/datetime/str, its entity is not in the result row (as it is for
-    `select(Entity)` and `select(Entity, agg, ...)`), or it is nullable: a
-    NULL makes the row-value `>` comparison return NULL and drops rows. The
-    check reads the declaration only, so a column on the nullable side of an
-    outer join is still the caller's to keep NULL-free.
+    isn't int/datetime/str or is a timestamp without a time zone, its entity is
+    missing from the result row (`select(Entity)` carries it, with or without
+    aggregates beside it), or it is nullable: a NULL makes the row-value `>`
+    comparison return NULL and drops rows. The check reads the declaration only,
+    so a column on the nullable side of an outer join is still the caller's to
+    keep NULL-free.
     """
     positions = _keyset_positions(stmt, keyset)
     unpaged = stmt

@@ -48,11 +48,13 @@ type ParentLookup = Callable[[AsyncSession, int], Awaitable[int | None]]
 # The one Brand-membership predicate: App.brand_id alone decides, wherever the
 # app sits in the org tree. Shared by the brand scope and the Brand Rollup's
 # children read.
-def _brand_apps(brand_id: int) -> Select[tuple[int]]:
-    return select(App.id).where(App.brand_id == brand_id)
+def _brand_apps(brand_id: int) -> ColumnElement[bool]:
+    return App.brand_id == brand_id
 
 
-async def _latest_of(session: AsyncSession, stmt: Select | CompoundSelect) -> list[ScoreSnapshot]:
+# `from_statement` because a UNION ALL of aliased snapshots doesn't load as
+# `ScoreSnapshot` by itself.
+async def _execute_snapshots(session: AsyncSession, stmt: Select | CompoundSelect) -> list[ScoreSnapshot]:
     result = await session.execute(select(ScoreSnapshot).from_statement(stmt))
     return list(result.scalars().all())
 
@@ -60,14 +62,16 @@ async def _latest_of(session: AsyncSession, stmt: Select | CompoundSelect) -> li
 async def _latest_child_snapshots(session: AsyncSession, org_unit_id: int) -> list[ScoreSnapshot]:
     # One probe per Owner type: App and Org Unit ids come from separate
     # sequences and can collide, so they are never probed as one set.
-    app_children = select_latest_snapshots(App, ScoreSnapshot.app_id).where(App.org_unit_id == org_unit_id)
-    ou_children = select_latest_snapshots(OrgUnit, ScoreSnapshot.org_unit_id).where(OrgUnit.parent_id == org_unit_id)
-    return await _latest_of(session, app_children.union_all(ou_children))
+    app_children = select_latest_snapshots(OWNERS[ScoreSnapshotOwnerType.APP]).where(App.org_unit_id == org_unit_id)
+    ou_children = select_latest_snapshots(OWNERS[ScoreSnapshotOwnerType.ORG_UNIT]).where(
+        OrgUnit.parent_id == org_unit_id
+    )
+    return await _execute_snapshots(session, app_children.union_all(ou_children))
 
 
 async def _latest_brand_app_snapshots(session: AsyncSession, brand_id: int) -> list[ScoreSnapshot]:
-    brand_apps = select_latest_snapshots(App, ScoreSnapshot.app_id).where(App.id.in_(_brand_apps(brand_id)))
-    return await _latest_of(session, brand_apps)
+    brand_apps = select_latest_snapshots(OWNERS[ScoreSnapshotOwnerType.APP]).where(_brand_apps(brand_id))
+    return await _execute_snapshots(session, brand_apps)
 
 
 async def _org_unit_parent(session: AsyncSession, org_unit_id: int) -> int | None:
@@ -157,7 +161,7 @@ async def list_latest_scores(
     spec = OWNERS[owner_type]
     # The Owner entity rides along as the keyset's source: paging on its id
     # rather than the snapshot's owner column lets the walk stop at the page.
-    stmt = select_latest_snapshots(spec.entity, spec.id_column).add_columns(spec.entity)
+    stmt = select_latest_snapshots(spec).add_columns(spec.entity)
     if brand_id is not None:
         await existence.get_by_pk(session, Brand, brand_id)
         stmt = stmt.where(_brand_scope(owner_type, brand_id))
@@ -172,11 +176,10 @@ async def list_latest_scores(
         # owner-valued filter on a scores read follows this exact-match side.
         stmt = stmt.where(spec.entity.id.in_(owner_id))
     # Keyset on the owner id alone: it is unique here (one row per owner),
-    # never NULL (a primary key), and an owner's position can't move when
-    # the latest view recomputes between requests. Keying on snapshot_at — or
-    # adding the usual id tiebreak — would let a mid-walk import re-serve an
-    # already-served owner (its new latest row compares greater than the
-    # cursor) or hide one.
+    # and an owner's position can't move when the latest view recomputes
+    # between requests. Keying on snapshot_at — or adding the usual id
+    # tiebreak — would let a mid-walk import re-serve an already-served owner
+    # (its new latest row compares greater than the cursor) or hide one.
     return await paginate(
         session,
         stmt,
@@ -190,7 +193,7 @@ def _brand_scope(owner_type: ScoreSnapshotOwnerType, brand_id: int) -> ColumnEle
     if owner_type is ScoreSnapshotOwnerType.APP:
         # Brand ownership is flat, like the brand rollup: the one membership
         # predicate decides, wherever the app sits in the org tree.
-        return OWNERS[owner_type].entity.id.in_(_brand_apps(brand_id))
+        return _brand_apps(brand_id)
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT or owner_type is ScoreSnapshotOwnerType.BRAND:
         # Only apps carry brand ownership. An org unit has no brand, and a
         # brand isn't owned by a brand — the scoping brand's own rollup
@@ -205,21 +208,20 @@ def _under_org_unit_scope(
     under_org_unit_id: int,
     direct_only: bool,
 ) -> ColumnElement[bool]:
-    owner_col = OWNERS[owner_type].entity.id
     if owner_type is ScoreSnapshotOwnerType.APP:
         # An app placed anywhere in the subtree — including on the named unit
         # itself — is "under" it, matching list_apps' org_unit_id expansion.
         # direct_only is that same rule over the one-unit subtree.
         unit_scope = [under_org_unit_id] if direct_only else select_descendant_ids([under_org_unit_id])
-        return owner_col.in_(select(App.id).where(App.org_unit_id.in_(unit_scope)))
+        return App.org_unit_id.in_(unit_scope)
     if owner_type is ScoreSnapshotOwnerType.ORG_UNIT:
         if direct_only:
             # Depth-1 needs no subtree walk: direct children are one
             # parent_id predicate.
-            return owner_col.in_(select(OrgUnit.id).where(OrgUnit.parent_id == under_org_unit_id))
+            return OrgUnit.parent_id == under_org_unit_id
         # Strictly below: the named unit is not under itself, and its own
         # rollup already aggregates the subtree being scoped to.
-        return owner_col.in_(select_descendant_ids([under_org_unit_id])) & (owner_col != under_org_unit_id)
+        return OrgUnit.id.in_(select_descendant_ids([under_org_unit_id])) & (OrgUnit.id != under_org_unit_id)
     if owner_type is ScoreSnapshotOwnerType.BRAND:
         # Brands have no org-tree placement, so no brand owner is ever
         # "under" an org unit — the honest scoped set is empty, not "all",

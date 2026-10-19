@@ -32,8 +32,6 @@ _RENAMES = (
 def upgrade() -> None:
     for table, default, convention in _RENAMES:
         op.execute(f"ALTER TABLE {table} RENAME CONSTRAINT {default} TO {convention}")
-    # Subsumes the singleton: `app_id` still leads, for the CASCADE check from
-    # `app`.
     op.create_index(
         "ix_score_snapshot_app_id_snapshot_at_id",
         "score_snapshot",

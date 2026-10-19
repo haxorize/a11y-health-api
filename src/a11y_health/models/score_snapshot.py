@@ -40,10 +40,8 @@ class ScoreSnapshot(TimestampMixin, Base):
             unique=True,
             postgresql_where=text("brand_id IS NOT NULL"),
         ),
-        # The Latest Score Snapshot probe reads one App's first entry; the
-        # rollup uniques above serve the other Owners, since they allow no
-        # tie (ADR 0051). `app_id` leading keeps the CASCADE check from `app`
-        # indexed.
+        # Serves the Latest Score Snapshot probe for an App (ADR 0051).
+        # `app_id` leading keeps the CASCADE check from `app` indexed.
         Index(
             "ix_score_snapshot_app_id_snapshot_at_id",
             "app_id",

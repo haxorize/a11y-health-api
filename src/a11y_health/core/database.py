@@ -65,11 +65,10 @@ def bind_session_source(source: SessionSource) -> Iterator[None]:
         _session_source = previous
 
 
-# No `ck` key: every explicit check name already carries its `ck_<table>_`
-# prefix, which a `%(constraint_name)s` template would double. No `pk` key:
-# autogenerate never compares primary key names, so one would let the models
-# and the database disagree unseen (ADR 0051).
 class Base(DeclarativeBase):
+    # No `ck` key, which would double every check name's `ck_<table>_`
+    # prefix, and no `pk` key, whose names autogenerate never compares
+    # (ADR 0051).
     metadata = MetaData(
         naming_convention={
             "fk": "fk_%(table_name)s_%(column_0_name)s",

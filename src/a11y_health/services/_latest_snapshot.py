@@ -8,29 +8,43 @@ Each Owner is probed for its first row in that order, so a read costs one
 index probe per Owner rather than a ranking of every snapshot (ADR 0051).
 """
 
+from typing import Protocol
+
 from sqlalchemy import Select, select, true
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
-from a11y_health.models.app import App
-from a11y_health.models.brand import Brand
-from a11y_health.models.org_unit import OrgUnit
+from a11y_health.core.database import Base
 from a11y_health.models.score_snapshot import ScoreSnapshot
 
 
-def select_latest_snapshots(
-    owner: type[App] | type[OrgUnit] | type[Brand], owner_col: InstrumentedAttribute[int | None]
-) -> Select:
-    """Selects from `owner`'s table, so a caller narrows the Owners with
-    `.where()` on its columns and can order or page on its `id`, which is
-    what lets a LIMIT stop the walk. An Owner with no snapshot yields no
-    row."""
-    probed = aliased(ScoreSnapshot)
+# Satisfied by the Owner Dispatcher's `OwnerSpec`, which this module cannot
+# import without a cycle; taking the pair whole keeps an Owner's table and its
+# snapshot column from being mismatched.
+class ProbedOwner(Protocol):
+    @property
+    def entity(self) -> type[Base]: ...
+    @property
+    def id_column(self) -> InstrumentedAttribute[int | None]: ...
+
+
+def select_latest_snapshots(owner: ProbedOwner) -> Select:
+    """Selects from the Owner's table, so a caller narrows the Owners with
+    `.where()` on its columns and can order on its `id`, which is what lets a
+    LIMIT stop the walk. An Owner with no snapshot yields no row.
+
+    The selected snapshot is an alias, not `ScoreSnapshot`: a `.where()` on a
+    `ScoreSnapshot` column adds a second, unjoined `score_snapshot`. Paging
+    with `paginate` on the Owner's `id` needs `.add_columns(owner.entity)`
+    first, since only the snapshot is selected."""
     latest = (
-        select(probed)
-        .where(getattr(probed, owner_col.key) == owner.id)
-        .order_by(probed.snapshot_at.desc(), probed.id.desc())
+        select(ScoreSnapshot)
+        .where(owner.id_column == owner.entity.id)
+        .order_by(ScoreSnapshot.snapshot_at.desc(), ScoreSnapshot.id.desc())
         .limit(1)
+        # Never `score_snapshot`, even when a caller's filter puts it in the
+        # outer FROM.
+        .correlate(owner.entity)
         .subquery()
         .lateral()
     )
-    return select(aliased(ScoreSnapshot, latest)).select_from(owner).join(latest, true())
+    return select(aliased(ScoreSnapshot, latest)).select_from(owner.entity).join(latest, true())

@@ -33,6 +33,7 @@ from tests.factories import (
     make_score_snapshot,
     make_violation,
     ou_snapshots,
+    recorded_statements,
     score_new_scan_run,
 )
 
@@ -197,6 +198,14 @@ async def test_list_latest_scores_returns_one_latest_snapshot_per_app(db_session
     assert page.next_cursor is None
 
 
+# The probe index already returns a tied pair in id order, which would keep a
+# tie test green with the probe's id tiebreak deleted; without it, only the
+# ORDER BY decides.
+async def _plan_without_indexes(session: AsyncSession) -> None:
+    for scan in ("indexscan", "bitmapscan", "indexonlyscan"):
+        await session.execute(text(f"SET LOCAL enable_{scan} = off"))
+
+
 async def test_latest_selection_matches_rollup_after_out_of_order_import(db_session: AsyncSession) -> None:
     brand = await make_brand(db_session)
     app_a = await make_app_with_org_unit(db_session, org_name="Org A", slug="app-a", brand_id=brand.id)
@@ -215,6 +224,7 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
         db_session, app_id=app_b.id, score=0.6, snapshot_at=datetime(2026, 4, 2, tzinfo=UTC)
     )
 
+    await _plan_without_indexes(db_session)
     page = await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
     assert {(s.app_id, s.id) for s in page.items} == {(app_a.id, latest_a.id), (app_b.id, latest_b.id)}
 
@@ -224,6 +234,34 @@ async def test_latest_selection_matches_rollup_after_out_of_order_import(db_sess
     await owner_service.rollup(db_session, ScoreSnapshotOwnerType.BRAND, brand.id)
     brand_snapshot = await latest_brand_snapshot(db_session, brand.id)
     assert brand_snapshot.score == approx((0.9 + 0.6) / 2)
+
+
+def _node_types(plan: dict) -> set[str]:
+    return {plan["Node Type"]}.union(*(_node_types(child) for child in plan.get("Plans", [])))
+
+
+async def test_latest_reads_rank_no_snapshots(db_session: AsyncSession) -> None:
+    # Reds on a revert to the `row_number()` window (WindowAgg) or a
+    # `DISTINCT ON` rewrite (Unique): either reads every snapshot in the set
+    # whatever the page size, which is what the per-Owner probe replaced.
+    org_unit = await make_org_unit(db_session, name="Plan Org")
+    for slug in ("plan-a", "plan-b"):
+        app = await make_app(db_session, name=slug, slug=slug, org_unit_id=org_unit.id)
+        await make_score_snapshot(db_session, app_id=app.id, score=0.5)
+    async with recorded_statements(db_session) as statements:
+        await owner_service.list_latest_scores(db_session, ScoreSnapshotOwnerType.APP)
+        await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
+
+    # The probe's LATERAL marks the two Latest Score Snapshot reads; with no
+    # match, the assertion below would pass on nothing.
+    latest_reads = [s for s in statements if "LATERAL" in s]
+    assert len(latest_reads) == 2
+    for statement in latest_reads:
+        explained = await (await db_session.connection()).exec_driver_sql(
+            f"EXPLAIN (FORMAT JSON) {statement}", statement.parameters
+        )
+        nodes = _node_types(explained.scalar_one()[0]["Plan"])
+        assert not nodes & {"WindowAgg", "Unique"}, statement
 
 
 async def test_served_owner_not_repeated_when_import_lands_mid_walk(db_session: AsyncSession) -> None:
@@ -874,7 +912,7 @@ class TestOrgUnitRollup:
     async def test_child_app_and_org_unit_with_equal_ids_both_count(self, db_session: AsyncSession) -> None:
         # app.id and org_unit.id come from separate identity sequences, so a
         # child App and a child Org Unit can legitimately share an id value —
-        # the latest-per-child partition must keep them apart.
+        # the per-Owner-type probes must keep them apart.
         parent = await make_org_unit(db_session, name="Collide Parent")
         brand = await make_brand(db_session)
         collided_id = 900_000_001
@@ -910,6 +948,7 @@ class TestOrgUnitRollup:
         await make_score_snapshot(db_session, app_id=app.id, score=0.2, snapshot_at=tied_at)
         await make_score_snapshot(db_session, app_id=app.id, score=0.8, snapshot_at=tied_at)
 
+        await _plan_without_indexes(db_session)
         await owner_service.rollup(db_session, ScoreSnapshotOwnerType.ORG_UNIT, org_unit.id)
 
         assert (await latest_ou_snapshot(db_session, org_unit.id)).score == approx(0.8)

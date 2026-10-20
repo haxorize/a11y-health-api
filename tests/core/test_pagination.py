@@ -201,8 +201,11 @@ _LABELED_COLUMN = SimpleNamespace(
     class_=Brand, key="labeled", type=String(), expression=func.lower(Brand.name).label("labeled")
 )
 # Every mapped timestamp keyset carries a time zone, so a stand-in carries one
-# without: its cursors would be naive, which the decode refuses (ADR 0050).
-_NAIVE_TIMESTAMP_COLUMN = SimpleNamespace(class_=Brand, key="naive", type=DateTime())
+# without: its cursors would be naive, which the decode refuses (ADR 0050). It
+# is declared NOT NULL so only the time zone check can refuse it.
+_NAIVE_TIMESTAMP_COLUMN = SimpleNamespace(
+    class_=Brand, key="naive", type=DateTime(), expression=SimpleNamespace(nullable=False)
+)
 
 
 # The session has no `execute`, so reaching the first query fails with an

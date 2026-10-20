@@ -174,21 +174,40 @@ async def test_paginate_decodable_cursor_with_wrong_typed_value_is_rejected(
 # as a forger would send it. Breaks if `_require_id` coerces with a bare
 # `int()`: the non-finite floats overflow into a 500 and the rest are read as
 # ids 1, 1, 1 and 5. Breaks too if a timestamp with no offset is read in the
-# server's zone (ADR 0050).
+# API process's zone, or if one at the edge of the range reaches asyncpg, whose
+# conversion to UTC overflows into a 500 (ADR 0050).
 @pytest.mark.parametrize(
-    ("keyset", "payload"),
+    ("keyset", "cursor_json"),
     [
         *(([Brand.id], p) for p in ("[Infinity]", "[-Infinity]", "[1e400]", "[1.5]", "[1.0]", "[true]", '["5"]')),
         ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["2026-01-01T00:00:00", 1]'),
         ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["2026-01-01", 1]'),
+        ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["9999-12-31T23:59:59-14:00", 1]'),
+        ([ScoreSnapshot.snapshot_at, ScoreSnapshot.id], '["0001-01-01T00:00:00+14:00", 1]'),
     ],
 )
 async def test_paginate_refuses_a_cursor_value_the_encoder_never_writes(
-    db_session: AsyncSession, keyset: list, payload: str
+    db_session: AsyncSession, keyset: list, cursor_json: str
 ) -> None:
-    cursor = base64.urlsafe_b64encode(payload.encode()).decode()
+    cursor = base64.urlsafe_b64encode(cursor_json.encode()).decode()
     with pytest.raises(InvalidCursorError):
         await paginate(db_session, select(keyset[0].class_), keyset=keyset, cursor=cursor, limit=2)
+
+
+# Spellings the encoder never writes that still name the instant they are read
+# as, so they page. Breaks if the decode demands the encoder's exact output,
+# the check ADR 0050 weighed and did not take.
+@pytest.mark.parametrize("spelling", ["2026-01-02T00:00Z", "2026-01-02T05:00+05:00"])
+async def test_paginate_accepts_another_spelling_of_an_aware_timestamp(db_session: AsyncSession, spelling: str) -> None:
+    brand = await make_brand(db_session)
+    times = [datetime(2026, 1, day, tzinfo=UTC) for day in (1, 2, 3)]
+    snaps = [await make_score_snapshot(db_session, brand_id=brand.id, snapshot_at=t) for t in times]
+    cursor = base64.urlsafe_b64encode(f'["{spelling}", {snaps[1].id}]'.encode()).decode()
+
+    keyset = [ScoreSnapshot.snapshot_at, ScoreSnapshot.id]
+    page = await paginate(db_session, select(ScoreSnapshot), keyset=keyset, cursor=cursor, limit=2)
+
+    assert [s.id for s in page.items] == [snaps[2].id]
 
 
 _BRAND_ALIAS = aliased(Brand)

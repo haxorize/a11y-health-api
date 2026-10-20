@@ -16,7 +16,7 @@ import enum
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, overload
 
 from fastapi import Depends
@@ -180,12 +180,17 @@ def _require_id(raw: object) -> int:
 
 
 # The encoder writes an offset, and a timestamp without one would bind in the
-# server's zone as a shifted instant (ADR 0050).
+# API process's zone as a shifted instant. One at the edge of the range would
+# overflow asyncpg's conversion to UTC into a 500, so it is converted here
+# (ADR 0050).
 def _require_aware(raw: Any) -> datetime:
     value = datetime.fromisoformat(raw)
     if value.tzinfo is None:
         raise ValueError(raw)
-    return value
+    try:
+        return value.astimezone(UTC)
+    except OverflowError:
+        raise ValueError(raw) from None
 
 
 def _require_str(raw: object) -> str:
